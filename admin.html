@@ -37,8 +37,9 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 <script>
-App.page('admin', function (root) {
-  var D = null, tab = 'staff';
+App.page('admin', function (root, params) {
+  var D = null, tab = params.tab === 'projects' || params.tab === 'templates' ? params.tab : 'staff';
+  $$('#ad-tabs button', root).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === tab); });
 
   function load() {
     return api('getAdminData').then(function (d) { D = d; render(); }).catch(function (e) { toast(e.message, true); });
@@ -87,7 +88,7 @@ App.page('admin', function (root) {
       var td = $$('td', tr);
       td[0].textContent = s.name;
       td[1].textContent = s.email;
-      td[2].innerHTML = '<span class="role-tag">' + esc(s.role) + '</span>';
+      td[2].innerHTML = '<span class="role-tag' + (s.isRoot ? ' root' : '') + '">' + esc(s.role) + '</span>';
       td[3].textContent = s.isRoot ? '全部專案' : (s.projects.join('、') || '—');
       td[4].innerHTML = s.applyStatus === '已拒絕' ? '<span class="pill mute">申請未通過</span>' :
         s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>';
@@ -195,6 +196,53 @@ App.page('admin', function (root) {
         });
     });
     body.appendChild(g);
+
+    var paused = D.sitePaused || {};
+    var m = el('<div class="card card-pad" style="margin-bottom:16px"><div class="row"><div class="grow"><h3>全站維護</h3>' +
+      '<div class="small muted">勾選要暫停的服務後按「套用」。暫停期間學員仍可填表，回覆會排隊，恢復後依提交時間補處理，不會遺失。' +
+      (D.siteMaint && D.siteMaintBy ? '<br>目前由 ' + esc(D.siteMaintBy.split(' ')[0]) + ' 於 ' + esc(fmtTime(D.siteMaintBy.split(' ')[1])) + ' 設定。' : '') + '</div></div>' +
+      '<span class="pill ' + (D.siteMaint ? 'warn' : 'ok') + '">' + (D.siteMaint ? '維護中' : '全部運作') + '</span></div>' +
+      '<div class="maint-grid"></div>' +
+      '<div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">' +
+      (D.siteMaint ? '<button class="btn" type="button" data-act="resume">全部恢復</button>' : '') +
+      '<button class="btn primary" type="button" data-act="apply">套用</button></div></div>');
+    var grid = $('.maint-grid', m);
+    (D.siteServices || []).forEach(function (x) {
+      // 尚未開啟維護時，預設只勾「非總管登入」
+      var checked = D.siteMaint ? !!paused[x.key] : x.key === 'login';
+      var it = el('<label class="maint-item"><input type="checkbox"><span><b></b><span class="small muted"></span></span></label>');
+      $('input', it).value = x.key; $('input', it).checked = checked;
+      $('b', it).textContent = x.label; $('.small', it).textContent = x.desc;
+      if (paused[x.key]) it.classList.add('paused');
+      grid.appendChild(it);
+    });
+    function applyMaint(want) {
+      var on = [], off = [];
+      (D.siteServices || []).forEach(function (x) {
+        if (want[x.key] && !paused[x.key]) on.push(x.label);
+        if (!want[x.key] && paused[x.key]) off.push(x.label);
+      });
+      if (!on.length && !off.length) { toast('設定沒有變更'); return; }
+      var lines = [];
+      if (on.length) lines.push('暫停：' + on.join('、'));
+      if (off.length) lines.push('恢復：' + off.join('、'));
+      if (want.login && !paused.login) lines.push('總管以外的人立即無法登入，已登入的人會被登出（含保持登入）');
+      if (!want.intake && paused.intake) lines.push('排隊中的表單回覆會立刻依提交時間補處理');
+      confirmDialog({ title: '全站維護', lines: lines, danger: on.length > 0, okLabel: '套用' }).then(function (ok) {
+        if (!ok) return;
+        withBusy(api('setSiteMaintenance', want)).then(function (r) {
+          toast('已套用' + (r && r.caughtUp ? '，補處理 ' + r.caughtUp + ' 筆排隊回覆' : ''));
+          location.href = 'admin.html?tab=projects';
+        }).catch(function (e) { toast(e.message, true); });
+      });
+    }
+    $('[data-act=apply]', m).addEventListener('click', function () {
+      var want = {};
+      $$('input', grid).forEach(function (i) { if (i.checked) want[i.value] = true; });
+      applyMaint(want);
+    });
+    if (D.siteMaint) $('[data-act=resume]', m).addEventListener('click', function () { applyMaint({}); });
+    body.appendChild(m);
 
     var card = el('<div class="card"><div class="table-wrap"><table class="simple"><thead><tr><th>專案代碼</th><th>營隊名稱</th><th>營期</th><th>設定狀態</th><th>實際狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
     var tb = $('tbody', card);
