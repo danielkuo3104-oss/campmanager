@@ -55,6 +55,48 @@
   .user-chip:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
   .user-chip .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
   .role-tag { font-size: 11px; padding: 2px 10px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+  .role-tag.root { background: linear-gradient(135deg, #f6d27a, #e0a43c); color: #5a3a00; font-weight: 700; box-shadow: 0 2px 6px rgba(200, 128, 58, .3); }
+  .user-chip .avatar.root { background: linear-gradient(135deg, #fbe3a6, #efc067); color: #6b4300; }
+  .maint-pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: var(--pill); background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .maint-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: blink 1.4s ease-in-out infinite; }
+  /* 匯出 PDF 視窗 */
+  .export-dlg { display: flex; flex-direction: column; gap: 16px; }
+  .export-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .export-row.top { align-items: flex-start; }
+  .export-label { width: 64px; flex: none; font-size: 13px; color: var(--text-2); font-weight: 500; }
+  .export-row .grow { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+  .seg label { cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: inline-flex; align-items: center; height: 32px; padding: 0 14px; border-radius: 10px; font-size: 13px; color: var(--text-2); }
+  .seg input:checked + span { background: var(--surface); color: var(--brand); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .seg input:focus-visible + span { outline: 2px solid var(--brand); }
+  .export-group { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .export-group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+  .export-group-head .link { border: 0; background: none; color: var(--brand); font-size: 12px; cursor: pointer; padding: 2px 4px; }
+  .export-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; max-height: 220px; overflow: auto; }
+  .export-cols .check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* PDF 排版用（畫面外，固定白底黑字，不受深色模式影響） */
+  .pdf-host { position: fixed; left: -30000px; top: 0; }
+  .pdf-page { position: relative; box-sizing: border-box; background: #fff; color: #1d2621; font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif; overflow: hidden; }
+  .pdf-title h1 { font-size: 20px; margin: 0 0 6px; color: #2f5d62; font-weight: 700; }
+  .pdf-meta { font-size: 11px; color: #5b665f; margin-bottom: 14px; }
+  .pdf-cont { font-size: 12px; color: #5b665f; margin-bottom: 10px; font-weight: 500; }
+  .pdf-table { width: 100%; border-collapse: collapse; font-size: 10.5px; line-height: 1.45; table-layout: auto; }
+  .pdf-page.land .pdf-table { font-size: 11px; }
+  .pdf-table th { background: #e8efed; color: #2f5d62; font-weight: 700; text-align: left; padding: calc(var(--cellpad, 6px)) calc(var(--cellpad, 6px) + 1px); border: 1px solid #cfd8d4; white-space: nowrap; }
+  .pdf-table td { padding: calc(var(--cellpad, 6px) - 1px) calc(var(--cellpad, 6px) + 1px); border: 1px solid #dde3e0; vertical-align: top; overflow-wrap: break-word; }
+  .pdf-table td.nw { white-space: nowrap; }
+  .pdf-table tbody tr:nth-child(even) td { background: #f7f9f8; }
+  .pdf-table tr.gone td { color: #8a948f; }
+  .pdf-foot { position: absolute; display: flex; justify-content: space-between; font-size: 10px; color: #8a948f; }
+  .maint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 14px; }
+  .maint-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; background: var(--surface); transition: border-color .15s, background .15s; }
+  .maint-item:hover { border-color: var(--line-strong); }
+  .maint-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--warn); flex: none; }
+  .maint-item > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .maint-item.paused { border-color: var(--warn); background: var(--warn-soft); }
+  @keyframes blink { 50% { opacity: .3; } }
 
   main { max-width: 1320px; margin: 0 auto; padding: 28px 24px 48px; }
   .page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
