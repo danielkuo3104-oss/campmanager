@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="營隊管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <title>開始新專案｜營隊報名管理</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -30,7 +36,21 @@
   <form id="np-form" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
     <section class="card card-pad" id="np-step1">
       <h2>1. 連結表單</h2>
-      <p class="muted small" id="np-account" style="margin:6px 0 16px"></p>
+      <p class="muted small" id="np-account" style="margin:6px 0 12px"></p>
+      <details id="np-help" open style="margin:0 0 18px;padding:16px 20px;border-radius:16px;background:var(--info-soft);color:#274a80;font-size:13px;line-height:1.75">
+        <summary style="cursor:pointer;font-weight:700;font-size:14px">怎麼取得表單的「編輯連結」？（請舉辦方照做）</summary>
+        <ol style="margin:10px 0 0;padding-left:20px">
+          <li>用電腦打開 Google 表單的<b>編輯畫面</b>（上方有「問題／回覆／設定」的那一頁）。</li>
+          <li>按右上角的<b>人像＋圖示</b>（共用）。</li>
+          <li>在「新增使用者」輸入系統帳號 <b id="np-sys">campmanager.261014@gmail.com</b>
+            <button class="btn sm" type="button" id="np-copy-sys" style="height:24px;padding:0 10px;margin-left:4px">複製</button>，
+            角色選<b>「編輯者」</b>，按「傳送」。</li>
+          <li>「一般存取權」的<b>編輯者</b>請設為<b>「限制」</b>，不要用「知道連結的任何人」，否則任何拿到連結的人都能改表單、刪回覆。
+            作答者維持「知道連結的任何人」即可。若顯示「權限是在上層資料夾設定」，請把表單移出那個共用資料夾。</li>
+          <li>關掉共用視窗，<b>複製瀏覽器網址列</b>的網址（像 <code>docs.google.com/forms/d/…/edit</code>），貼到下面。<br>
+            共用視窗裡的「複製作答者連結」是給學員填的，<b>不能用</b>。</li>
+        </ol>
+      </details>
       <div class="row wrap" style="align-items:flex-end">
         <label class="field grow"><span>表單編輯連結<em>*</em></span><input class="input" name="formUrl" placeholder="https://docs.google.com/forms/d/…/edit"></label>
         <button class="btn primary" type="button" id="np-load">讀取表單</button>
@@ -43,6 +63,9 @@
       <div class="grid-3">
         <label class="field"><span>專案代碼（活頁前綴）<em>*</em></span><input class="input" name="prefix" placeholder="例如 2027S"><span class="hint">2–12 個英文或數字，同一屆所有活頁都用這個前綴</span></label>
         <label class="field" style="grid-column:span 2"><span>營隊名稱<em>*</em></span><input class="input" name="name"></label>
+        <label class="field"><span>開始招生日期<em>*</em></span><input class="input" name="regStart" type="date"><span class="hint">這天 00:00 起系統開始受理報名</span></label>
+        <label class="field"><span>預計結束招生日期</span><input class="input" name="regEnd" type="date"><span class="hint">這天 23:59 後的報名先記為「招生期外」，由管理員決定；可留空、之後可改</span></label>
+        <span></span>
         <label class="field"><span>營期開始<em>*</em></span><input class="input" name="start" type="date"></label>
         <label class="field"><span>營期結束<em>*</em></span><input class="input" name="end" type="date"><span class="hint">超過營期後專案自動變成只能瀏覽</span></label>
         <label class="field"><span>招生人數上限<em>*</em></span><input class="input" name="capacity" type="number" min="1"></label>
@@ -91,6 +114,11 @@ App.page('newproject', function (root) {
   }
 
   $('#np-account', root).textContent = '請舉辦方把表單的「編輯權限」分享給系統帳號後，再貼上表單的編輯連結。';
+  api('systemAccount').then(function (a) { if (a) $('#np-sys', root).textContent = a; }).catch(function () {});
+  $('#np-copy-sys', root).addEventListener('click', function () {
+    var t = $('#np-sys', root).textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('已複製 ' + t); }, function () { toast('請手動複製：' + t, true); });
+  });
 
   $('#np-load', root).addEventListener('click', function () {
     var url = form.elements.formUrl.value.trim();
@@ -98,6 +126,7 @@ App.page('newproject', function (root) {
     withBusy(api('inspectForm', url)).then(function (r) {
       info = r;
       $('#np-account', root).textContent = '系統帳號：' + r.systemAccount + '（表單編輯權限需分享給此帳號）';
+      $('#np-help', root).open = false;
       $('#np-form-info', root).textContent = '已讀取表單「' + r.title + '」：' + r.questions.length + ' 個題目，目前已有 ' + r.responses + ' 筆回覆。';
       if (!form.elements.name.value) form.elements.name.value = r.title;
       renderMapping();
@@ -158,7 +187,7 @@ App.page('newproject', function (root) {
     }).filter(function (a) { return a.email || a.name || a.password; });
     return {
       formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(),
-      start: e.start.value, end: e.end.value, capacity: e.capacity.value, price: e.price.value,
+      start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
       groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
       account: e.account.value.trim(), payDays: e.payDays.value, holdHours: e.holdHours.value,
       promoteMode: e.promoteMode.value, waitOrder: e.waitOrder.value, mapping: mapping,
@@ -169,9 +198,10 @@ App.page('newproject', function (root) {
 
   function check(d) {
     if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
-    var req = [['name', '營隊名稱'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價'], ['account', '匯款帳號']];
+    var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價'], ['account', '匯款帳號']];
     for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
     if (d.end < d.start) return '營期結束不可早於開始';
+    if (d.regEnd && d.regEnd < d.regStart) return '結束招生日期不可早於開始招生日期';
     if (!d.mapping.name) return '請指定「學員姓名」對應的題目';
     if (!d.mapping.email && info.questions.indexOf('電子郵件地址') < 0) return '請指定「Email」對應的題目';
     for (var j = 0; j < d.coAdmins.length; j++) {
@@ -191,6 +221,7 @@ App.page('newproject', function (root) {
       title: '建立專案「' + d.name + '」',
       lines: [
         '專案代碼：' + d.prefix + '（活頁 ' + d.prefix + '_學員）',
+        '招生期間：' + d.regStart + ' – ' + (d.regEnd || '未定') + '（期間外的報名會先記為「招生期外」，不自動寄結果）',
         '營期：' + d.start + ' – ' + d.end + '，上限 ' + d.capacity + ' 人',
         '原價 ' + d.price + (d.groupPrice ? '／團報 ' + d.groupPrice : '') + (d.earlyPrice ? '／早鳥 ' + d.earlyPrice + '（至 ' + (d.earlyDeadline || '未設定') + '）' : ''),
         '共同管理員：' + (d.coAdmins.map(function (a) { return a.name + ' ' + a.email; }).join('、') || '無'),
