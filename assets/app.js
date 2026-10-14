@@ -22,7 +22,7 @@ function store(key, val, persist) {
 /** 呼叫 Apps Script 後端 API（text/plain 避免 CORS 預檢） */
 function api(name) {
   var args = Array.prototype.slice.call(arguments, 1);
-  if (name !== 'login' && name !== 'register') args = [App.token].concat(args);
+  if (name !== 'login' && name !== 'register' && name !== 'forgotPassword') args = [App.token].concat(args);
   if (!window.CAMP_CONFIG || !CAMP_CONFIG.API_URL || /請填入/.test(CAMP_CONFIG.API_URL)) {
     return Promise.reject(new Error('尚未設定後端網址：請編輯 assets/config.js 的 API_URL'));
   }
@@ -313,7 +313,8 @@ App.page = function (name, init) {
       var root = $('#app').firstElementChild;
       root.classList.remove('hidden');
     var ld = $('#page-loading'); if (ld) ld.remove();
-      init(root, params);
+      if (u.mustChange) forceNewPassword().then(function () { init(root, params); });
+      else init(root, params);
     }).catch(function (e) {
       $('#app').innerHTML = '<div class="card card-pad empty"></div>';
       $('#app .empty').textContent = e.message;
@@ -335,12 +336,48 @@ App.loginPage = function () {
       $('#login-error').textContent = '';
       withBusy(api('login', f.email.value, f.password.value, f.remember.checked)).then(function (r) {
         store('camp_token', r.token, f.remember.checked);
-        go('menu');
+        App.token = r.token;
+        if (r.user.mustChange) forceNewPassword().then(function () { go('menu'); });
+        else go('menu');
       }).catch(function (err) { $('#login-error').textContent = err.message; });
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 };
+
+/** 忘記密碼：寄一組臨時密碼到帳號信箱 */
+function forgotPassword() {
+  var typed = ($('#login-form') && $('#login-form').email.value) || '';
+  formDialog({
+    title: '忘記密碼', okLabel: '寄出臨時密碼',
+    desc: '系統會寄一組臨時密碼到你的帳號信箱，' + '30 分鐘內有效。用它登入後，再設定新的密碼。原本的密碼在你改密碼前仍可使用。',
+    fields: [{ name: 'email', label: '帳號信箱', type: 'email', required: true, value: typed }]
+  }).then(function (v) {
+    if (!v) return;
+    withBusy(api('forgotPassword', v.email)).then(function (msg) {
+      modal({ title: '已送出', desc: msg + ' 沒收到的話，請看一下垃圾郵件匣。', buttons: [{ label: '知道了', cls: 'primary', value: true }] });
+    }).catch(function (e) { toast(e.message, true); });
+  });
+}
+
+/** 用臨時密碼（或總管重設的密碼）登入後，必須先設定新密碼才能使用 */
+function forceNewPassword() {
+  return formDialog({
+    title: '請設定新密碼', okLabel: '儲存',
+    desc: '你是用臨時密碼登入的，請設定一組自己的新密碼。',
+    fields: [
+      { name: 'pw', label: '新密碼', type: 'password', required: true, hint: '至少 8 個字元' },
+      { name: 'pw2', label: '再輸入一次新密碼', type: 'password', required: true }
+    ]
+  }).then(function (v) {
+    if (!v) return forceNewPassword();
+    if (v.pw !== v.pw2) { toast('兩次輸入的新密碼不一致', true); return forceNewPassword(); }
+    return withBusy(api('changePassword', '', v.pw)).then(function () {
+      if (App.user) App.user.mustChange = false;
+      toast('新密碼已設定');
+    }, function (e) { toast(e.message, true); return forceNewPassword(); });
+  });
+}
 
 /** 註冊頁：送出申請，等總管核准 */
 App.registerPage = function () {
