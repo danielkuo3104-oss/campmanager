@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="營隊管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>操作紀錄｜營隊報名管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</head>
+<body>
+  <main id="app">
+<div class="view-logs hidden">
+  <div class="page-head">
+    <div>
+      <h1>操作紀錄</h1>
+      <div class="sub" id="lg-sub">所有操作與寄信都會留下紀錄，紀錄只能新增、不能修改</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <select class="input" id="lg-project" style="max-width:240px"><option value="">全部專案</option></select>
+      <input class="input" id="lg-q" placeholder="搜尋操作人、動作、對象…" style="max-width:300px">
+      <button class="btn" type="button" id="lg-go">查詢</button>
+      <span class="spacer"></span>
+      <span class="muted small" id="lg-count"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="simple">
+        <thead><tr><th>時間</th><th>操作人</th><th>專案</th><th>動作</th><th>對象</th><th>內容</th><th>結果</th></tr></thead>
+        <tbody id="lg-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="loading" id="page-loading"><div class="spinner"></div>載入中</div>
+  </main>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+<script>
+App.page('logs', function (root) {
+  var loadedProjects = false;
+  function load() {
+    var f = { project: $('#lg-project', root).value, q: $('#lg-q', root).value.trim() };
+    $('#lg-body', root).innerHTML = '<tr><td colspan="7"><div class="loading"><div class="spinner"></div>載入中</div></td></tr>';
+    api('getLogs', f).then(function (r) {
+      if (!loadedProjects) {
+        r.projects.forEach(function (p) { $('#lg-project', root).appendChild(new Option(p.prefix + '　' + p.name, p.prefix)); });
+        loadedProjects = true;
+      }
+      $('#lg-count', root).textContent = '最新 ' + r.logs.length + ' 筆' + (r.logs.length >= r.limit ? '（上限 ' + r.limit + '，請縮小條件）' : '');
+      var tb = $('#lg-body', root);
+      tb.innerHTML = '';
+      if (!r.logs.length) { tb.innerHTML = '<tr><td colspan="7"><div class="empty">沒有紀錄</div></td></tr>'; return; }
+      r.logs.forEach(function (l) {
+        var tr = el('<tr><td style="white-space:nowrap"></td><td></td><td></td><td></td><td></td><td class="small"></td><td></td></tr>');
+        var td = $$('td', tr);
+        td[0].textContent = fmtTime(l.time);
+        td[1].textContent = l.actor;
+        td[2].textContent = l.project;
+        td[3].textContent = l.action;
+        td[4].textContent = l.target;
+        var parts = [];
+        if (l.before || l.after) parts.push((l.before ? l.before + ' → ' : '') + l.after);
+        if (l.note) parts.push(l.note);
+        td[5].textContent = parts.join('\n');
+        td[5].style.whiteSpace = 'pre-wrap';
+        td[5].style.maxWidth = '420px';
+        td[5].style.wordBreak = 'break-all';
+        var cls = l.result === '成功' ? 'ok' : (l.result === '已取消' || l.result === '略過') ? 'mute' : 'bad';
+        td[6].innerHTML = '<span class="pill ' + cls + '">' + esc(l.result) + '</span>';
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+  $('#lg-go', root).addEventListener('click', load);
+  $('#lg-q', root).addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  $('#lg-project', root).addEventListener('change', load);
+  load();
+});
+</script>
+</body>
+</html>
