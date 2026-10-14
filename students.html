@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
+  <script src="assets/export.js"></script>
 </head>
 <body>
   <main id="app">
@@ -28,6 +29,7 @@
     <div class="row wrap">
       <button class="btn" type="button" id="st-sync">同步表單</button>
       <button class="btn" type="button" id="st-bulk">群發通知</button>
+      <button class="btn" type="button" id="st-export">匯出 PDF</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
     </div>
   </div>
@@ -509,6 +511,16 @@ App.page('students', function (root, params) {
   $('#st-search', root).addEventListener('input', function (e) { search = e.target.value.trim().toLowerCase(); if (D) renderTable(); });
   $('#st-settings', root).addEventListener('click', function () { if (D) openSettings(); });
   $('#st-bulk', root).addEventListener('click', function () { if (D) openBulk(); });
+  $('#st-export', root).addEventListener('click', function () {
+    if (!D) return;
+    var f = FILTERS.filter(function (x) { return x.key === filter; })[0];
+    openExportDialog({
+      prefix: prefix, project: D.project, groups: D.groups || {},
+      filtered: sorted(D.students).filter(matches), all: sorted(D.students),
+      filterLabel: (f ? f.label : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
+      displayCols: columns()
+    });
+  });
   $('#st-sync', root).addEventListener('click', function () {
     withBusy(api('syncNow', prefix)).then(function (r) {
       toast('同步完成：新增 ' + r.added + ' 筆' + (r.overdue ? '，標記逾期 ' + r.overdue + ' 筆' : '') + (r.promoted ? '，自動遞補 ' + r.promoted + ' 人' : ''));
