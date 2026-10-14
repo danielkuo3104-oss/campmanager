@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="營隊管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>系統管理｜營隊報名管理</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -57,24 +63,41 @@ App.page('admin', function (root) {
 
   /* ---------- 人員 ---------- */
   function renderStaff(body) {
+    var pending = D.staff.filter(function (s) { return s.applyStatus === '待審核'; });
+    if (pending.length) {
+      var pc = el('<div class="card" style="margin-bottom:16px"><div class="toolbar"><h3 class="grow">待審核的註冊申請（' + pending.length + '）</h3></div>' +
+        '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>申請說明</th><th>申請時間</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+      pending.forEach(function (s) {
+        var tr = el('<tr><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><button class="btn sm danger" type="button">拒絕</button> <button class="btn sm primary" type="button">核准</button></td></tr>');
+        var td = $$('td', tr);
+        td[0].textContent = s.name; td[1].textContent = s.email; td[2].textContent = s.applyNote || '—'; td[3].textContent = fmtTime(s.createdAt);
+        var b = $$('button', tr);
+        b[0].addEventListener('click', function () { rejectApply(s); });
+        b[1].addEventListener('click', function () { approveApply(s); });
+        $('tbody', pc).appendChild(tr);
+      });
+      body.appendChild(pc);
+    }
     var card = el('<div class="card"><div class="toolbar"><h3 class="grow">管理員</h3><button class="btn primary sm" type="button">新增共同管理員</button></div>' +
       '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>角色</th><th>可管理專案</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
     $('.toolbar button', card).addEventListener('click', function () { editStaff(null); });
     var tb = $('tbody', card);
-    D.staff.forEach(function (s) {
+    D.staff.filter(function (s) { return s.applyStatus !== '待審核'; }).forEach(function (s) {
       var tr = el('<tr><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"></td></tr>');
       var td = $$('td', tr);
       td[0].textContent = s.name;
       td[1].textContent = s.email;
       td[2].innerHTML = '<span class="role-tag">' + esc(s.role) + '</span>';
       td[3].textContent = s.isRoot ? '全部專案' : (s.projects.join('、') || '—');
-      td[4].innerHTML = s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>';
+      td[4].innerHTML = s.applyStatus === '已拒絕' ? '<span class="pill mute">申請未通過</span>' :
+        s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>';
       var acts = td[5];
       function btn(label, fn, cls) { var b = el('<button class="btn sm ' + (cls || '') + '" type="button" style="margin-left:6px"></button>'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); }
       btn('編輯', function () { editStaff(s); });
       if (!s.isRoot) {
         btn('重設密碼', function () { resetPw(s); });
-        btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
+        if (s.applyStatus === '已拒絕') btn('改為核准', function () { approveApply(s); });
+        else btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
       }
       tb.appendChild(tr);
     });
@@ -110,6 +133,36 @@ App.page('admin', function (root) {
       if (!d) return;
       withBusy(api('saveStaff', d)).then(function () { toast('已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
     });
+  }
+
+  function approveApply(s) {
+    var form = el('<form style="display:flex;flex-direction:column;gap:14px" onsubmit="return false">' +
+      '<dl class="kv"><dt>信箱</dt><dd></dd><dt>申請說明</dt><dd></dd></dl>' +
+      '<label class="field"><span>名稱</span><input class="input" name="name"></label>' +
+      '<div class="field"><span class="small muted">可管理專案（可以之後再用「編輯」調整）</span><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">' +
+      (D.projects.length ? D.projects.map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') : '<span class="small muted">目前沒有專案</span>') +
+      '</div></div></form>');
+    var dd = $$('dd', form);
+    dd[0].textContent = s.email; dd[1].textContent = s.applyNote || '—';
+    form.elements.name.value = s.name;
+    modal({
+      title: '核准註冊：' + s.name, desc: '核准後此帳號可以登入，只能管理勾選的專案。', body: form,
+      buttons: [{ label: '取消', value: null }, { label: '核准', cls: 'primary', value: function () {
+        return { name: form.elements.name.value.trim(), projects: $$('input[name=proj]:checked', form).map(function (i) { return i.value; }) };
+      } }]
+    }).then(function (d) {
+      if (!d) return;
+      withBusy(api('approveStaff', s.email, d.projects, d.name)).then(function () { toast('已核准 ' + s.name); load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  function rejectApply(s) {
+    formDialog({ title: '拒絕註冊：' + s.name, desc: s.email + '　拒絕後此帳號不能登入，本人可以重新申請。', okLabel: '拒絕', danger: true,
+      fields: [{ name: 'reason', label: '原因（只記錄在操作紀錄，不會寄給申請人）', type: 'textarea' }] })
+      .then(function (v) {
+        if (!v) return;
+        withBusy(api('rejectStaff', s.email, v.reason)).then(function () { toast('已拒絕'); load(); }).catch(function (e) { toast(e.message, true); });
+      });
   }
 
   function resetPw(s) {
