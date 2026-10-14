@@ -77,7 +77,7 @@ function $$(sel, root) { return Array.prototype.slice.call((root || document).qu
 
 var STATUS_COLORS = {
   '已報名': 'info', '繳款待核覆': 'brand', '匯款逾期': 'bad', '匯款異常': 'bad', '程序完成': 'ok',
-  '候補中': 'warn', '報名取消': 'mute', '報名失敗': 'mute',
+  '候補中': 'warn', '招生期外': 'warn', '報名取消': 'mute', '報名失敗': 'mute',
   '運作中': 'ok', '系統維護': 'warn', '已停止': 'bad', '已封存': 'mute', '已過期': 'mute', '全部停止': 'bad'
 };
 function pill(status) {
@@ -286,6 +286,12 @@ function renderTopbar(name, params) {
   $('#crumb').innerHTML = name === 'menu' ? '' : '<b>' + esc(PAGE_TITLES[name] || '') + '</b>' + (params.title ? '　/　' + esc(params.title) : '');
   $('#user-name').textContent = App.user.name;
   $('#user-role').textContent = App.user.role;
+  if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
+  if (App.user.siteMaint) {
+    var mt = el('<a class="maint-pill" href="admin.html?tab=projects">全站維護中</a>');
+    mt.title = '暫停：' + (App.user.siteMaintLabels || []).join('、') + '（到系統管理調整）';
+    $('#user-chip').parentNode.insertBefore(mt, $('#user-chip'));
+  }
   $('#user-avatar').textContent = (App.user.name || '?').slice(0, 1).toUpperCase();
   $('#brand').addEventListener('click', function () { go('menu'); });
   $('#user-chip').addEventListener('click', function (e) {
