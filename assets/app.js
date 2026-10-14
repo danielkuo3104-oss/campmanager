@@ -5,17 +5,24 @@ var App = {
   user: null
 };
 
-function store(key, val) {
+/**
+ * 登入 token：一般登入存 sessionStorage（關掉視窗就登出）；
+ * 勾「保持登入」存 localStorage（關掉瀏覽器或桌面捷徑後仍保持登入，有效天數由後端決定）。
+ * store(key) 讀取、store(key, null) 兩邊都清掉、store(key, val, true) 存到 localStorage。
+ */
+function store(key, val, persist) {
   try {
-    if (val === undefined) return sessionStorage.getItem(key);
-    if (val === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, val);
+    if (val === undefined) return sessionStorage.getItem(key) || localStorage.getItem(key);
+    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
+    if (val !== null) (persist ? localStorage : sessionStorage).setItem(key, val);
   } catch (e) { return null; }
 }
 
 /** 呼叫 Apps Script 後端 API（text/plain 避免 CORS 預檢） */
 function api(name) {
   var args = Array.prototype.slice.call(arguments, 1);
-  if (name !== 'login') args = [App.token].concat(args);
+  if (name !== 'login' && name !== 'register') args = [App.token].concat(args);
   if (!window.CAMP_CONFIG || !CAMP_CONFIG.API_URL || /請填入/.test(CAMP_CONFIG.API_URL)) {
     return Promise.reject(new Error('尚未設定後端網址：請編輯 assets/config.js 的 API_URL'));
   }
@@ -286,6 +293,7 @@ function renderTopbar(name, params) {
     popMenu($('#user-chip'), [
       { header: App.user.email },
       { label: '修改密碼', onClick: changeMyPassword },
+      { label: '安裝到桌面', onClick: installApp },
       { sep: true },
       { label: '登出', danger: true, onClick: function () { api('logout').finally(function () { store('camp_token', null); location.href = 'index.html'; }); } }
     ]);
@@ -325,14 +333,71 @@ App.loginPage = function () {
       e.preventDefault();
       var f = e.target;
       $('#login-error').textContent = '';
-      withBusy(api('login', f.email.value, f.password.value)).then(function (r) {
-        store('camp_token', r.token);
+      withBusy(api('login', f.email.value, f.password.value, f.remember.checked)).then(function (r) {
+        store('camp_token', r.token, f.remember.checked);
         go('menu');
       }).catch(function (err) { $('#login-error').textContent = err.message; });
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 };
+
+/** 註冊頁：送出申請，等總管核准 */
+App.registerPage = function () {
+  function start() {
+    $('#reg-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target;
+      var err = $('#reg-error');
+      err.textContent = '';
+      if (f.password.value !== f.password2.value) { err.textContent = '兩次輸入的密碼不一致'; return; }
+      withBusy(api('register', f.name.value, f.email.value, f.password.value, f.note.value)).then(function () {
+        $('#reg-form').classList.add('hidden');
+        $('#reg-done').classList.remove('hidden');
+      }).catch(function (x) { err.textContent = x.message; });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+};
+
+/* ---------- 安裝成桌面應用程式（PWA） ---------- */
+var installPrompt = null;
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  installPrompt = e;
+  $$('.install-btn').forEach(function (b) { b.classList.remove('hidden'); });
+});
+window.addEventListener('appinstalled', function () {
+  installPrompt = null;
+  $$('.install-btn').forEach(function (b) { b.classList.add('hidden'); });
+  toast('已安裝，之後可以從桌面或應用程式清單直接開啟');
+});
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+function isStandalone() {
+  return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+}
+function installApp() {
+  if (isStandalone()) { toast('目前已經是桌面應用程式'); return; }
+  if (installPrompt) {
+    installPrompt.prompt();
+    installPrompt.userChoice.finally(function () { installPrompt = null; });
+    return;
+  }
+  var ua = navigator.userAgent;
+  var safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|CriOS|FxiOS/.test(ua);
+  var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var lines = ios ? ['在 Safari 點下方的「分享」按鈕', '選「加入主畫面」，再按「新增」'] :
+    safari ? ['在 Safari 選單列點「檔案」', '選「加入 Dock」，再按「加入」', '之後可以從 Dock、啟動台或應用程式資料夾開啟'] :
+    ['Chrome／Edge：網址列右側會有「安裝」圖示（一台電腦加一個箭頭），點它後按「安裝」',
+     '找不到圖示時：右上角「⋮」→「投放、儲存及分享」→「安裝網頁應用程式」', '安裝後會出現在桌面、Dock 或開始選單'];
+  modal({
+    title: '安裝到桌面', desc: '安裝後會有獨立視窗與圖示，像一般應用程式一樣開啟。',
+    body: '<ol class="summary-list">' + lines.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ol>',
+    buttons: [{ label: '知道了', cls: 'primary', value: true }]
+  });
+}
 
 function changeMyPassword() {
 
