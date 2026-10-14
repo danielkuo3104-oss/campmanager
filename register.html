@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="營隊管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>註冊｜營隊報名管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</head>
+<body>
+    <div class="login-wrap">
+      <form class="card login-card" id="reg-form" autocomplete="on">
+        <div class="brand-mark">營</div>
+        <h1>申請管理員帳號</h1>
+        <p class="muted" style="margin:6px 0 24px">送出後由總管審核，核准並指派營隊後才能登入</p>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <label class="field"><span>名稱<em>*</em></span><input class="input" name="name" autocomplete="name" required></label>
+          <label class="field"><span>信箱<em>*</em></span><input class="input" name="email" type="email" autocomplete="username" required></label>
+          <label class="field"><span>密碼<em>*</em></span><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" required><span class="hint">至少 8 個字元</span></label>
+          <label class="field"><span>再輸入一次密碼<em>*</em></span><input class="input" name="password2" type="password" autocomplete="new-password" minlength="8" required></label>
+          <label class="field"><span>申請說明</span><textarea class="input" name="note" rows="3" maxlength="300" placeholder="例如：2027 暑期營的工作人員，想協助管理報名"></textarea></label>
+          <div class="small" id="reg-error" style="color:var(--bad);min-height:18px"></div>
+          <button class="btn primary" type="submit" style="height:42px">送出申請</button>
+          <div class="small muted"><a href="index.html">已經有帳號？回到登入</a></div>
+        </div>
+      </form>
+      <div class="card login-card hidden" id="reg-done">
+        <div class="brand-mark">營</div>
+        <h1>申請已送出</h1>
+        <p class="muted" style="margin:10px 0 24px">總管會收到通知。核准後，用剛才的信箱與密碼登入即可。</p>
+        <a class="btn primary" href="index.html" style="height:42px;display:grid;place-items:center">回到登入</a>
+      </div>
+    </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script>App.registerPage();</script>
+</body>
+</html>
