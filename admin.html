@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系統管理｜營隊報名管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</head>
+<body>
+  <main id="app">
+<div class="view-admin hidden">
+  <div class="page-head">
+    <div>
+      <h1>系統管理</h1>
+      <div class="sub" id="ad-sub"></div>
+    </div>
+  </div>
+  <div class="tabs" id="ad-tabs">
+    <button type="button" data-tab="staff" class="on">人員</button>
+    <button type="button" data-tab="projects">專案</button>
+    <button type="button" data-tab="templates">信件範本</button>
+  </div>
+  <div id="ad-body"><div class="loading"><div class="spinner"></div>載入中</div></div>
+</div>
+<div class="loading" id="page-loading"><div class="spinner"></div>載入中</div>
+  </main>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+<script>
+App.page('admin', function (root) {
+  var D = null, tab = 'staff';
+
+  function load() {
+    return api('getAdminData').then(function (d) { D = d; render(); }).catch(function (e) { toast(e.message, true); });
+  }
+
+  $$('#ad-tabs button', root).forEach(function (b) {
+    b.addEventListener('click', function () {
+      tab = b.getAttribute('data-tab');
+      $$('#ad-tabs button', root).forEach(function (x) { x.classList.toggle('on', x === b); });
+      render();
+    });
+  });
+
+  function render() {
+    $('#ad-sub', root).textContent = '系統帳號：' + D.systemAccount + '　·　今日剩餘寄信額度 ' + D.quota + ' 封';
+    var body = $('#ad-body', root);
+    body.innerHTML = '';
+    if (tab === 'staff') renderStaff(body);
+    if (tab === 'projects') renderProjects(body);
+    if (tab === 'templates') renderTemplates(body);
+  }
+
+  /* ---------- 人員 ---------- */
+  function renderStaff(body) {
+    var card = el('<div class="card"><div class="toolbar"><h3 class="grow">管理員</h3><button class="btn primary sm" type="button">新增共同管理員</button></div>' +
+      '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>角色</th><th>可管理專案</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+    $('.toolbar button', card).addEventListener('click', function () { editStaff(null); });
+    var tb = $('tbody', card);
+    D.staff.forEach(function (s) {
+      var tr = el('<tr><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"></td></tr>');
+      var td = $$('td', tr);
+      td[0].textContent = s.name;
+      td[1].textContent = s.email;
+      td[2].innerHTML = '<span class="role-tag">' + esc(s.role) + '</span>';
+      td[3].textContent = s.isRoot ? '全部專案' : (s.projects.join('、') || '—');
+      td[4].innerHTML = s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>';
+      var acts = td[5];
+      function btn(label, fn, cls) { var b = el('<button class="btn sm ' + (cls || '') + '" type="button" style="margin-left:6px"></button>'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); }
+      btn('編輯', function () { editStaff(s); });
+      if (!s.isRoot) {
+        btn('重設密碼', function () { resetPw(s); });
+        btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
+      }
+      tb.appendChild(tr);
+    });
+    body.appendChild(card);
+  }
+
+  function editStaff(s) {
+    var isNew = !s;
+    var form = el('<form style="display:flex;flex-direction:column;gap:14px" onsubmit="return false">' +
+      '<label class="field"><span>名稱</span><input class="input" name="name"></label>' +
+      '<label class="field"><span>信箱</span><input class="input" name="email" type="email"></label>' +
+      (isNew ? '<label class="field"><span>密碼</span><input class="input" name="password" type="password" autocomplete="new-password"><span class="hint">至少 8 個字元</span></label>' : '') +
+      (s && s.isRoot ? '<div class="hint">總管由系統寫死，只能修改名稱。</div>' :
+        '<div class="field"><span class="small muted">可管理專案</span><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">' +
+        D.projects.map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"' + (s && s.projects.indexOf(p.prefix) >= 0 ? ' checked' : '') + '><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') +
+        '</div></div>') +
+      '</form>');
+    form.elements.name.value = s ? s.name : '';
+    form.elements.email.value = s ? s.email : '';
+    if (!isNew) form.elements.email.disabled = true;
+    modal({
+      title: isNew ? '新增共同管理員' : '編輯管理員', body: form,
+      buttons: [{ label: '取消', value: null }, {
+        label: '儲存', cls: 'primary', value: function () {
+          return {
+            isNew: isNew, name: form.elements.name.value.trim(), email: form.elements.email.value.trim(),
+            password: isNew ? form.elements.password.value : '',
+            projects: $$('input[name=proj]:checked', form).map(function (i) { return i.value; })
+          };
+        }
+      }]
+    }).then(function (d) {
+      if (!d) return;
+      withBusy(api('saveStaff', d)).then(function () { toast('已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  function resetPw(s) {
+    formDialog({ title: '重設密碼：' + s.name, okLabel: '重設', fields: [{ name: 'pw', label: '新密碼', type: 'password', required: true, hint: '至少 8 個字元，請另行告知本人' }] })
+      .then(function (v) {
+        if (!v) return;
+        withBusy(api('resetStaffPassword', s.email, v.pw)).then(function () { toast('已重設密碼'); }).catch(function (e) { toast(e.message, true); });
+      });
+  }
+
+  function toggleStaff(s) {
+    confirmDialog({ title: (s.enabled ? '停用' : '啟用') + ' ' + s.name, lines: [s.enabled ? '停用後此帳號無法登入' : '啟用後可再次登入'], danger: s.enabled, okLabel: s.enabled ? '停用' : '啟用' })
+      .then(function (ok) {
+        if (!ok) return;
+        withBusy(api('setStaffEnabled', s.email, !s.enabled)).then(function () { toast('已更新'); load(); }).catch(function (e) { toast(e.message, true); });
+      });
+  }
+
+  /* ---------- 專案 ---------- */
+  function renderProjects(body) {
+    var g = el('<div class="card card-pad" style="margin-bottom:16px"><div class="row"><div class="grow"><h3>停止全部專案</h3>' +
+      '<div class="small muted">開啟後所有專案只能瀏覽：不抄寫新回覆、不寄信、不可修改。</div></div>' +
+      '<button class="switch' + (D.globalStop ? ' on' : '') + '" type="button"></button></div></div>');
+    $('.switch', g).addEventListener('click', function () {
+      var on = !D.globalStop;
+      confirmDialog({ title: on ? '停止全部專案' : '恢復全部專案', lines: on ? ['所有專案立即停止運作，只能瀏覽'] : ['恢復各專案原本的狀態'], danger: on, okLabel: on ? '全部停止' : '恢復' })
+        .then(function (ok) {
+          if (!ok) return;
+          withBusy(api('setGlobalStop', on)).then(function () { toast(on ? '已停止全部專案' : '已恢復'); load(); }).catch(function (e) { toast(e.message, true); });
+        });
+    });
+    body.appendChild(g);
+
+    var card = el('<div class="card"><div class="table-wrap"><table class="simple"><thead><tr><th>專案代碼</th><th>營隊名稱</th><th>營期</th><th>設定狀態</th><th>實際狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+    var tb = $('tbody', card);
+    D.projects.forEach(function (p) {
+      var tr = el('<tr><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"></td></tr>');
+      var td = $$('td', tr);
+      td[0].textContent = p.prefix;
+      td[1].textContent = p.name;
+      td[2].textContent = fmtDate(p.start) + ' – ' + fmtDate(p.end);
+      td[3].innerHTML = pill(p.status) + (p.maintBy ? '<div class="small muted">' + esc(p.maintBy) + '</div>' : '');
+      td[4].innerHTML = pill(p.effective);
+      function btn(label, fn, cls) { var b = el('<button class="btn sm ' + (cls || '') + '" type="button" style="margin-left:6px"></button>'); b.textContent = label; b.addEventListener('click', fn); td[5].appendChild(b); }
+      btn('開啟', function () { go('students', { prefix: p.prefix, title: p.name }); });
+      if (p.status !== '已封存') {
+        if (p.status === '已停止') btn('恢復運作', function () { setStatus(p, '運作中'); });
+        else btn('停止專案', function () { setStatus(p, '已停止'); }, 'danger');
+        btn('封存', function () { archive(p); }, 'danger');
+      }
+      tb.appendChild(tr);
+    });
+    if (!D.projects.length) tb.innerHTML = '<tr><td colspan="6"><div class="empty">尚無專案</div></td></tr>';
+    body.appendChild(card);
+  }
+
+  function setStatus(p, status) {
+    var stop = status === '已停止';
+    confirmDialog({ title: (stop ? '停止專案：' : '恢復專案：') + p.name, lines: stop ? ['停止後此專案只能瀏覽，不抄寫新回覆、不寄信'] : ['恢復為運作中'], danger: stop, okLabel: stop ? '停止' : '恢復' })
+      .then(function (ok) {
+        if (!ok) return;
+        withBusy(api('setProjectStatus', p.prefix, status)).then(function () { toast('已更新'); load(); }).catch(function (e) { toast(e.message, true); });
+      });
+  }
+
+  function archive(p) {
+    confirmDialog({ title: '封存專案：' + p.name, lines: ['移除表單觸發器，不再抄寫新回覆', '隱藏並保護「' + p.prefix + '_」開頭的所有活頁', '封存後只能瀏覽，無法恢復運作'], danger: true, okLabel: '封存' })
+      .then(function (ok) {
+        if (!ok) return;
+        withBusy(api('archiveProject', p.prefix)).then(function () { toast('已封存'); load(); }).catch(function (e) { toast(e.message, true); });
+      });
+  }
+
+  /* ---------- 信件範本 ---------- */
+  function renderTemplates(body) {
+    var card = el('<div class="card"><div class="toolbar"><div class="grow small muted">可用變數：{{姓名}} {{營隊名稱}} {{營期}} {{應繳金額}} {{價格類型}} {{匯款帳號}} {{匯款期限}} {{已繳金額}} {{候補順位}} {{團報名單}} {{原因}} {{原金額}} {{訊息}}</div></div>' +
+      '<table class="simple"><thead><tr><th>通知</th><th>主旨</th><th></th></tr></thead><tbody></tbody></table></div>');
+    var tb = $('tbody', card);
+    D.templates.forEach(function (t) {
+      var tr = el('<tr><td></td><td></td><td style="text-align:right"><button class="btn sm" type="button">編輯</button></td></tr>');
+      $$('td', tr)[0].textContent = t.name;
+      $$('td', tr)[1].textContent = t.subject;
+      $('button', tr).addEventListener('click', function () {
+        formDialog({
+          title: '編輯範本：' + t.name, okLabel: '儲存', wide: true,
+          fields: [{ name: 'subject', label: '主旨', value: t.subject, required: true }, { name: 'body', label: '內容', type: 'textarea', value: t.body, required: true }]
+        }).then(function (v) {
+          if (!v) return;
+          withBusy(api('saveTemplate', t.code, v.subject, v.body)).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+        });
+      });
+      tb.appendChild(tr);
+    });
+    body.appendChild(card);
+  }
+
+  load();
+});
+</script>
+</body>
+</html>
