@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>開始新專案｜營隊報名管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</head>
+<body>
+  <main id="app">
+<div class="view-newproject hidden">
+  <div class="page-head">
+    <div>
+      <h1>開始新專案</h1>
+      <div class="sub">連結舉辦方的 Google 表單，設定營期、費用與共同管理員</div>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step on" data-step="1"><b>1</b>連結表單</div>
+    <div class="step" data-step="2"><b>2</b>專案設定</div>
+    <div class="step" data-step="3"><b>3</b>欄位對應</div>
+    <div class="step" data-step="4"><b>4</b>共同管理員</div>
+  </div>
+
+  <form id="np-form" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
+    <section class="card card-pad" id="np-step1">
+      <h2>1. 連結表單</h2>
+      <p class="muted small" id="np-account" style="margin:6px 0 16px"></p>
+      <div class="row wrap" style="align-items:flex-end">
+        <label class="field grow"><span>表單編輯連結<em>*</em></span><input class="input" name="formUrl" placeholder="https://docs.google.com/forms/d/…/edit"></label>
+        <button class="btn primary" type="button" id="np-load">讀取表單</button>
+      </div>
+      <div id="np-form-info" class="hint" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card card-pad hidden" id="np-step2">
+      <h2 style="margin-bottom:16px">2. 專案設定</h2>
+      <div class="grid-3">
+        <label class="field"><span>專案代碼（活頁前綴）<em>*</em></span><input class="input" name="prefix" placeholder="例如 2027S"><span class="hint">2–12 個英文或數字，同一屆所有活頁都用這個前綴</span></label>
+        <label class="field" style="grid-column:span 2"><span>營隊名稱<em>*</em></span><input class="input" name="name"></label>
+        <label class="field"><span>營期開始<em>*</em></span><input class="input" name="start" type="date"></label>
+        <label class="field"><span>營期結束<em>*</em></span><input class="input" name="end" type="date"><span class="hint">超過營期後專案自動變成只能瀏覽</span></label>
+        <label class="field"><span>招生人數上限<em>*</em></span><input class="input" name="capacity" type="number" min="1"></label>
+        <label class="field"><span>原價（元）<em>*</em></span><input class="input" name="price" type="number" min="0"></label>
+        <label class="field"><span>團報價（元）</span><input class="input" name="groupPrice" type="number" min="0"></label>
+        <label class="field"><span>早鳥價（元）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
+        <label class="field"><span>早鳥期限</span><input class="input" name="earlyDeadline" type="date"></label>
+        <label class="field" style="grid-column:span 2"><span>匯款帳號<em>*</em></span><input class="input" name="account" placeholder="銀行代碼、帳號、戶名"></label>
+        <label class="field"><span>匯款期限（報名後幾天）</span><input class="input" name="payDays" type="number" min="0" value="1"><span class="hint">預設 1 = 報名隔天 23:59</span></label>
+        <label class="field"><span>團報預留名額保留時數</span><input class="input" name="holdHours" type="number" min="0" value="72"></label>
+        <label class="field"><span>候補遞補模式</span><select class="input" name="promoteMode"><option>手動</option><option>自動</option></select></label>
+        <label class="field"><span>候補順序</span><select class="input" name="waitOrder"><option>報名時間</option><option>人工</option></select></label>
+      </div>
+    </section>
+
+    <section class="card card-pad hidden" id="np-step3">
+      <h2>3. 欄位對應</h2>
+      <p class="muted small" style="margin:6px 0 16px">系統已依題目文字自動猜測，請確認或修正。「學員姓名」與「Email」必須指定。</p>
+      <div class="grid-3" id="np-mapping"></div>
+      <h3 style="margin:24px 0 10px">名單顯示欄位</h3>
+      <div id="np-display" style="display:flex;flex-direction:column;gap:8px"></div>
+    </section>
+
+    <section class="card card-pad hidden" id="np-step4">
+      <div class="row"><h2 class="grow">4. 共同管理員</h2><button class="btn sm" type="button" id="np-add-admin">新增一位</button></div>
+      <p class="muted small" style="margin:6px 0 16px">共同管理員只能管理這個專案。已是管理員的信箱會直接加入此專案，沿用原本密碼。</p>
+      <div id="np-admins" style="display:flex;flex-direction:column;gap:10px"></div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+      <label class="check"><input type="checkbox" name="notifyExisting"><span>表單上已有的回覆也寄出報名結果通知（預設不寄，只匯入）</span></label>
+      <div class="row" style="margin-top:20px"><span class="spacer"></span><button class="btn primary" type="button" id="np-submit" style="height:42px;padding:0 24px">建立專案</button></div>
+    </section>
+  </form>
+</div>
+<div class="loading" id="page-loading"><div class="spinner"></div>載入中</div>
+  </main>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+<script>
+App.page('newproject', function (root) {
+  var form = $('#np-form', root);
+  var info = null;
+
+  function showStep(n) {
+    for (var i = 2; i <= 4; i++) $('#np-step' + i, root).classList.toggle('hidden', n < 2);
+    $$('.step', root).forEach(function (s) { s.classList.toggle('on', Number(s.getAttribute('data-step')) <= n); });
+  }
+
+  $('#np-account', root).textContent = '請舉辦方把表單的「編輯權限」分享給系統帳號後，再貼上表單的編輯連結。';
+
+  $('#np-load', root).addEventListener('click', function () {
+    var url = form.elements.formUrl.value.trim();
+    if (!url) { toast('請貼上表單編輯連結', true); return; }
+    withBusy(api('inspectForm', url)).then(function (r) {
+      info = r;
+      $('#np-account', root).textContent = '系統帳號：' + r.systemAccount + '（表單編輯權限需分享給此帳號）';
+      $('#np-form-info', root).textContent = '已讀取表單「' + r.title + '」：' + r.questions.length + ' 個題目，目前已有 ' + r.responses + ' 筆回覆。';
+      if (!form.elements.name.value) form.elements.name.value = r.title;
+      renderMapping();
+      showStep(4);
+      if (!$('#np-admins', root).children.length) addAdmin();
+    }).catch(function (e) { toast(e.message, true); });
+  });
+
+  function renderMapping() {
+    var box = $('#np-mapping', root);
+    box.innerHTML = '';
+    info.fieldKeys.forEach(function (k) {
+      var lab = el('<label class="field"><span></span><select class="input"></select></label>');
+      $('span', lab).innerHTML = esc(k.label) + (k.key === 'name' || k.key === 'email' ? '<em>*</em>' : '');
+      var sel = $('select', lab);
+      sel.name = 'map_' + k.key;
+      sel.appendChild(new Option('（未對應）', ''));
+      info.questions.forEach(function (q) { sel.appendChild(new Option(q, q, false, info.mapping[k.key] === q)); });
+      sel.addEventListener('change', renderDisplayDefaults);
+      box.appendChild(lab);
+    });
+    var disp = $('#np-display', root);
+    disp.innerHTML = '';
+    info.questions.forEach(function (q) {
+      var c = el('<label class="check"><input type="checkbox" name="disp"><span></span></label>');
+      $('input', c).value = q;
+      $('input', c).checked = info.display.indexOf(q) >= 0;
+      $('span', c).textContent = q;
+      disp.appendChild(c);
+    });
+  }
+
+  var DEFAULT_KEYS = ['name', 'parentPhone', 'studentPhone', 'idNumber', 'birth', 'diet', 'specialDiet', 'allergy'];
+  function renderDisplayDefaults() {
+    var chosen = DEFAULT_KEYS.map(function (k) { return form.elements['map_' + k].value; }).filter(String);
+    $$('input[name=disp]', root).forEach(function (i) { if (chosen.indexOf(i.value) >= 0) i.checked = true; });
+  }
+
+  function addAdmin() {
+    var row = el('<div class="grid-3" style="grid-template-columns:1fr 1.4fr 1fr auto;align-items:end">' +
+      '<label class="field"><span>名稱</span><input class="input" data-k="name"></label>' +
+      '<label class="field"><span>信箱</span><input class="input" type="email" data-k="email"></label>' +
+      '<label class="field"><span>密碼</span><input class="input" type="password" data-k="password" autocomplete="new-password" placeholder="至少 8 個字元"></label>' +
+      '<button class="btn ghost icon" type="button" aria-label="移除">✕</button></div>');
+    $('button', row).addEventListener('click', function () { row.remove(); });
+    $('#np-admins', root).appendChild(row);
+  }
+  $('#np-add-admin', root).addEventListener('click', addAdmin);
+
+  function collect() {
+    var e = form.elements;
+    var mapping = {};
+    info.fieldKeys.forEach(function (k) { var v = e['map_' + k.key].value; if (v) mapping[k.key] = v; });
+    var admins = $$('#np-admins > div', root).map(function (r) {
+      var o = {};
+      $$('[data-k]', r).forEach(function (i) { o[i.getAttribute('data-k')] = i.value.trim(); });
+      return o;
+    }).filter(function (a) { return a.email || a.name || a.password; });
+    return {
+      formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(),
+      start: e.start.value, end: e.end.value, capacity: e.capacity.value, price: e.price.value,
+      groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
+      account: e.account.value.trim(), payDays: e.payDays.value, holdHours: e.holdHours.value,
+      promoteMode: e.promoteMode.value, waitOrder: e.waitOrder.value, mapping: mapping,
+      display: $$('input[name=disp]:checked', root).map(function (i) { return i.value; }),
+      coAdmins: admins, notifyExisting: e.notifyExisting.checked
+    };
+  }
+
+  function check(d) {
+    if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
+    var req = [['name', '營隊名稱'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價'], ['account', '匯款帳號']];
+    for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
+    if (d.end < d.start) return '營期結束不可早於開始';
+    if (!d.mapping.name) return '請指定「學員姓名」對應的題目';
+    if (!d.mapping.email && info.questions.indexOf('電子郵件地址') < 0) return '請指定「Email」對應的題目';
+    for (var j = 0; j < d.coAdmins.length; j++) {
+      var a = d.coAdmins[j];
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) return '共同管理員信箱格式不正確：' + (a.email || '(空白)');
+      if (!a.name) return '請填寫共同管理員名稱：' + a.email;
+    }
+    return '';
+  }
+
+  $('#np-submit', root).addEventListener('click', function () {
+    if (!info) { toast('請先讀取表單', true); return; }
+    var d = collect();
+    var err = check(d);
+    if (err) { toast(err, true); return; }
+    confirmDialog({
+      title: '建立專案「' + d.name + '」',
+      lines: [
+        '專案代碼：' + d.prefix + '（活頁 ' + d.prefix + '_學員）',
+        '營期：' + d.start + ' – ' + d.end + '，上限 ' + d.capacity + ' 人',
+        '原價 ' + d.price + (d.groupPrice ? '／團報 ' + d.groupPrice : '') + (d.earlyPrice ? '／早鳥 ' + d.earlyPrice + '（至 ' + (d.earlyDeadline || '未設定') + '）' : ''),
+        '共同管理員：' + (d.coAdmins.map(function (a) { return a.name + ' ' + a.email; }).join('、') || '無'),
+        '表單既有 ' + info.responses + ' 筆回覆將匯入' + (d.notifyExisting ? '並寄出通知' : '，不寄通知'),
+        '之後每筆新回覆會即時判斷並自動寄出報名結果'
+      ],
+      okLabel: '建立專案'
+    }).then(function (ok) {
+      if (!ok) return;
+      withBusy(api('createProject', d)).then(function (r) {
+        toast('專案已建立，匯入 ' + r.imported + ' 筆回覆');
+        if (r.admins && r.admins.length) toast(r.admins.join('；'));
+        go('students', { prefix: r.prefix, title: d.name });
+      }).catch(function (e) { toast(e.message, true); });
+    });
+  });
+});
+</script>
+</body>
+</html>
