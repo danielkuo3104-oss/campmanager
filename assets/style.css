@@ -284,6 +284,11 @@
   .bar.split > i { border-radius: 0; flex: none; }
   .bar.split > i:first-child { border-radius: 999px 0 0 999px; }
   .bar.split > i.rsv { background: repeating-linear-gradient(135deg, var(--brand) 0 3px, transparent 3px 6px); opacity: .55; border-radius: 0 999px 999px 0; }
+  .export-checks-wrap { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .export-checks { display: flex; flex-direction: column; gap: 6px; }
+  .export-check-row { display: flex; gap: 6px; align-items: center; }
+  .export-check-row .input { max-width: 200px; }
+  .bank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
   .plus-rsv { color: var(--text-3); font-weight: 600; }
 
   /* 名單表格 */
