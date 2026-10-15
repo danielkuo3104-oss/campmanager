@@ -408,6 +408,20 @@ App.page('students', function (root, params) {
         ask('審核通過', [{ name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: s.price,
           hint: '依報名時的價格預設 ' + money(s.price) + ' 元，有減免請改成實際金額。匯款期限從現在起算，下一步可預覽「審核通過與繳費通知」。' }], function (v) { run(s, 'reviewPass', v); });
       });
+      add('審核未通過…', true, function () {
+        ask('審核未通過', [
+          { name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: s.price, hint: '預設依一般方案計算的 ' + money(s.price) + ' 元。會改為已報名並寄「審核未通過通知」，匯款期限從現在起算。' },
+          { name: 'reason', label: '補充說明（選填，會寫進信裡）', type: 'textarea' }
+        ], function (v) { run(s, 'reviewFail', v); });
+      });
+      items.push({ sep: true });
+    }
+    if (s.status === '候補中' && s.groupId) {
+      items.push({ header: '團報名額不足' });
+      add('超收（整團直接錄取）…', true, function () {
+        ask('超收', [{ name: 'sendMail', label: '寄錄取通知給這團的候補學員（下一步可預覽）', type: 'checkbox', value: true }], function (v) { run(s, 'overAdmit', v); });
+      });
+      add('改為個人報名…', true, function () { askIndividual(s); });
       items.push({ sep: true });
     }
     items.push({ header: '寄送通知' });
@@ -436,6 +450,7 @@ App.page('students', function (root, params) {
       ask('調整候補順位', [{ name: 'rank', label: '新的順位', type: 'number', required: true, value: s.rank }], function (v) { run(s, 'setRank', v); });
     });
     add('調整團報歸屬…', tierOk(s), function () { askGroup(s); });
+    if (s.groupId && D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '程序完成') add('改為個人報名（重算價格）…', true, function () { askIndividual(s); });
     if (D.project.squads > 0) add('調整小隊…', tierOk(s), function () {
       var opts = [{ value: '', label: '未分隊' }];
       for (var q = 1; q <= D.project.squads; q++) opts.push({ value: String(q), label: '第 ' + q + ' 隊' });
@@ -473,6 +488,21 @@ App.page('students', function (root, params) {
 
   function ask(title, fields, then, danger) {
     formDialog({ title: title, fields: fields, danger: danger }).then(function (v) { if (v) then(v); });
+  }
+
+  /** 改為個人報名：價格依報名時間、團報價或自訂；候補中的人沒有空位時可以超收 */
+  function askIndividual(s) {
+    var p = D.project;
+    var opts = [{ value: 'auto', label: '依報名時間（早鳥價或原價，系統自動判斷）' }];
+    if (p.groupPrice > 0) opts.push({ value: 'group', label: '維持團報價 ' + money(p.groupPrice) + ' 元' });
+    opts.push({ value: 'manual', label: '自訂金額' });
+    var fields = [
+      { name: 'priceMode', label: '價格', type: 'select', options: opts, value: 'auto' },
+      { name: 'amount', label: '自訂金額（元）', type: 'number', value: s.price, hint: '選「自訂金額」時才會用到。下一步會顯示算出來的金額再確認。' }
+    ];
+    if (s.status === '候補中') fields.push({ name: 'over', label: '沒有空位也錄取（超收）', type: 'checkbox', value: false });
+    fields.push({ name: 'sendMail', label: s.status === '候補中' ? '寄報名成功通知（下一步可預覽）' : '金額有變時寄「報名費用異動通知」', type: 'checkbox', value: true });
+    ask('改為個人報名：' + s.name, fields, function (v) { run(s, 'toIndividual', v); });
   }
 
   function askGroup(s) {
@@ -617,8 +647,12 @@ App.page('students', function (root, params) {
       '</div></div><div class="drawer-section"><h3>費用與匯款</h3><div class="grid-2">' +
       f('price', '原價', 'number', p.price) + f('groupPrice', '團報價', 'number', p.groupPrice) +
       f('earlyPrice', '早鳥價', 'number', p.earlyPrice) + f('earlyDeadline', '早鳥期限', 'date', p.earlyDeadline) +
-      f('account', '匯款帳號', 'text', p.account) + f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
-      '</div><div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
+      f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
+      '</div><div class="field bank-fields" style="margin-top:10px"><span>匯款帳號</span><div class="bank-grid">' +
+      [['bank', '銀行（例如 台灣銀行）'], ['code', '銀行代碼（例如 004）'], ['branch', '分行（例如 新竹分行）'], ['name', '戶名'], ['no', '帳號']].map(function (x) {
+        return '<input class="input" name="bank_' + x[0] + '" placeholder="' + esc(x[1]) + '" aria-label="' + esc(x[1]) + '" value="' + esc(p.bank ? p.bank[x[0]] || '' : '') + '"' + (ro ? ' disabled' : '') + '>';
+      }).join('') + '</div><span class="hint">' + (p.bank ? '信件裡的 {{匯款帳號}} 會顯示：' + esc(p.account) : '目前是舊格式：「' + esc(p.account) + '」，請改填銀行、分行、戶名、帳號') + '</span></div>' +
+      '<div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
       f('name', '營隊名稱', 'text', p.name) + f('signature', '信件署名（每封信最後置中顯示）', 'text', p.signature, '留空時用「' + (p.name || '營隊名稱') + ' 籌辦團隊 敬上」；可用粗體、顏色、螢光、字級') + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
@@ -726,10 +760,18 @@ App.page('students', function (root, params) {
       var dateErr = dateOrderError({ regStart: form.elements.regStart.value, earlyDeadline: form.elements.earlyDeadline.value, regEnd: form.elements.regEnd.value, start: form.elements.start.value, end: form.elements.end.value });
       if (dateErr) { toast(dateErr, true); return; }
       var patch = {};
-      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'account', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains'].forEach(function (k) {
+      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains'].forEach(function (k) {
         var v = form.elements[k].value;
         if (String(v) !== String(p[k] === undefined ? '' : p[k])) patch[k] = v;
       });
+      var bank = {};
+      ['bank', 'code', 'branch', 'name', 'no'].forEach(function (k) { bank[k] = form.elements['bank_' + k].value.trim(); });
+      var bankChanged = ['bank', 'code', 'branch', 'name', 'no'].some(function (k) { return bank[k] !== (p.bank ? p.bank[k] || '' : ''); });
+      if (bankChanged || !p.bank) {
+        var be = bankError(bank);
+        if (be && (bankChanged || p.bank)) { toast(be, true); return; }
+        if (!be) patch.bank = bank;
+      }
       var mapping = {};
       fk.forEach(function (k) {
         if (k.multi) { var arr = $$('input[name=map_' + k.key + ']:checked', form).map(function (i) { return i.value; }); if (arr.length) mapping[k.key] = arr; return; }
