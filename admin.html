@@ -351,9 +351,12 @@ App.page('admin', function (root, params) {
 
   /* ---------- 信件範本 ---------- */
   function editTemplate(t) {
-    openTemplateEditor(t, { footer: D.mailFooter, closingNote: '（附註與署名示意：各專案可在專案設定修改；署名留空時用「營隊名稱 籌辦團隊 敬上」）' }).then(function (v) {
+    openTemplateEditor(t, {
+      headerColor: D.mailHeaderColor, headerLabel: '信件標頭顏色（系統預設）', headerHint: '沒自訂顏色的專案都用這個',
+      onSaveHeader: function (hx) { return api('saveMailHeaderColor', hx).then(function () { D.mailHeaderColor = hx; }); },
+      footer: D.mailFooter, footerWhere: '系統管理 → 信件範本最下方；各專案也可在專案設定改', sigWhere: '各專案可在專案設定 → 信件署名改' }).then(function (v) {
       if (!v) return;
-      withBusy(api('saveTemplate', t.code, v.subject, v.body)).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+      withBusy(api('saveTemplate', t.code, v.subject, v.body, { footer: v.footer, signature: v.signature })).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
     });
   }
 
