@@ -30,7 +30,9 @@
       <button class="btn" type="button" id="st-sync">同步表單</button>
       <button class="btn" type="button" id="st-bulk">群發通知</button>
       <button class="btn" type="button" id="st-export">匯出 PDF</button>
+      <button class="btn" type="button" id="st-tpl">信件範本</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
+      <span class="sync-note" id="st-synced"></span>
     </div>
   </div>
   <div id="st-banner"></div>
@@ -112,7 +114,7 @@ App.page('students', function (root, params) {
 
   function matches(s) {
     var t = tier(s);
-    if (filter === 'warn' && t !== 0) return false;
+    if (filter === 'warn' && t !== 0 && !(s.idInvalid && t < 4)) return false;
     if (filter === 'todo' && t !== 1 && t !== 0) return false;
     if (filter === 'done' && t !== 2) return false;
     if (filter === 'wait' && t !== 3) return false;
@@ -143,6 +145,9 @@ App.page('students', function (root, params) {
       banner.textContent = '系統維護中：所有寄出的信件會改寄到 ' + p.maintBy + '，不會寄給學員。';
     }
     ['#st-sync', '#st-bulk'].forEach(function (id) { $(id, root).disabled = D.readOnly; });
+    var ls = D.lastSync;
+    $('#st-synced', root).textContent = ls && ls.t ? '上次同步 ' + fmtTime(ls.t) + (/^系統/.test(ls.by) ? '（自動）' : '') : '尚未同步';
+    $('#st-synced', root).title = ls && ls.t ? '由 ' + ls.by + ' 同步' : '';
 
     var st = D.stats;
     var pct = st.capacity ? Math.min(100, Math.round(st.active / st.capacity * 100)) : 0;
@@ -150,8 +155,8 @@ App.page('students', function (root, params) {
       stat('報名人數', st.active + '<small>/ ' + st.capacity + '</small>', '剩餘名額 ' + st.available + (st.reserved ? '（團報預留 ' + st.reserved + '）' : ''), pct) +
       stat('完成度', st.completion + '<small>%</small>', '程序完成 ' + st.done + ' 人', st.completion) +
       stat('預計收入', money(st.expectedIncome) + '<small>元</small>', '已錄取者應繳合計') +
-      stat('已確認繳款', money(st.confirmedIncome) + '<small>元</small>', '程序完成者合計') +
-      stat('警示', st.warnings + '<small>人</small>', st.outside ? '含招生期外 ' + st.outside + ' 人待決定' : '招生期外、匯款逾期、匯款異常') +
+      stat('已確認繳款', money(st.confirmedIncome) + '<small>元</small>', st.refunded || st.retained ? '含取消後保留 ' + money(st.retained) + '（已退 ' + money(st.refunded) + '）' : '程序完成者合計') +
+      stat('警示', st.warnings + '<small>人</small>', (st.outside ? '含招生期外 ' + st.outside + ' 人待決定' : '招生期外、匯款逾期、匯款異常') + (st.idInvalid ? '；身分證有誤 ' + st.idInvalid + ' 人' : '')) +
       stat('候補中', st.waitlist + '<small>人</small>', '取消 ' + st.cancelled + '　失敗 ' + st.failed);
 
     var chips = $('#st-chips', root);
@@ -193,7 +198,7 @@ App.page('students', function (root, params) {
 
   function renderTable() {
     var cols = columns();
-    $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
+    $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c) { return '<th class="th-clip" title="' + esc(c) + '">' + esc(c) + '</th>'; }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
     var list = sorted(D.students).filter(matches);
     $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 筆';
     var body = $('#st-body', root);
@@ -218,12 +223,17 @@ App.page('students', function (root, params) {
         tags += '<span class="tag group">團報</span>';
         if (s.groupIncomplete) tags += '<span class="tag group">未齊</span>';
       }
+      if (s.idInvalid) tags += '<span class="tag bad" title="身分證字號檢查碼不正確，報名成功信已提醒更正">身分證有誤</span>';
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
       var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
       var html = '<td>' + pill(s.status) + deadlineNote + '</td>';
       cols.forEach(function (c, i) {
-        html += '<td class="cell-clip">' + valueHtml(s.data[c]) + (i === 0 ? tags : '') + '</td>';
+        // 欄寬固定、過長以「…」截斷；完整內容滑過看提示，或點該列看詳細資料
+        var raw = String(s.data[c] === undefined || s.data[c] === null ? '' : s.data[c]);
+        var tip = /^https?:\/\//i.test(raw) ? '' : ' title="' + esc(raw) + '"';
+        if (i === 0) html += '<td class="cell-name"><div class="clip-1"' + tip + '>' + valueHtml(s.data[c]) + '</div>' + (tags ? '<div>' + tags + '</div>' : '') + '</td>';
+        else html += '<td class="cell-clip"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
       });
       var last = s.history && s.history.length ? s.history[s.history.length - 1] : null;
       html += '<td class="note-cell">' + (last ? '<div class="last">' + esc(last.msg) + '</div><div class="small" style="color:var(--text-3)">' + esc(fmtTime(last.t)) + '　·　共 ' + s.history.length + ' 筆</div>' : '') + '</td>';
@@ -254,16 +264,16 @@ App.page('students', function (root, params) {
     add('補寄報名與繳款通知', has(s, ACTIVE_NOT_DONE.concat(['候補中'])), function () { run(s, 'resend', {}); });
     add('匯款期限鄰近通知', has(s, ['已報名', '匯款逾期']), function () { run(s, 'deadline', {}); });
     add('匯款異常通知…', has(s, ACTIVE_NOT_DONE), function () {
-      ask('匯款異常通知', [{ name: 'reason', label: '異常原因', type: 'textarea', required: true, placeholder: '例如：匯款金額不足 500 元／查無後五碼' }], function (v) { run(s, 'abnormal', v); });
+      ask('匯款異常通知', [{ name: 'reason', label: '異常原因', type: 'textarea', required: true, placeholder: '例如：匯款金額不足 500 元／查無後五碼', presets: P('abnormal') }], function (v) { run(s, 'abnormal', v); });
     });
     add('報名費用異動通知…', has(s, ACTIVE_NOT_DONE.concat(['候補中'])), function () {
       ask('報名費用異動通知', [
         { name: 'amount', label: '新的應繳金額（元）', type: 'number', required: true, value: s.price, hint: '目前 ' + money(s.price) + ' 元。金額只能透過此通知修改，會寫回後端並寄信。' },
-        { name: 'reason', label: '異動原因', type: 'textarea', required: true }
+        { name: 'reason', label: '異動原因', type: 'textarea', required: true, presets: P('feeChange') }
       ], function (v) { run(s, 'feeChange', v); });
     });
     add('寄送特殊訊息…', !!s.email, function () {
-      ask('寄送特殊訊息', [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, hint: '可使用 {{姓名}}、{{營隊名稱}}、{{應繳金額}} 等變數' }], function (v) { run(s, 'custom', v); });
+      ask('寄送特殊訊息', [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, format: true, presets: P('message'), presetJoin: '\n', hint: '可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數；下一步會看到預覽' }], function (v) { run(s, 'custom', v); });
     });
     items.push({ sep: true }, { header: '報名狀態' });
     add('確認繳款…', has(s, ACTIVE_NOT_DONE), function () {
@@ -277,17 +287,22 @@ App.page('students', function (root, params) {
     add('調整團報歸屬…', tierOk(s), function () { askGroup(s); });
     add('手動變更狀態…', true, function () {
       var opts = Object.keys(D.statuses).map(function (k) { return D.statuses[k]; }).filter(function (x) { return x !== s.status; });
-      ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true }], function (v) { run(s, 'setStatus', v); });
+      ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }], function (v) { run(s, 'setStatus', v); });
     });
     items.push({ sep: true });
     add('取消報名…', !has(s, ['報名取消', '報名失敗']), function () {
-      ask('取消報名', [
-        { name: 'reason', label: '取消原因', type: 'textarea', required: true },
-        { name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true }
-      ], function (v) { run(s, 'cancel', v); }, true);
+      var paidAmt = s.paid !== '' && Number(s.paid) > 0 ? Number(s.paid) : 0;
+      var fields = [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel'),
+        hint: paidAmt ? '' : '此學員尚未確認繳款，不需退款，取消後只從預計收入扣除。' }];
+      if (paidAmt) fields.push({ name: 'refund', label: '退回金額（元）', type: 'number', required: true, value: paidAmt,
+        hint: '已確認繳款 ' + money(paidAmt) + ' 元，預設全額退款。不是全退時請改成實際退回的金額，沒退的部分仍計入收入。信件可用 {{退款金額}}。' });
+      fields.push({ name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true });
+      ask('取消報名', fields, function (v) { run(s, 'cancel', v); }, true);
     }, true);
     popMenu(anchor, items);
   }
+
+  function P(key) { return D.presets && D.presets[key] || []; }
 
   function tierOk(s) { return ['報名取消', '報名失敗'].indexOf(s.status) < 0; }
 
@@ -336,6 +351,7 @@ App.page('students', function (root, params) {
       ['應繳金額', money(s.price) + ' 元' + (s.priceType ? '（' + s.priceType + '）' : '')],
       ['匯款期限', fmtTime(s.deadline) || '—'],
       ['已繳金額', s.paid === '' ? '—' : money(s.paid) + ' 元'],
+      ['退款金額', s.status === '報名取消' ? (s.refund !== '' && s.refund !== undefined ? money(s.refund) + ' 元' : (s.paid !== '' && Number(s.paid) > 0 ? '全額（舊資料未記錄）' : '未繳費，不需退款')) : '—'],
       ['候補順位', s.rank === '' ? '—' : s.rank],
       ['團報', g ? g.names.join('、') + '（預期 ' + g.expected + ' 人' + (s.groupIncomplete ? '，未齊' : '') + (g.reserved ? '，預留 ' + g.reserved + ' 名額至 ' + fmtTime(g.holdUntil) : '') + '）' : (s.partners && s.partners.length ? '填寫同伴：' + s.partners.join('、') : '個人報名')],
       ['結果通知', /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出（' + fmtTime(s.notified.split(' ')[0]) + '）' : (s.notified || '—')]
@@ -377,6 +393,39 @@ App.page('students', function (root, params) {
   }
 
   /* ---------- 專案設定 ---------- */
+  /* ---------- 本專案信件範本 ---------- */
+  function openProjectTemplates() {
+    var ro = D.readOnly;
+    withBusy(api('getProjectTemplates', prefix)).then(function (T) {
+      var d = drawer({ title: '信件範本', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+      d.body.innerHTML =
+        '<div class="drawer-section"><h3>通知範本</h3><p class="hint" style="margin-top:0">預設使用系統範本（總管在系統管理維護）。可以直接把飯店、總召、集合地點等資訊打進信裡；修改只影響這個專案，隨時可恢復系統預設。</p>' +
+        '<div class="tpl-list"></div></div>';
+      var list = $('.tpl-list', d.body);
+      T.templates.forEach(function (t) {
+        var r = el('<div class="tpl-row"><div class="grow"><div class="tpl-name"></div><div class="small muted tpl-subj"></div></div><span class="pill"></span><button class="btn sm" type="button">' + (ro ? '查看' : '編輯') + '</button></div>');
+        $('.tpl-name', r).textContent = t.name;
+        $('.tpl-subj', r).textContent = t.subject;
+        $('.pill', r).className = 'pill ' + (t.custom ? 'warn' : 'mute');
+        $('.pill', r).textContent = t.custom ? '本專案自訂' : '系統預設';
+        $('button', r).addEventListener('click', function () {
+          openTemplateEditor(t, {
+            signature: D.project.signature || '', campName: D.project.name,
+            note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
+            resetLabel: t.custom && !ro ? '恢復系統預設' : null
+          }).then(function (v) {
+            if (!v || ro) return;
+            var call = v.reset ? api('saveProjectTemplate', prefix, t.code, null) : api('saveProjectTemplate', prefix, t.code, v.subject, v.body);
+            withBusy(call).then(function () {
+              toast(v.reset ? '已恢復系統預設' : '已儲存本專案範本'); d.close(); openProjectTemplates();
+            }).catch(function (e) { toast(e.message, true); });
+          });
+        });
+        list.appendChild(r);
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
   function openSettings() {
     var p = D.project;
     var d = drawer({ title: '專案設定', sub: esc(p.prefix + '　·　' + p.name) });
@@ -401,15 +450,28 @@ App.page('students', function (root, params) {
       f('account', '匯款帳號', 'text', p.account) + f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
       '</div><div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
-      f('name', '營隊名稱', 'text', p.name) + '<span></span>' + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
+      f('name', '營隊名稱', 'text', p.name) + f('signature', '信件署名（每封信最後置中顯示）', 'text', p.signature, '例如：清大==醫工營==籌辦團隊 敬上；可用粗體、顏色、螢光') + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
       '</div></div>' +
       '<div class="drawer-section"><h3>表單欄位對應</h3><p class="hint" style="margin-top:0">系統用關鍵字找欄位，找錯或找不到時請手動指定。</p><div class="grid-2">' +
-      fk.map(function (k) { return '<label class="field"><span>' + esc(k.label) + '</span><select class="input" name="map_' + k.key + '">' + qOpts(p.mapping[k.key]) + '</select></label>'; }).join('') +
+      fk.map(function (k) {
+        if (k.multi) {
+          var cur = [].concat(p.mapping[k.key] || []);
+          return '<div class="field multi-map"><span>' + esc(k.label) + '（可複選）</span><div class="multi-q">' + (p.questions || []).map(function (q) {
+            return '<label class="check"><input type="checkbox" name="map_' + k.key + '" value="' + esc(q) + '"' + (cur.indexOf(q) >= 0 ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>' + esc(q) + '</span></label>';
+          }).join('') + '</div><span class="hint">表單把每位同伴分成不同題目時，全部勾起來。</span></div>';
+        }
+        return '<label class="field"><span>' + esc(k.label) + '</span><select class="input" name="map_' + k.key + '">' + qOpts(p.mapping[k.key]) + '</select></label>';
+      }).join('') +
       '</div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">名單顯示欄位</h3><button class="btn sm" type="button" id="set-refresh"' + (ro ? ' disabled' : '') + '>重新讀取表單題目</button></div>' +
       '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' + (p.questions || []).map(function (q) {
         return '<label class="check"><input type="checkbox" name="disp" value="' + esc(q) + '"' + (p.display.indexOf(q) >= 0 ? ' checked' : '') + '><span>' + esc(q) + '</span></label>';
+      }).join('') + '</div></div>' +
+      '<div class="drawer-section"><h3>報名結果信附上的回覆內容</h3><p class="hint" style="margin-top:0">勾選的題目會以表格附在報名成功、候補、遞補錄取通知最後，讓報名者確認自己的資料。其他範本可放 {{回覆內容}} 指定位置。</p>' +
+      '<label class="check" style="margin-bottom:10px"><input type="checkbox" name="echoMask"' + (p.echoMask ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>身分證字號部分遮蔽（例如 A12****789）。預設不遮蔽，讓報名者確認保險用的完整號碼</span></label>' +
+      '<div class="multi-q">' + (p.questions || []).map(function (q) {
+        return '<label class="check"><input type="checkbox" name="echo" value="' + esc(q) + '"' + ((p.echo || []).indexOf(q) >= 0 ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>' + esc(q) + '</span></label>';
       }).join('') + '</div></div>' +
       '<div class="row" style="position:sticky;bottom:0;background:var(--surface);padding:12px 0"><span class="spacer"></span><button class="btn primary" type="submit"' + (ro ? ' disabled' : '') + '>儲存設定</button></div></form>';
 
@@ -442,17 +504,27 @@ App.page('students', function (root, params) {
       }).catch(function (e) { toast(e.message, true); });
     });
 
+    guardDates($('#set-form', d.body));
     $('#set-form', d.body).addEventListener('submit', function (e) {
       e.preventDefault();
       var form = e.target;
+      var dateErr = dateOrderError({ regStart: form.elements.regStart.value, earlyDeadline: form.elements.earlyDeadline.value, regEnd: form.elements.regEnd.value, start: form.elements.start.value, end: form.elements.end.value });
+      if (dateErr) { toast(dateErr, true); return; }
       var patch = {};
-      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'account', 'payDays', 'name', 'regStart', 'regEnd', 'start', 'end'].forEach(function (k) {
+      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'account', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end'].forEach(function (k) {
         var v = form.elements[k].value;
         if (String(v) !== String(p[k] === undefined ? '' : p[k])) patch[k] = v;
       });
       var mapping = {};
-      fk.forEach(function (k) { var v = form.elements['map_' + k.key].value; if (v) mapping[k.key] = v; });
+      fk.forEach(function (k) {
+        if (k.multi) { var arr = $$('input[name=map_' + k.key + ']:checked', form).map(function (i) { return i.value; }); if (arr.length) mapping[k.key] = arr; return; }
+        var v = form.elements['map_' + k.key].value; if (v) mapping[k.key] = v;
+      });
       if (JSON.stringify(mapping) !== JSON.stringify(p.mapping)) patch.mapping = mapping;
+      var echo = $$('input[name=echo]:checked', form).map(function (i) { return i.value; });
+      if (JSON.stringify(echo) !== JSON.stringify(p.echo || [])) patch.echo = echo;
+      var mask = form.elements.echoMask.checked;
+      if (mask !== !!p.echoMask) patch.echoMask = mask;
       var disp = $$('input[name=disp]:checked', form).map(function (i) { return i.value; });
       if (JSON.stringify(disp) !== JSON.stringify(p.display)) patch.display = disp;
       if (!Object.keys(patch).length) { toast('沒有變更'); return; }
@@ -472,10 +544,15 @@ App.page('students', function (root, params) {
       statuses.map(function (s) { return '<label class="check"><input type="checkbox" name="st" value="' + esc(s) + '"' + (s === '程序完成' ? ' checked' : '') + '><span>' + esc(s) + '</span></label>'; }).join('') +
       '</div></div>' +
       '<label class="field"><span>通知類型</span><select class="input" name="code"><option value="PRE_CAMP">營前通知（使用範本）</option><option value="CUSTOM">特殊訊息（自訂主旨與內容）</option></select></label>' +
-      '<label class="field" data-for="PRE_CAMP"><span>通知內容</span><textarea class="input" name="message" placeholder="例如：報到時間、地點、攜帶物品…"></textarea></label>' +
+      '<div class="field" data-for="PRE_CAMP"><span>通知內容</span><textarea class="input" name="message" placeholder="例如：報到時間、地點、攜帶物品…"></textarea></div>' +
       '<label class="field hidden" data-for="CUSTOM"><span>主旨</span><input class="input" name="subject"></label>' +
-      '<label class="field hidden" data-for="CUSTOM"><span>內容</span><textarea class="input" name="body"></textarea><span class="hint">可使用 {{姓名}}、{{營隊名稱}}、{{營期}} 等變數</span></label>' +
+      '<div class="field hidden" data-for="CUSTOM"><span>內容</span><textarea class="input" name="body"></textarea><span class="hint">可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數</span></div>' +
       '</form>');
+    var msgTa = body.elements.message, bodyTa = body.elements.body;
+    msgTa.parentNode.insertBefore(formatToolbar(msgTa, { vars: true }), msgTa);
+    msgTa.parentNode.appendChild(presetChips(msgTa, P('message'), '\n'));
+    bodyTa.parentNode.insertBefore(formatToolbar(bodyTa, { vars: true }), bodyTa);
+    bodyTa.parentNode.insertBefore(presetChips(bodyTa, P('message'), '\n'), bodyTa.nextSibling);
     body.elements.code.addEventListener('change', function () {
       $$('[data-for]', body).forEach(function (x) { x.classList.toggle('hidden', x.getAttribute('data-for') !== body.elements.code.value); });
     });
@@ -511,6 +588,7 @@ App.page('students', function (root, params) {
   $('#st-search', root).addEventListener('input', function (e) { search = e.target.value.trim().toLowerCase(); if (D) renderTable(); });
   $('#st-settings', root).addEventListener('click', function () { if (D) openSettings(); });
   $('#st-bulk', root).addEventListener('click', function () { if (D) openBulk(); });
+  $('#st-tpl', root).addEventListener('click', function () { if (D) openProjectTemplates(); });
   $('#st-export', root).addEventListener('click', function () {
     if (!D) return;
     var f = FILTERS.filter(function (x) { return x.key === filter; })[0];
@@ -528,7 +606,12 @@ App.page('students', function (root, params) {
     }).catch(function (e) { toast(e.message, true); });
   });
 
-  load();
+  load().then(function () {
+    // 從通知鈴鐺點進來：直接打開那位學員
+    if (!params.student || !D) return;
+    var hit = D.students.filter(function (x) { return x.id === params.student; })[0];
+    if (hit) openDetail(hit); else toast('找不到這位學員，可能已被移除', true);
+  });
 });
 </script>
 </body>
