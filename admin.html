@@ -29,6 +29,7 @@
     <button type="button" data-tab="staff" class="on">人員</button>
     <button type="button" data-tab="projects">專案</button>
     <button type="button" data-tab="templates">信件範本</button>
+    <button type="button" data-tab="perms">權限與移交</button>
   </div>
   <div id="ad-body"><div class="loading"><div class="spinner"></div>載入中</div></div>
 </div>
@@ -38,11 +39,25 @@
   <div id="toast-root"></div>
 <script>
 App.page('admin', function (root, params) {
-  var D = null, tab = params.tab === 'projects' || params.tab === 'templates' ? params.tab : 'staff';
-  $$('#ad-tabs button', root).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === tab); });
+  var D = null, tab = params.tab || 'staff';
+  /** 每個分頁需要的權限（任一項） */
+  var TAB_PERMS = { staff: ['approveStaff', 'manageStaff'], projects: ['approveProject', 'projectStatus', 'siteMaint'], templates: ['templates'], perms: ['__root'] };
+  function can(k) { return D.me.isRoot || (k !== '__root' && D.me.perms.indexOf(k) >= 0); }
+  function tabAllowed(t) { return (TAB_PERMS[t] || []).some(can); }
 
   function load() {
-    return api('getAdminData').then(function (d) { D = d; render(); }).catch(function (e) { toast(e.message, true); });
+    return api('getAdminData').then(function (d) {
+      D = d;
+      var first = null;
+      $$('#ad-tabs button', root).forEach(function (b) {
+        var t = b.getAttribute('data-tab'), okTab = tabAllowed(t);
+        b.classList.toggle('hidden', !okTab);
+        if (okTab && !first) first = t;
+      });
+      if (!tabAllowed(tab)) tab = first;
+      $$('#ad-tabs button', root).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === tab); });
+      render();
+    }).catch(function (e) { toast(e.message, true); $('#ad-body', root).innerHTML = '<div class="card card-pad empty"></div>'; $('#ad-body .empty', root).textContent = e.message; });
   }
 
   $$('#ad-tabs button', root).forEach(function (b) {
@@ -60,14 +75,18 @@ App.page('admin', function (root, params) {
     if (tab === 'staff') renderStaff(body);
     if (tab === 'projects') renderProjects(body);
     if (tab === 'templates') renderTemplates(body);
+    if (tab === 'perms') renderPerms(body);
   }
+
+  function permLabel(k) { var x = D.permDefs.filter(function (p) { return p.key === k; })[0]; return x ? x.label : k; }
 
   /* ---------- 人員 ---------- */
   function renderStaff(body) {
     var pending = D.staff.filter(function (s) { return s.applyStatus === '待審核'; });
-    if (pending.length) {
+    if (pending.length && can('approveStaff')) {
       var pc = el('<div class="card" style="margin-bottom:16px"><div class="toolbar"><h3 class="grow">待審核的註冊申請（' + pending.length + '）</h3></div>' +
         '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>申請說明</th><th>申請時間</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+      if (!D.approval.staffApproval) $('.toolbar', pc).insertAdjacentHTML('beforeend', '<span class="small muted">核准設定已關閉，之後的新人員會直接啟用</span>');
       pending.forEach(function (s) {
         var tr = el('<tr><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><button class="btn sm danger" type="button">拒絕</button> <button class="btn sm primary" type="button">核准</button></td></tr>');
         var td = $$('td', tr);
@@ -79,27 +98,31 @@ App.page('admin', function (root, params) {
       });
       body.appendChild(pc);
     }
-    var card = el('<div class="card"><div class="toolbar"><h3 class="grow">管理員</h3><button class="btn primary sm" type="button">新增共同管理員</button></div>' +
-      '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>角色</th><th>可管理專案</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
-    $('.toolbar button', card).addEventListener('click', function () { editStaff(null); });
+    var card = el('<div class="card"><div class="toolbar"><h3 class="grow">管理員</h3>' + (can('manageStaff') ? '<button class="btn primary sm" type="button">新增共同管理員</button>' : '') + '</div>' +
+      '<div class="table-wrap"><table class="simple"><thead><tr><th>名稱</th><th>信箱</th><th>角色</th><th>可管理專案</th><th>總管授予的權限</th><th>狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+    if (can('manageStaff')) $('.toolbar button', card).addEventListener('click', function () { editStaff(null); });
     var tb = $('tbody', card);
     D.staff.filter(function (s) { return s.applyStatus !== '待審核'; }).forEach(function (s) {
-      var tr = el('<tr><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"></td></tr>');
+      var tr = el('<tr><td></td><td></td><td></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"></td></tr>');
       var td = $$('td', tr);
       td[0].textContent = s.name;
       td[1].textContent = s.email;
       td[2].innerHTML = '<span class="role-tag' + (s.isRoot ? ' root' : '') + '">' + esc(s.role) + '</span>';
-      td[3].textContent = s.isRoot ? '全部專案' : (s.projects.join('、') || '—');
-      td[4].innerHTML = s.applyStatus === '已拒絕' ? '<span class="pill mute">申請未通過</span>' :
-        s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>';
-      var acts = td[5];
+      td[3].textContent = s.isRoot || s.perms.indexOf('allProjects') >= 0 ? '全部專案' : (s.projects.join('、') || '—');
+      td[4].innerHTML = s.isRoot ? '<span class="small muted">全部</span>' : s.perms.length ? '<div class="perm-tags">' + s.perms.map(function (k) { return '<span class="perm-tag">' + esc(permLabel(k)) + '</span>'; }).join('') + '</div>' : '<span class="small muted">—</span>';
+      td[5].innerHTML = (s.applyStatus === '已拒絕' ? '<span class="pill mute">申請未通過</span>' :
+        s.enabled ? pill('運作中').replace('運作中', '啟用') : '<span class="pill mute">停用</span>') +
+        '<div class="small ' + (s.termsVersion === D.terms.version ? 'muted' : 'warn-text') + '" style="margin-top:4px">' +
+        (s.termsVersion ? '同意書第 ' + s.termsVersion + ' 版' + (s.termsVersion === D.terms.version ? '' : '（需重新同意）') : '尚未同意同意書') + '</div>';
+      var acts = td[6];
       function btn(label, fn, cls) { var b = el('<button class="btn sm ' + (cls || '') + '" type="button" style="margin-left:6px"></button>'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); }
-      btn('編輯', function () { editStaff(s); });
-      if (!s.isRoot) {
-        btn('重設密碼', function () { resetPw(s); });
-        if (s.applyStatus === '已拒絕') btn('改為核准', function () { approveApply(s); });
-        else btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
-      }
+      // 有授權的人只有總管能停用或重設密碼（避免互相接管）
+      var touchable = !s.isRoot && (D.me.isRoot || !s.perms.length || s.email === D.me.email);
+      if (D.me.isRoot && !s.isRoot && s.enabled) btn('權限', function () { editPerms(s); });
+      if (can('manageStaff') && (!s.isRoot || D.me.isRoot)) btn('編輯', function () { editStaff(s); });
+      if (can('manageStaff') && touchable) btn('重設密碼', function () { resetPw(s); });
+      if (s.applyStatus === '已拒絕' && can('approveStaff')) btn('改為核准', function () { approveApply(s); });
+      else if (can('manageStaff') && touchable) btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
       tb.appendChild(tr);
     });
     body.appendChild(card);
@@ -111,7 +134,7 @@ App.page('admin', function (root, params) {
       '<label class="field"><span>名稱</span><input class="input" name="name"></label>' +
       '<label class="field"><span>信箱</span><input class="input" name="email" type="email"></label>' +
       (isNew ? '<label class="field"><span>密碼</span><input class="input" name="password" type="password" autocomplete="new-password"><span class="hint">至少 8 個字元</span></label>' : '') +
-      (s && s.isRoot ? '<div class="hint">總管由系統寫死，只能修改名稱。</div>' :
+      (s && s.isRoot ? '<div class="hint">總管只能修改名稱；要換人請到「權限與移交」移交總管。</div>' :
         '<div class="field"><span class="small muted">可管理專案</span><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">' +
         D.projects.map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"' + (s && s.projects.indexOf(p.prefix) >= 0 ? ' checked' : '') + '><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') +
         '</div></div>') +
@@ -141,7 +164,7 @@ App.page('admin', function (root, params) {
       '<dl class="kv"><dt>信箱</dt><dd></dd><dt>申請說明</dt><dd></dd></dl>' +
       '<label class="field"><span>名稱</span><input class="input" name="name"></label>' +
       '<div class="field"><span class="small muted">可管理專案（可以之後再用「編輯」調整）</span><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">' +
-      (D.projects.length ? D.projects.map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') : '<span class="small muted">目前沒有專案</span>') +
+      (D.projects.length ? D.projects.filter(function (p) { return p.status !== '未核准'; }).map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') : '<span class="small muted">目前沒有專案</span>') +
       '</div></div></form>');
     var dd = $$('dd', form);
     dd[0].textContent = s.email; dd[1].textContent = s.applyNote || '—';
@@ -184,6 +207,29 @@ App.page('admin', function (root, params) {
 
   /* ---------- 專案 ---------- */
   function renderProjects(body) {
+    var pend = D.projects.filter(function (p) { return p.status === '待核准'; });
+    if (can('approveProject')) {
+      var pc = el('<div class="card" style="margin-bottom:16px"><div class="toolbar"><div class="grow"><h3 style="margin:0">待核准的新專案（' + pend.length + '）</h3>' +
+        '<div class="small muted">' + (D.approval.projectApproval ? '共同管理建立的專案核准後才開始收報名、寄信。' : '核准設定已關閉，之後的新專案會直接運作。') + '</div></div></div>' +
+        '<div class="table-wrap"><table class="simple"><thead><tr><th>專案</th><th>營期</th><th>招生</th><th>建立者</th><th></th></tr></thead><tbody></tbody></table></div></div>');
+      var ptb = $('tbody', pc);
+      pend.forEach(function (p) {
+        var tr = el('<tr><td><b></b><div class="small muted"></div></td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><button class="btn sm danger" type="button">退回</button> <button class="btn sm primary" type="button">核准</button></td></tr>');
+        var td = $$('td', tr);
+        $('b', td[0]).textContent = p.prefix + '　' + p.name;
+        $('.small', td[0]).textContent = '表單：' + ((p.review && p.review.formTitle) || p.formUrl || '');
+        td[1].textContent = fmtDate(p.start) + ' – ' + fmtDate(p.end);
+        td[2].textContent = (p.regStart ? fmtDate(p.regStart) : '不限') + ' – ' + (p.regEnd ? fmtDate(p.regEnd) : '未定') + '，上限 ' + p.capacity + ' 人，原價 ' + p.price;
+        td[3].innerHTML = esc(p.createdBy) + '<div class="small muted">' + esc(fmtTime(p.createdAt)) + '</div>';
+        var b = $$('button', tr);
+        b[0].addEventListener('click', function () { rejectProj(p); });
+        b[1].addEventListener('click', function () { approveProj(p); });
+        ptb.appendChild(tr);
+      });
+      if (!pend.length) ptb.innerHTML = '<tr><td colspan="5"><div class="empty">目前沒有待核准的專案</div></td></tr>';
+      body.appendChild(pc);
+    }
+    if (!can('projectStatus') && !can('siteMaint')) return;
     var g = el('<div class="card card-pad" style="margin-bottom:16px"><div class="row"><div class="grow"><h3>停止全部專案</h3>' +
       '<div class="small muted">開啟後所有專案只能瀏覽：不抄寫新回覆、不寄信、不可修改。</div></div>' +
       '<button class="switch' + (D.globalStop ? ' on' : '') + '" type="button"></button></div></div>');
@@ -195,7 +241,7 @@ App.page('admin', function (root, params) {
           withBusy(api('setGlobalStop', on)).then(function () { toast(on ? '已停止全部專案' : '已恢復'); load(); }).catch(function (e) { toast(e.message, true); });
         });
     });
-    body.appendChild(g);
+    if (can('projectStatus')) body.appendChild(g);
 
     var paused = D.sitePaused || {};
     var m = el('<div class="card card-pad" style="margin-bottom:16px"><div class="row"><div class="grow"><h3>全站維護</h3>' +
@@ -242,7 +288,8 @@ App.page('admin', function (root, params) {
       applyMaint(want);
     });
     if (D.siteMaint) $('[data-act=resume]', m).addEventListener('click', function () { applyMaint({}); });
-    body.appendChild(m);
+    if (can('siteMaint')) body.appendChild(m);
+    if (!can('projectStatus')) return;
 
     var card = el('<div class="card"><div class="table-wrap"><table class="simple"><thead><tr><th>專案代碼</th><th>營隊名稱</th><th>營期</th><th>設定狀態</th><th>實際狀態</th><th></th></tr></thead><tbody></tbody></table></div></div>');
     var tb = $('tbody', card);
@@ -255,8 +302,8 @@ App.page('admin', function (root, params) {
       td[3].innerHTML = pill(p.status) + (p.maintBy ? '<div class="small muted">' + esc(p.maintBy) + '</div>' : '');
       td[4].innerHTML = pill(p.effective);
       function btn(label, fn, cls) { var b = el('<button class="btn sm ' + (cls || '') + '" type="button" style="margin-left:6px"></button>'); b.textContent = label; b.addEventListener('click', fn); td[5].appendChild(b); }
-      btn('開啟', function () { go('students', { prefix: p.prefix, title: p.name }); });
-      if (p.status !== '已封存') {
+      if (p.canOpen) btn('開啟', function () { go('students', { prefix: p.prefix, title: p.name }); });
+      if (p.status !== '已封存' && p.status !== '待核准' && p.status !== '未核准') {
         if (p.status === '已停止') btn('恢復運作', function () { setStatus(p, '運作中'); });
         else btn('停止專案', function () { setStatus(p, '已停止'); }, 'danger');
         btn('封存', function () { archive(p); }, 'danger');
@@ -265,6 +312,24 @@ App.page('admin', function (root, params) {
     });
     if (!D.projects.length) tb.innerHTML = '<tr><td colspan="6"><div class="empty">尚無專案</div></td></tr>';
     body.appendChild(card);
+  }
+
+  function approveProj(p) {
+    confirmDialog({ title: '核准新專案：' + p.name, lines: ['專案代碼 ' + p.prefix + '，建立者 ' + p.createdBy, '核准後立即掛上表單觸發器、開始收報名與寄信',
+      '表單上既有的回覆會匯入' + (p.review && p.review.notifyExisting ? '並寄出通知' : '，不寄通知'), '建立者會收到核准通知'], okLabel: '核准' })
+      .then(function (ok) {
+        if (!ok) return;
+        withBusy(api('approveProject', p.prefix)).then(function (r) { toast('已核准' + (r.imported ? '，匯入 ' + r.imported + ' 筆回覆' : '')); load(); }).catch(function (e) { toast(e.message, true); });
+      });
+  }
+
+  function rejectProj(p) {
+    formDialog({ title: '退回新專案：' + p.name, desc: '退回後專案改為「未核准」，建立者會收到通知，可以修改後用同一個代碼重新送出。', okLabel: '退回', danger: true,
+      fields: [{ name: 'reason', label: '原因（會寄給建立者）', type: 'textarea' }] })
+      .then(function (v) {
+        if (!v) return;
+        withBusy(api('rejectProject', p.prefix, v.reason)).then(function () { toast('已退回'); load(); }).catch(function (e) { toast(e.message, true); });
+      });
   }
 
   function setStatus(p, status) {
@@ -285,26 +350,147 @@ App.page('admin', function (root, params) {
   }
 
   /* ---------- 信件範本 ---------- */
+  function editTemplate(t) {
+    openTemplateEditor(t, {}).then(function (v) {
+      if (!v) return;
+      withBusy(api('saveTemplate', t.code, v.subject, v.body)).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  function renderPresets(body) {
+    var defs = D.presetDefs || [];
+    var card = el('<div class="card" style="margin-top:16px"><div class="toolbar"><div class="grow"><h3 style="margin:0">常用清單</h3><div class="small muted">管理者執行匯款異常、取消報名等操作時，點一下就能填入，不用每次打字。每行一項。</div></div>' +
+      '<button class="btn primary" type="button">儲存清單</button></div><div class="preset-list"></div></div>');
+    var list = $('.preset-list', card);
+    defs.forEach(function (d) {
+      var f = el('<label class="field"><span></span><textarea class="input"></textarea></label>');
+      $('span', f).textContent = d.label;
+      $('textarea', f).name = d.key;
+      $('textarea', f).value = (D.presets[d.key] || []).join('\n');
+      list.appendChild(f);
+    });
+    $('button', card).addEventListener('click', function () {
+      var out = {};
+      defs.forEach(function (d) { out[d.key] = $('[name=' + d.key + ']', card).value.split('\n').map(function (x) { return x.trim(); }).filter(String); });
+      withBusy(api('savePresets', out)).then(function () { toast('常用清單已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+    });
+    body.appendChild(card);
+  }
+
   function renderTemplates(body) {
-    var card = el('<div class="card"><div class="toolbar"><div class="grow small muted">可用變數：{{姓名}} {{營隊名稱}} {{營期}} {{應繳金額}} {{價格類型}} {{匯款帳號}} {{匯款期限}} {{已繳金額}} {{候補順位}} {{團報名單}} {{原因}} {{原金額}} {{訊息}}</div></div>' +
+    var card = el('<div class="card"><div class="toolbar"><div class="grow small muted">這裡是系統預設範本，所有專案共用；各專案可在「報名與學員管理 → 信件範本」複製一份直接修改（例如加上飯店、總召資訊）。</div></div>' +
       '<table class="simple"><thead><tr><th>通知</th><th>主旨</th><th></th></tr></thead><tbody></tbody></table></div>');
     var tb = $('tbody', card);
     D.templates.forEach(function (t) {
       var tr = el('<tr><td></td><td></td><td style="text-align:right"><button class="btn sm" type="button">編輯</button></td></tr>');
       $$('td', tr)[0].textContent = t.name;
       $$('td', tr)[1].textContent = t.subject;
-      $('button', tr).addEventListener('click', function () {
-        formDialog({
-          title: '編輯範本：' + t.name, okLabel: '儲存', wide: true,
-          fields: [{ name: 'subject', label: '主旨', value: t.subject, required: true }, { name: 'body', label: '內容', type: 'textarea', value: t.body, required: true }]
-        }).then(function (v) {
-          if (!v) return;
-          withBusy(api('saveTemplate', t.code, v.subject, v.body)).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
-        });
-      });
+      $('button', tr).addEventListener('click', function () { editTemplate(t); });
       tb.appendChild(tr);
     });
     body.appendChild(card);
+    renderPresets(body);
+  }
+
+  /* ---------- 權限與移交（只有總管） ---------- */
+  function editPerms(s) {
+    var form = el('<form class="perm-form" onsubmit="return false"></form>');
+    D.permDefs.forEach(function (x) {
+      var it = el('<label class="maint-item"><input type="checkbox" name="perm"><span><b></b><span class="small muted"></span></span></label>');
+      $('input', it).value = x.key; $('input', it).checked = s.perms.indexOf(x.key) >= 0;
+      $('b', it).textContent = x.label; $('.small', it).textContent = x.desc;
+      form.appendChild(it);
+    });
+    modal({
+      title: '授予權限：' + s.name, desc: s.email + '　授予、移交總管與核准設定只有總管可以做；每一項變更都會記錄。', body: form, cls: 'wide',
+      buttons: [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: function () { return $$('input[name=perm]:checked', form).map(function (i) { return i.value; }); } }]
+    }).then(function (perms) {
+      if (!perms) return;
+      withBusy(api('setStaffPerms', s.email, perms)).then(function (r) {
+        var msg = [];
+        if (r.added.length) msg.push('授予：' + r.added.join('、'));
+        if (r.removed.length) msg.push('收回：' + r.removed.join('、'));
+        toast(msg.join('；') || '權限沒有變更'); load();
+      }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  function renderPerms(body) {
+    var ac = el('<div class="card card-pad" style="margin-bottom:16px"><h3>核准設定</h3><div class="small muted" style="margin-bottom:12px">決定新人員、新專案是否要先經過核准。總管與有「核准人員」「核准新專案」權限的人，自己新增的不用等核准。</div><div class="approval-list"></div></div>');
+    var list = $('.approval-list', ac);
+    D.approvalDefs.forEach(function (x) {
+      var on = !!D.approval[x.key];
+      var row = el('<div class="row approval-row"><div class="grow"><b></b><div class="small muted"></div></div><button class="switch' + (on ? ' on' : '') + '" type="button"></button></div>');
+      $('b', row).textContent = x.label; $('.small', row).textContent = x.desc;
+      $('.switch', row).setAttribute('aria-label', x.label);
+      $('.switch', row).addEventListener('click', function () {
+        var d = {}; d[x.key] = !on;
+        confirmDialog({ title: (on ? '關閉：' : '開啟：') + x.label, lines: [x.desc], okLabel: on ? '關閉' : '開啟', danger: on && x.key !== 'coCreate' })
+          .then(function (ok) {
+            if (!ok) return;
+            withBusy(api('setApprovalSettings', d)).then(function () { toast('已更新'); load(); }).catch(function (e) { toast(e.message, true); });
+          });
+      });
+      list.appendChild(row);
+    });
+    body.appendChild(ac);
+
+    var co = D.staff.filter(function (s) { return !s.isRoot && s.enabled; });
+    var pc = el('<div class="card" style="margin-bottom:16px"><div class="toolbar"><div class="grow"><h3 style="margin:0">授予權限</h3><div class="small muted">把總管的部分功能交給信任的共同管理。點「設定」逐項勾選。</div></div></div>' +
+      '<div class="table-wrap"><table class="simple perm-matrix"><thead><tr><th>人員</th>' + D.permDefs.map(function (x) { return '<th title="' + esc(x.desc) + '">' + esc(x.label) + '</th>'; }).join('') + '<th></th></tr></thead><tbody></tbody></table></div></div>');
+    var tb = $('tbody', pc);
+    co.forEach(function (s) {
+      var tr = el('<tr><td><b></b><div class="small muted"></div></td>' + D.permDefs.map(function (x) { return '<td class="perm-cell">' + (s.perms.indexOf(x.key) >= 0 ? '<span class="perm-yes" aria-label="有">●</span>' : '<span class="muted" aria-label="無">·</span>') + '</td>'; }).join('') +
+        '<td style="text-align:right"><button class="btn sm" type="button">設定</button></td></tr>');
+      $('b', tr).textContent = s.name; $('.small', tr).textContent = s.email;
+      $('button', tr).addEventListener('click', function () { editPerms(s); });
+      tb.appendChild(tr);
+    });
+    if (!co.length) tb.innerHTML = '<tr><td colspan="' + (D.permDefs.length + 2) + '"><div class="empty">還沒有已啟用的共同管理員</div></td></tr>';
+    body.appendChild(pc);
+
+    var tm = el('<div class="card card-pad" style="margin-bottom:16px"><div class="row"><div class="grow"><h3 style="margin:0">聲明同意書</h3>' +
+      '<div class="small muted">註冊時必須閱讀並勾選；已有帳號的人登入後也會被要求同意。修改內容後版本加一，所有人下次使用時要重新同意。</div></div>' +
+      '<span class="pill brand">第 ' + D.terms.version + ' 版' + (D.terms.isDefault ? '（預設內容）' : '') + '</span></div>' +
+      '<label class="field" style="margin-top:12px"><span>標題：' + esc(D.terms.title) + '</span><textarea class="input terms-edit" rows="14"></textarea></label>' +
+      '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn primary" type="button">儲存為新版本</button></div></div>');
+    $('textarea', tm).value = D.terms.text;
+    $('button', tm).addEventListener('click', function () {
+      var text = $('textarea', tm).value;
+      if (text.trim() === D.terms.text.trim()) { toast('內容沒有變更'); return; }
+      confirmDialog({ title: '儲存聲明同意書第 ' + (D.terms.version + 1) + ' 版', lines: ['所有人（包含你）下次使用時都要重新閱讀並同意', '修改前後的內容會記錄在操作紀錄'], okLabel: '儲存' })
+        .then(function (ok) {
+          if (!ok) return;
+          withBusy(api('saveTerms', text)).then(function (r) { toast('已儲存為第 ' + r.version + ' 版'); location.reload(); }).catch(function (e) { toast(e.message, true); });
+        });
+    });
+    body.appendChild(tm);
+
+    var tc = el('<div class="card card-pad transfer-card"><h3>移交總管</h3><div class="small muted" style="margin-bottom:12px">把總管交給另一位已啟用的管理員。移交後你會變成共同管理，系統管理的功能改由對方使用；雙方都會收到通知信，並記錄在操作紀錄。</div>' +
+      '<div class="row" style="justify-content:flex-end"><button class="btn danger" type="button">移交總管…</button></div></div>');
+    $('button', tc).addEventListener('click', transfer);
+    body.appendChild(tc);
+  }
+
+  function transfer() {
+    var co = D.staff.filter(function (s) { return !s.isRoot && s.enabled; });
+    if (!co.length) { toast('沒有可以移交的對象，請先新增並啟用一位共同管理員', true); return; }
+    formDialog({
+      title: '移交總管', desc: '這個操作會立即生效，只有新總管能再移交回來。', okLabel: '確認移交', danger: true,
+      fields: [
+        { name: 'to', label: '新總管', type: 'select', options: co.map(function (s) { return { value: s.email, label: s.name + '（' + s.email + '）' }; }), required: true },
+        { name: 'keep', label: '移交後我仍可以管理所有現有專案', type: 'checkbox', value: true },
+        { name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true }
+      ]
+    }).then(function (v) {
+      if (!v) return;
+      var t = co.filter(function (s) { return s.email === v.to; })[0];
+      confirmDialog({ title: '確定把總管移交給 ' + t.name + '？', lines: [t.email + ' 會成為總管', '你會改為共同管理' + (v.keep ? '，保留所有現有專案' : ''), '系統管理頁面會關閉，回到功能選單'], danger: true, okLabel: '移交' })
+        .then(function (ok) {
+          if (!ok) return;
+          withBusy(api('transferRoot', v.to, v.pw, !!v.keep)).then(function () { toast('已移交給 ' + t.name); setTimeout(function () { go('menu'); }, 1200); }).catch(function (e) { toast(e.message, true); });
+        });
+    });
   }
 
   load();
