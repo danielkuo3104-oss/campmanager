@@ -394,12 +394,12 @@ App.page('students', function (root, params) {
   function openActions(anchor, s) {
     var ro = D.readOnly;
     var items = [{ header: s.name }];
-    function add(label, ok, fn, danger) { items.push({ label: label, disabled: ro || !ok, onClick: fn, danger: danger }); }
+    function add(label, ok, fn, danger, mail) { items.push({ label: label, disabled: ro || !ok, onClick: fn, danger: danger, mail: mail }); }
     if (s.status === '招生期外') {
       items.push({ header: '招生期外的報名' });
       add('受理報名…', true, function () {
         ask('受理報名', [{ name: 'sendMail', label: '寄送結果通知給學員（下一步可預覽）', type: 'checkbox', value: true }], function (v) { run(s, 'accept', v); });
-      });
+      }, false, 'opt');
       items.push({ sep: true });
     }
     if (s.status === '資格審核中') {
@@ -407,50 +407,53 @@ App.page('students', function (root, params) {
       add('審核通過，寄繳費通知…', true, function () {
         ask('審核通過', [{ name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: s.price,
           hint: '依報名時的價格預設 ' + money(s.price) + ' 元，有減免請改成實際金額。匯款期限從現在起算，下一步可預覽「審核通過與繳費通知」。' }], function (v) { run(s, 'reviewPass', v); });
-      });
+      }, false, 'yes');
       add('審核未通過…', true, function () {
         ask('審核未通過', [
           { name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: s.price, hint: '預設依一般方案計算的 ' + money(s.price) + ' 元。會改為已報名並寄「審核未通過通知」，匯款期限從現在起算。' },
           { name: 'reason', label: '補充說明（選填，會寫進信裡）', type: 'textarea' }
         ], function (v) { run(s, 'reviewFail', v); });
-      });
+      }, false, 'yes');
       items.push({ sep: true });
     }
     if (s.status === '候補中' && s.groupId) {
-      items.push({ header: '團報名額不足' });
-      add('超收（整團直接錄取）…', true, function () {
-        ask('超收', [{ name: 'sendMail', label: '寄錄取通知給這團的候補學員（下一步可預覽）', type: 'checkbox', value: true }], function (v) { run(s, 'overAdmit', v); });
-      });
-      add('改為個人報名…', true, function () { askIndividual(s); });
+      // 同團還在候補的人數超過剩餘名額才算「名額不足」；名額夠就直接整團遞補，不用超收
+      var gWait = D.students.filter(function (x) { return x.groupId === s.groupId && x.status === '候補中'; }).length;
+      var short = gWait > D.stats.available;
+      items.push({ header: short ? '團報名額不足（這團候補 ' + gWait + ' 人，剩 ' + D.stats.available + ' 位）' : '團報候補（名額足夠）' });
+      add(short ? '超收（整團直接錄取）…' : '整團遞補錄取（' + gWait + ' 人）…', true, function () {
+        ask(short ? '超收' : '整團遞補錄取', [{ name: 'sendMail', label: '寄錄取通知給這團的候補學員（下一步可預覽）', type: 'checkbox', value: true }], function (v) { run(s, 'overAdmit', v); });
+      }, false, 'opt');
+      if (short) add('改為個人報名…', true, function () { askIndividual(s); }, false, 'opt');
       items.push({ sep: true });
     }
     items.push({ header: '寄送通知' });
-    add(s.status === '資格審核中' ? '補寄報名資訊核對' : '補寄報名與繳款通知', has(s, ACTIVE_NOT_DONE.concat(['候補中', '資格審核中'])), function () { run(s, 'resend', {}); });
-    add('匯款期限鄰近通知', has(s, ['已報名', '匯款逾期']), function () { run(s, 'deadline', {}); });
+    add(s.status === '資格審核中' ? '補寄報名資訊核對' : '補寄報名與繳款通知', has(s, ACTIVE_NOT_DONE.concat(['候補中', '資格審核中'])), function () { run(s, 'resend', {}); }, false, 'yes');
+    add('匯款期限鄰近通知', has(s, ['已報名', '匯款逾期']), function () { run(s, 'deadline', {}); }, false, 'yes');
     add('匯款異常通知…', has(s, ACTIVE_NOT_DONE), function () {
       ask('匯款異常通知', [{ name: 'reason', label: '異常原因', type: 'textarea', required: true, placeholder: '例如：匯款金額不足 500 元／查無後五碼', presets: P('abnormal') }], function (v) { run(s, 'abnormal', v); });
-    });
+    }, false, 'yes');
     add('報名費用異動通知…', has(s, ACTIVE_NOT_DONE.concat(['候補中'])), function () {
       ask('報名費用異動通知', [
         { name: 'amount', label: '新的應繳金額（元）', type: 'number', required: true, value: s.price, hint: '目前 ' + money(s.price) + ' 元。金額只能透過此通知修改，會寫回後端並寄信。' },
         { name: 'reason', label: '異動原因', type: 'textarea', required: true, presets: P('feeChange') }
       ], function (v) { run(s, 'feeChange', v); });
-    });
-    add('團報同伴填表提醒', !!s.groupIncomplete && D.activeStatuses.indexOf(s.status) >= 0, function () { run(s, 'groupRemind', {}); });
+    }, false, 'yes');
+    add('團報同伴填表提醒', !!s.groupIncomplete && D.activeStatuses.indexOf(s.status) >= 0, function () { run(s, 'groupRemind', {}); }, false, 'yes');
     add('寄送特殊訊息…', !!s.email, function () {
       ask('寄送特殊訊息', [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, format: true, presets: P('message'), presetJoin: '\n', hint: '可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數；下一步會看到預覽' }], function (v) { run(s, 'custom', v); });
-    });
+    }, false, 'yes');
     items.push({ sep: true }, { header: '報名狀態' });
     add('確認繳款…', has(s, ACTIVE_NOT_DONE), function () {
       ask('確認繳款', [{ name: 'amount', label: '核對到的匯款金額（元）', type: 'number', required: true, value: s.price, hint: '應繳 ' + money(s.price) + ' 元；金額一致才會標為程序完成並寄出確認信' }], function (v) { run(s, 'confirmPaid', v); });
-    });
+    }, false, 'yes');
     add('標記繳款待核覆', has(s, ['已報名', '匯款逾期', '匯款異常']), function () { run(s, 'markPending', {}); });
-    add('遞補錄取', s.status === '候補中', function () { run(s, 'promote', {}); });
+    add('遞補錄取', s.status === '候補中', function () { run(s, 'promote', {}); }, false, 'yes');
     add('調整候補順位…', s.status === '候補中', function () {
       ask('調整候補順位', [{ name: 'rank', label: '新的順位', type: 'number', required: true, value: s.rank }], function (v) { run(s, 'setRank', v); });
     });
     add('調整團報歸屬…', tierOk(s), function () { askGroup(s); });
-    if (s.groupId && D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '程序完成') add('改為個人報名（重算價格）…', true, function () { askIndividual(s); });
+    if (s.groupId && D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '程序完成') add('改為個人報名（重算價格）…', true, function () { askIndividual(s); }, false, 'opt');
     if (D.project.squads > 0) add('調整小隊…', tierOk(s), function () {
       var opts = [{ value: '', label: '未分隊' }];
       for (var q = 1; q <= D.project.squads; q++) opts.push({ value: String(q), label: '第 ' + q + ' 隊' });
@@ -472,7 +475,7 @@ App.page('students', function (root, params) {
         hint: '已確認繳款 ' + money(paidAmt) + ' 元，預設全額退款。不是全退時請改成實際退回的金額，沒退的部分仍計入收入。信件可用 {{退款金額}}。' });
       fields.push({ name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true });
       ask('取消報名', fields, function (v) { run(s, 'cancel', v); }, true);
-    }, true);
+    }, true, 'opt');
     popMenu(anchor, items);
   }
 
@@ -500,7 +503,8 @@ App.page('students', function (root, params) {
       { name: 'priceMode', label: '價格', type: 'select', options: opts, value: 'auto' },
       { name: 'amount', label: '自訂金額（元）', type: 'number', value: s.price, hint: '選「自訂金額」時才會用到。下一步會顯示算出來的金額再確認。' }
     ];
-    if (s.status === '候補中') fields.push({ name: 'over', label: '沒有空位也錄取（超收）', type: 'checkbox', value: false });
+    // 有空位就直接錄取；沒空位時才出現超收選項
+    if (s.status === '候補中' && D.stats.available < 1) fields.push({ name: 'over', label: '沒有空位也錄取（超收）', type: 'checkbox', value: false });
     fields.push({ name: 'sendMail', label: s.status === '候補中' ? '寄報名成功通知（下一步可預覽）' : '金額有變時寄「報名費用異動通知」', type: 'checkbox', value: true });
     ask('改為個人報名：' + s.name, fields, function (v) { run(s, 'toIndividual', v); });
   }
@@ -654,12 +658,12 @@ App.page('students', function (root, params) {
       }).join('') + '</div><span class="hint">' + (p.bank ? '信件裡的 {{匯款帳號}} 會顯示：' + esc(p.account) : '目前是舊格式：「' + esc(p.account) + '」，請改填銀行、分行、戶名、帳號') + '</span></div>' +
       '<div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
-      f('name', '營隊名稱', 'text', p.name) + f('signature', '信件署名（每封信最後置中顯示）', 'text', p.signature, '留空時用「' + (p.name || '營隊名稱') + ' 籌辦團隊 敬上」；可用粗體、顏色、螢光、字級') + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
+      f('name', '營隊名稱', 'text', p.name) + '<div class="field set-sig" style="grid-column:1 / -1"><span>信件署名（每封信最後置中顯示）</span><input class="input" name="signature" placeholder="' + esc((p.name || '營隊名稱') + ' 籌辦團隊 敬上') + '"' + (ro ? ' disabled' : '') + '><span class="hint">留空時用「' + esc(p.name || '營隊名稱') + ' 籌辦團隊 敬上」；選取文字後按上方按鈕加粗體、顏色、螢光、字級</span></div>' + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
       '<div class="field"><span>信件標頭預設顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">沒自訂顏色的信都用這個（原本是墨綠 #2f5d62）；每種信可在「信件範本」各自改顏色來區分</span></div>' +
       '</div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
-      '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。姓名必填，電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
+      '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。第一格填職稱（總召）或官方帳號名稱（例如 醫工營 IG），官方帳號可以不填姓名；電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
       '<div class="ct-list"></div>' +
       '<label class="check" style="margin-top:10px"><input type="checkbox" name="contactsInMail"' + (p.contactsInMail !== false ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>每封信結尾自動附上聯絡人員（附註上方）</span></label></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">信件附註</h3>' + (ro ? '' : '<button class="btn sm ghost" type="button" id="set-foot-reset">恢復系統預設</button>') + '</div>' +
@@ -727,8 +731,8 @@ App.page('students', function (root, params) {
       c = c || {};
       var dis = ro ? ' disabled' : '';
       var r = el('<div class="ct-row">' +
-        '<input class="input" data-k="title" placeholder="職稱" maxlength="40"' + dis + '>' +
-        '<input class="input" data-k="name" placeholder="姓名" maxlength="40"' + dis + '>' +
+        '<input class="input" data-k="title" placeholder="職稱或名稱" title="職稱（例如 總召）或官方帳號名稱（例如 醫工營 IG）" maxlength="40"' + dis + '>' +
+        '<input class="input" data-k="name" placeholder="姓名（官方帳號可不填）" maxlength="40"' + dis + '>' +
         '<input class="input" data-k="phone" placeholder="電話" maxlength="40" inputmode="tel"' + dis + '>' +
         '<input class="input" data-k="email" placeholder="信箱" maxlength="120" type="email"' + dis + '>' +
         '<input class="input" data-k="ig" placeholder="IG 帳號（@帳號 或網址）" maxlength="200"' + dis + '>' +
@@ -747,6 +751,10 @@ App.page('students', function (root, params) {
       var e0 = $('.ct-empty', ctList); if (e0) e0.remove();
       var r = ctRow(); ctList.appendChild(r); $('input', r).focus();
     });
+    var sigIn = $('[name=signature]', d.body);
+    sigIn.value = p.signature || '';
+    var sigEd = chipEditor(sigIn);
+    if (!ro) sigIn.parentNode.insertBefore(formatToolbar(sigEd, { vars: true }), sigIn);
     var footTa = $('[name=footer]', d.body);
     footTa.value = p.footerEffective || '';
     var footEd = chipEditor(footTa);
@@ -791,12 +799,13 @@ App.page('students', function (root, params) {
       var ctErr = '';
       contacts.forEach(function (c, i) {
         if (ctErr) return;
-        if (!c.name) ctErr = '第 ' + (i + 1) + ' 位聯絡人員請填姓名';
-        else if (!c.phone && !c.email && !c.ig && !c.line && !c.link) ctErr = '聯絡人員「' + c.name + '」請至少填一種聯絡方式（電話、信箱、IG、LINE 或連結）';
-        else if (c.ig && !igLink(c.ig)) ctErr = '聯絡人員「' + c.name + '」的 IG 請填帳號（例如 @camp_2027）或 instagram.com 網址';
-        else if (c.line && !lineLink(c.line)) ctErr = '聯絡人員「' + c.name + '」的 LINE 請填 LINE ID 或 https:// 開頭的加好友連結';
-        else if (c.link && !/^https?:\/\/[^\s"'<>]+$/i.test(c.link)) ctErr = '聯絡人員「' + c.name + '」的連結需以 https:// 開頭';
-        else if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) ctErr = '聯絡人員「' + c.name + '」的信箱格式不正確';
+        var who = c.name || c.title;
+        if (!who) ctErr = '第 ' + (i + 1) + ' 位聯絡人員請填職稱、名稱或姓名';
+        else if (!c.phone && !c.email && !c.ig && !c.line && !c.link) ctErr = '聯絡人員「' + who + '」請至少填一種聯絡方式（電話、信箱、IG、LINE 或連結）';
+        else if (c.ig && !igLink(c.ig)) ctErr = '聯絡人員「' + who + '」的 IG 請填帳號（例如 @camp_2027）或 instagram.com 網址';
+        else if (c.line && !lineLink(c.line)) ctErr = '聯絡人員「' + who + '」的 LINE 請填 LINE ID 或 https:// 開頭的加好友連結';
+        else if (c.link && !/^https?:\/\/[^\s"'<>]+$/i.test(c.link)) ctErr = '聯絡人員「' + who + '」的連結需以 https:// 開頭';
+        else if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) ctErr = '聯絡人員「' + who + '」的信箱格式不正確';
       });
       if (ctErr) { toast(ctErr, true); return; }
       contacts.forEach(function (c) { c.email = c.email.toLowerCase(); });
