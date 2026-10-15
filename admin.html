@@ -29,6 +29,7 @@
     <button type="button" data-tab="staff" class="on">人員</button>
     <button type="button" data-tab="projects">專案</button>
     <button type="button" data-tab="templates">信件範本</button>
+    <button type="button" data-tab="forms">預製表單</button>
     <button type="button" data-tab="perms">權限與移交</button>
   </div>
   <div id="ad-body"><div class="loading"><div class="spinner"></div>載入中</div></div>
@@ -41,7 +42,7 @@
 App.page('admin', function (root, params) {
   var D = null, tab = params.tab || 'staff';
   /** 每個分頁需要的權限（任一項） */
-  var TAB_PERMS = { staff: ['approveStaff', 'manageStaff'], projects: ['approveProject', 'projectStatus', 'siteMaint'], templates: ['templates'], perms: ['__root'] };
+  var TAB_PERMS = { staff: ['approveStaff', 'manageStaff'], projects: ['approveProject', 'projectStatus', 'siteMaint'], templates: ['templates'], forms: ['templates'], perms: ['__root'] };
   function can(k) { return D.me.isRoot || (k !== '__root' && D.me.perms.indexOf(k) >= 0); }
   function tabAllowed(t) { return (TAB_PERMS[t] || []).some(can); }
 
@@ -75,6 +76,7 @@ App.page('admin', function (root, params) {
     if (tab === 'staff') renderStaff(body);
     if (tab === 'projects') renderProjects(body);
     if (tab === 'templates') renderTemplates(body);
+    if (tab === 'forms') renderForms(body);
     if (tab === 'perms') renderPerms(body);
   }
 
@@ -408,15 +410,14 @@ App.page('admin', function (root, params) {
       tb.appendChild(tr);
     });
     body.appendChild(card);
-    renderForms(body);
     renderFooter(body);
     renderPresets(body);
   }
 
   /** 預製表單的系統預設：各專案沒改的就用這裡的內容 */
   function renderForms(body) {
-    var card = el('<div class="card" style="margin-top:16px"><div class="toolbar"><div class="grow"><h3 style="margin:0">預製表單（系統預設）</h3>' +
-      '<div class="small muted">學員不用登入，輸入姓名與身分證字號就能填的表單。信件放 <code>{{匯款回報按鈕}}</code> 等變數會出現置中的按鈕。各專案可在專案設定改成自己的內容或關閉。</div>' +
+    var card = el('<div class="card"><div class="toolbar"><div class="grow"><h3 style="margin:0">預製表單（系統預設）</h3>' +
+      '<div class="small muted">學員不用登入，輸入姓名與身分證字號就能填的表單。信件放 <code>{{匯款回報按鈕}}</code> 等變數會出現置中的按鈕。所有專案共用這份；各專案可在學員管理頁的「預製表單」改成自己的內容或關閉，彼此不影響。</div>' +
       '<div class="small" style="margin-top:6px"></div></div></div>' +
       '<table class="simple"><thead><tr><th>表單</th><th>標題</th><th>信裡的按鈕</th><th></th></tr></thead><tbody></tbody></table></div>');
     $('.toolbar .small:last-child', card).innerHTML = D.siteUrl ? '按鈕連到：<code>' + esc(D.siteUrl) + 'form.html</code>'
