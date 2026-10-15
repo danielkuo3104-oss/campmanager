@@ -31,6 +31,8 @@
       <button class="btn" type="button" id="st-bulk">群發通知</button>
       <button class="btn" type="button" id="st-export">匯出 PDF</button>
       <button class="btn" type="button" id="st-tpl">信件範本</button>
+      <button class="btn" type="button" id="st-forms">預製表單</button>
+      <button class="btn" type="button" id="st-portal">學員專區</button>
       <button class="btn" type="button" id="st-squad">分小隊</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
       <span class="sync-note" id="st-synced"></span>
@@ -526,6 +528,180 @@ App.page('students', function (root, params) {
     });
   }
 
+  /** 預製表單：獨立的抽屜，開關、連結、內容都在這裡 */
+  function openForms() {
+    var d = drawer({ title: '預製表單', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+    d.body.innerHTML = '<div class="drawer-section"><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填，只會查到、寫回這個專案的報名資料。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}} 會出現置中的按鈕。內容沒改的跟著系統預設（系統管理 → 預製表單）；改動會立即儲存，只影響這個專案。</p><div class="pf-list"></div></div>';
+    renderFormSettings($('.pf-list', d.body));
+  }
+
+  /** 各小隊的專輔、隨輔：預設每隊 2 位專輔、2 位隨輔，可增減；聯絡方式選填 */
+  function openSquadStaff() {
+    var n = D.project.squads || 0, ro = D.readOnly;
+    if (!(n > 0)) { toast('請先在專案設定填小隊數', true); return; }
+    var st = D.project.squadStaff || { show: true, squads: {} };
+    var body = el('<div class="ss-dlg"><label class="check"><input type="checkbox" name="ssShow"' + (st.show !== false ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>在學員專區公布學員自己的小隊與專輔、隨輔</span></label><div class="ss-list"></div></div>');
+    function row(x) {
+      var r = el('<div class="ss-row"><select class="input" aria-label="角色"><option>專輔</option><option>隨輔</option></select>' +
+        '<input class="input" placeholder="姓名" maxlength="40" aria-label="姓名"><input class="input" placeholder="聯絡方式（選填，例如電話、LINE）" maxlength="100" aria-label="聯絡方式">' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" aria-label="刪除">刪除</button>') + '</div>');
+      $('select', r).value = x.role; $$('input', r)[0].value = x.name || ''; $$('input', r)[1].value = x.contact || '';
+      $$('select,input', r).forEach(function (i) { i.disabled = ro; });
+      if (!ro) $('button', r).addEventListener('click', function () { r.remove(); });
+      return r;
+    }
+    for (var i = 1; i <= n; i++) {
+      var have = st.squads && st.squads[String(i)];
+      var rows = have && have.length ? have : [{ role: '專輔' }, { role: '專輔' }, { role: '隨輔' }, { role: '隨輔' }];
+      var box = el('<div class="ss-squad" data-q="' + i + '"><div class="row"><b class="grow">第 ' + i + ' 小隊</b>' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" data-add="專輔">＋ 專輔</button><button class="btn sm ghost" type="button" data-add="隨輔">＋ 隨輔</button>') + '</div><div class="ss-rows"></div></div>');
+      rows.forEach(function (x) { $('.ss-rows', box).appendChild(row(x)); });
+      $$('[data-add]', box).forEach(function (b) { b.addEventListener('click', function () { $('.ss-rows', b.closest('.ss-squad')).appendChild(row({ role: b.getAttribute('data-add') })); }); });
+      $('.ss-list', body).appendChild(box);
+    }
+    modal({ title: '小隊專輔與隨輔', desc: '姓名必填、聯絡方式選填；沒填姓名的空白列不會儲存。', body: body, wide: true,
+      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
+      if (!ok) return;
+      var out = { show: $('[name=ssShow]', body).checked, squads: {} };
+      $$('.ss-squad', body).forEach(function (b) {
+        out.squads[b.getAttribute('data-q')] = $$('.ss-row', b).map(function (r) { var ins = $$('input', r); return { role: $('select', r).value, name: ins[0].value.trim(), contact: ins[1].value.trim() }; })
+          .filter(function (x) { return x.name || x.contact; });
+      });
+      withBusy(api('updateProjectSettings', prefix, { squadStaff: out })).then(function () { toast('已儲存小隊專輔與隨輔'); cacheClear(); return load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  /** 學員專區網址的 QR Code：可下載成圖片放在 IG、海報；QR 程式用到時才載入 */
+  function showPortalQr(url) {
+    function draw() {
+      var box = el('<div style="display:flex;flex-direction:column;align-items:center;gap:12px"><div class="qr-box" style="background:#fff;padding:16px;border-radius:12px"></div>' +
+        '<div class="small muted" style="word-break:break-all;text-align:center"></div><a class="btn primary" download="學員專區QR.png">下載圖片</a></div>');
+      $('.small', box).textContent = url;
+      new QRCode($('.qr-box', box), { text: url, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+      setTimeout(function () {
+        var c = $('.qr-box canvas', box), img = $('.qr-box img', box);
+        if (!c) { $('a', box).href = img ? img.src : '#'; return; }
+        // 下載的圖片四周留白，掃描比較穩定
+        var pad = 24, out = document.createElement('canvas');
+        out.width = c.width + pad * 2; out.height = c.height + pad * 2;
+        var g = out.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height); g.drawImage(c, pad, pad);
+        $('a', box).href = out.toDataURL('image/png');
+      }, 100);
+      modal({ title: '學員專區 QR Code', desc: '掃描後直接打開這個專案的學員專區；換新網址後要重新下載。', body: box, buttons: [{ label: '關閉', value: null }] });
+    }
+    if (window.QRCode) { draw(); return; }
+    var sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    sc.onload = draw;
+    sc.onerror = function () { toast('QR Code 程式載入失敗，請檢查網路後再試', true); };
+    document.head.appendChild(sc);
+  }
+
+  /** 學員專區：開關、這個專案自己的網址、營隊資訊 */
+  function openPortal() {
+    var ro = D.readOnly, pt = D.project.portal || { on: false, intro: '', url: '' };
+    var d = drawer({ title: '學員專區', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+    d.body.innerHTML =
+      '<div class="drawer-section"><p class="hint" style="margin-top:0">學員用「姓名＋' + (pt.keyLabel || '身分證字號') + '」登入，只看得到自己在這個專案的報名進度、繳費資訊、填寫的報名資料（信件「報名資料」勾選的題目）、退款規定和下面的內容區塊。每個專案的網址都不一樣，換新網址後舊網址和已登入的人都會失效。</p>' +
+      '<div class="row wrap" style="gap:10px;align-items:center"><label class="check grow"><input type="checkbox" name="ptOn"' + (pt.on ? ' checked' : '') + (ro ? ' disabled' : '') + '><span><b>開放學員專區</b></span></label>' +
+      '<button class="btn sm" type="button" id="pt-preview">預覽學員看到的畫面</button></div>' +
+      '<div class="pt-url" style="margin-top:12px"></div></div>' +
+      '<div class="drawer-section"><h3>內容區塊</h3><p class="hint" style="margin-top:0">依序顯示在學員專區，例如行前準備清單、行前須知、飯店資訊、交通資訊。可以用信件的格式與變數；「勾選清單」每行一項，學員可以在自己的手機上打勾（只存在學員自己的手機）。沒有內容的區塊不會顯示。</p>' +
+      '<div class="ps-list"></div>' +
+      (ro ? '' : '<div class="row wrap" style="gap:6px;margin-top:10px"><span class="small muted">新增：</span>' +
+        [['行前準備清單', 'checklist'], ['行前須知', 'text'], ['飯店資訊', 'text'], ['交通資訊', 'text'], ['', 'text']].map(function (x) {
+          return '<button class="btn sm ghost" type="button" data-add="' + esc(x[0]) + '" data-type="' + x[1] + '">＋ ' + esc(x[0] || '自訂區塊') + '</button>';
+        }).join('') + '</div><div style="margin-top:14px"><button class="btn primary" type="button" id="pt-save">儲存內容</button></div>') + '</div>';
+    var urlBox = $('.pt-url', d.body);
+    function drawUrl() {
+      urlBox.innerHTML = '';
+      if (!pt.on) { urlBox.appendChild(el('<div class="small muted">目前沒有開放，學員打開網址會看到「沒有開放」。</div>')); return; }
+      if (!pt.url) { urlBox.appendChild(el('<div class="small" style="color:var(--warn)">還沒記錄網站網址：總管登入一次前端網站就會自動記下，之後這裡才會出現學員專區網址。</div>')); return; }
+      var row = el('<div class="field"><span>這個專案的學員專區網址</span><input class="input" readonly><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn sm" type="button" data-a="copy">複製網址</button><a class="btn sm ghost" target="_blank" rel="noopener">打開</a><button class="btn sm ghost" type="button" data-a="qr">QR Code</button>' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" data-a="regen">換新網址</button>') + '</div><span class="hint">信件可以放 {{學員專區按鈕}}（置中按鈕，自動帶入學員姓名）或 {{學員專區連結}}</span></div>');
+      $('input', row).value = pt.url; $('a', row).href = pt.url;
+      $('[data-a=copy]', row).addEventListener('click', function () {
+        (navigator.clipboard ? navigator.clipboard.writeText(pt.url) : Promise.reject()).then(function () { toast('已複製學員專區網址'); }).catch(function () { $('input', row).select(); });
+      });
+      $('[data-a=qr]', row).addEventListener('click', function () { showPortalQr(pt.url); });
+      if ($('[data-a=regen]', row)) $('[data-a=regen]', row).addEventListener('click', function () {
+        confirmDialog({ title: '換新的學員專區網址？', lines: ['舊網址會立即失效，已登入的學員要用新網址重新登入', '已經寄出的信裡的按鈕也會失效'], okLabel: '換新網址', danger: true }).then(function (ok) {
+          if (ok) save({ on: true, regen: true }, '已換新網址，請把新網址提供給學員');
+        });
+      });
+      urlBox.appendChild(row);
+    }
+    function save(v, msg) {
+      return withBusy(api('updateProjectSettings', prefix, { portal: v })).then(function () {
+        toast(msg); cacheClear();
+        return load().then(function () { pt = D.project.portal; $('[name=ptOn]', d.body).checked = pt.on; drawUrl(); });
+      }).catch(function (e) { toast(e.message, true); $('[name=ptOn]', d.body).checked = pt.on; });
+    }
+    drawUrl();
+    // 預覽：同一個網站的 portal.html，用管理員的登入看某位學員的畫面（沒開放也能看）
+    $('#pt-preview', d.body).addEventListener('click', function () {
+      var w = window.open('portal.html?p=' + encodeURIComponent(prefix) + '&preview=1', '_blank');
+      if (!w) location.href = 'portal.html?p=' + encodeURIComponent(prefix) + '&preview=1';
+    });
+    // 內容區塊：標題、類型（文字／勾選清單）、內容，可上下移動與刪除
+    var psList = $('.ps-list', d.body);
+    function block(x) {
+      var b = el('<div class="ps-block"><div class="ps-top"><input class="input" placeholder="標題（例如 交通資訊）" maxlength="30" aria-label="區塊標題">' +
+        '<select class="input" aria-label="類型"><option value="text">文字</option><option value="checklist">勾選清單</option></select>' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" data-m="up" aria-label="上移">↑</button><button class="btn sm ghost" type="button" data-m="down" aria-label="下移">↓</button><button class="btn sm ghost" type="button" data-m="del">刪除</button>') +
+        '</div><textarea class="input" rows="5" maxlength="5000"></textarea></div>');
+      var ins = $('input', b), sel = $('select', b), t = $('textarea', b);
+      ins.value = x.title || ''; sel.value = x.type === 'checklist' ? 'checklist' : 'text'; t.value = x.body || '';
+      function ph() { t.placeholder = sel.value === 'checklist' ? '每行一項，例如：\n健保卡\n換洗衣物\n水壺' : '例如：集合時間 08:30，地點 清華大學校門口'; }
+      ph(); sel.addEventListener('change', ph);
+      [ins, sel, t].forEach(function (i) { i.disabled = ro; });
+      psList.appendChild(b);
+      if (!ro) {
+        var ed = chipEditor(t);
+        t.parentNode.insertBefore(formatToolbar(ed, { vars: true }), t);
+        $$('[data-m]', b).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var m = btn.getAttribute('data-m');
+            if (m === 'del') b.remove();
+            if (m === 'up' && b.previousElementSibling) psList.insertBefore(b, b.previousElementSibling);
+            if (m === 'down' && b.nextElementSibling) psList.insertBefore(b.nextElementSibling, b);
+            psEmpty();
+          });
+        });
+      }
+      return b;
+    }
+    function psEmpty() {
+      var e = $('.ps-empty', psList);
+      if (!$('.ps-block', psList) && !e) psList.appendChild(el('<div class="small muted ps-empty">還沒有內容區塊，按下方按鈕新增。</div>'));
+      if ($('.ps-block', psList) && e) e.remove();
+    }
+    (pt.sections || []).forEach(block);
+    psEmpty();
+    function sections() {
+      return $$('.ps-block', psList).map(function (b) { return { title: $('input', b).value.trim(), type: $('select', b).value, body: $('textarea', b).value.trim() }; })
+        .filter(function (x) { return x.title || x.body; });
+    }
+    if (!ro) {
+      $$('[data-add]', d.body).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var b = block({ title: btn.getAttribute('data-add'), type: btn.getAttribute('data-type') });
+          psEmpty();
+          (btn.getAttribute('data-add') ? $('.chip-editor', b) || $('textarea', b) : $('input', b)).focus();
+          b.scrollIntoView({ block: 'nearest' });
+        });
+      });
+      $('[name=ptOn]', d.body).addEventListener('change', function (e) {
+        save({ on: e.target.checked }, e.target.checked ? '已開放學員專區' : '已關閉學員專區');
+      });
+      $('#pt-save', d.body).addEventListener('click', function () {
+        var list = sections();
+        if (list.some(function (x) { return !x.title; })) { toast('每個區塊都要有標題', true); return; }
+        save({ on: pt.on, sections: list }, '已儲存學員專區內容');
+      });
+    }
+  }
+
   /** 可放進信件「回覆內容」的題目：低收／中低收身分那題不放，以示尊重 */
   function mailQuestions() {
     var hide = [].concat(D.project.mapping.lowIncome || []);
@@ -668,7 +844,7 @@ App.page('students', function (root, params) {
             signature: D.project.signature || '', footer: D.project.footerEffective || '', campName: D.project.name,
             footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
             headerColor: D.project.headerColor,
-            contacts: D.project.contacts || [], contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
+            contacts: D.project.contacts || [], refund: D.project.refund, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
             onSaveEcho: ro ? null : function (list) { return api('updateProjectSettings', prefix, { echo: list }).then(function () { D.project.echo = list; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
             resetLabel: t.custom && !ro ? '恢復系統預設' : null
@@ -714,12 +890,15 @@ App.page('students', function (root, params) {
         return '<input class="input" name="bank_' + x[0] + '" placeholder="' + esc(x[1]) + '" aria-label="' + esc(x[1]) + '" value="' + esc(p.bank ? p.bank[x[0]] || '' : '') + '"' + (ro ? ' disabled' : '') + '>';
       }).join('') + '</div><span class="hint">' + (p.bank ? '信件裡的 {{匯款帳號}} 會顯示：' + esc(p.account) : '目前是舊格式：「' + esc(p.account) + '」，請改填銀行、分行、戶名、帳號') + '</span></div>' +
       '<div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
+      '<div class="drawer-section"><div class="row"><h3 class="grow">退款規定</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="rf-add">＋ 新增時間段</button>') + '</div>' +
+      '<p class="hint" style="margin-top:0">每一段是「這天（含）前取消，退還幾 %」，日期要在招生期間內；最後一段之後取消不退費。信件放 {{退款規定}} 會變成表格，取消報名表單也會顯示；已繳費的人取消時會看到依今天日期估算的退款金額。</p>' +
+      '<div class="rf-list"></div>' +
+      '<label class="field" style="margin-top:10px"><span>其他說明</span><textarea class="input" name="refundNote" rows="2" maxlength="1000" placeholder="例如：自行取消報名者，需自行負擔衍生費用（郵匯費、手續費等）"' + (ro ? ' disabled' : '') + '></textarea><span class="hint">可以用信件的格式（粗體、顏色…）</span></label></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
       f('name', '營隊名稱', 'text', p.name) + '<div class="field set-sig" style="grid-column:1 / -1"><span>信件署名（每封信最後置中顯示）</span><input class="input" name="signature" placeholder="' + esc((p.name || '營隊名稱') + ' 籌辦團隊 敬上') + '"' + (ro ? ' disabled' : '') + '><span class="hint">留空時用「' + esc(p.name || '營隊名稱') + ' 籌辦團隊 敬上」；選取文字後按上方按鈕加粗體、顏色、螢光、字級</span></div>' + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
       '<div class="field"><span>信件標頭預設顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">沒自訂顏色的信都用這個（原本是墨綠 #2f5d62）；每種信可在「信件範本」各自改顏色來區分</span></div>' +
       '</div></div>' +
-      '<div class="drawer-section"><h3>預製表單</h3><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}} 會出現置中的按鈕。內容沒改的跟著系統預設（系統管理 → 信件範本）；改動會立即儲存。</p><div class="pf-list"></div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
       '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。第一格填職稱（總召）或官方帳號名稱（例如 醫工營 IG），官方帳號可以不填姓名；電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
       '<div class="ct-list"></div>' +
@@ -730,7 +909,8 @@ App.page('students', function (root, params) {
       '<div class="drawer-section"><h3>小隊與資料檢查</h3><div class="grid-2">' +
       f('squads', '預設小隊數', 'number', p.squads || 0, '0 = 不分隊；設定後可用「分小隊」安排，匯出時可依小隊排序') +
       f('emailDomains', '限定報名信箱網域', 'text', p.emailDomains || '', '例如 gmail.com，多個用逗號分開；留空只檢查格式與常見打錯（gmial.com 等）') +
-      '</div><div class="hint" style="margin-top:8px">電話一律檢查是否為 0 開頭的 10 碼；身分證檢查檢查碼。有誤的人會標示並列入警示。</div></div>' +
+      '</div><div class="row wrap" style="gap:8px;margin-top:10px"><button class="btn sm" type="button" id="set-squad-staff">小隊專輔與隨輔…</button><span class="small muted">每個小隊預設 2 位專輔、2 位隨輔，可增減；學員專區會顯示自己的小隊與專隨輔</span></div>' +
+      '<div class="hint" style="margin-top:8px">電話一律檢查是否為 0 開頭的 10 碼；身分證檢查檢查碼。有誤的人會標示並列入警示。</div></div>' +
       '<div class="drawer-section"><h3>表單欄位對應</h3><p class="hint" style="margin-top:0">系統用關鍵字找欄位，找錯或找不到時請手動指定。</p><div class="grid-2">' +
       fk.map(function (k) {
         if (k.multi) {
@@ -784,7 +964,36 @@ App.page('students', function (root, params) {
     });
 
     bindHexField($('.set-head', d.body));
-    renderFormSettings($('.pf-list', d.body));
+    // 退款規定：時間段列表
+    var rfList = $('.rf-list', d.body);
+    function rfRow(t) {
+      t = t || {};
+      var row = el('<div class="rf-row"><input class="input" type="date" aria-label="這天（含）前取消"><span class="small muted">前取消，退還</span><input class="input" type="number" min="0" max="100" step="1" aria-label="退還比例"><span class="small muted">%</span>' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" aria-label="刪除這個時間段">刪除</button>') + '</div>');
+      var ins = $$('input', row);
+      ins[0].value = t.until || ''; ins[1].value = t.pct === undefined ? '' : t.pct;
+      ins.forEach(function (i) { i.disabled = ro; });
+      if (!ro) $('button', row).addEventListener('click', function () { row.remove(); rfEmpty(); });
+      rfList.appendChild(row);
+    }
+    function rfEmpty() {
+      var e = $('.rf-empty', rfList);
+      if (!$('.rf-row', rfList) && !e) rfList.appendChild(el('<div class="small muted rf-empty">還沒有時間段（不設定時信裡與表單不顯示退款比例）</div>'));
+      if ($('.rf-row', rfList) && e) e.remove();
+    }
+    ((p.refund && p.refund.tiers) || []).forEach(rfRow);
+    rfEmpty();
+    $('[name=refundNote]', d.body).value = (p.refund && p.refund.note) || '';
+    if ($('#rf-add', d.body)) $('#rf-add', d.body).addEventListener('click', function () {
+      var rows = $$('.rf-row', rfList), last = rows.length ? $$('input', rows[rows.length - 1]) : null;
+      rfRow({ pct: last && last[1].value !== '' ? Math.max(0, Number(last[1].value) - 50) : 100 });
+      rfEmpty();
+    });
+    $('#set-squad-staff', d.body).addEventListener('click', function () {
+      var n = Number($('[name=squads]', d.body).value) || 0;
+      if (n !== (p.squads || 0)) { toast('小隊數改了還沒儲存，請先按「儲存設定」', true); return; }
+      openSquadStaff();
+    });
     var ctList = $('.ct-list', d.body);
     function ctRow(c) {
       c = c || {};
@@ -856,6 +1065,21 @@ App.page('students', function (root, params) {
       if (hc !== normHex(p.headerColor || '#2f5d62')) patch.headerColor = hc;
       var foot = form.elements.footer.value.replace(/\r\n/g, '\n').trim();
       if (foot !== String(p.footerEffective || '').trim()) patch.footer = foot;
+      var tiers = $$('.rf-row', form).map(function (r) { var i = $$('input', r); return { until: i[0].value, pct: i[1].value }; })
+        .filter(function (t) { return t.until || t.pct !== ''; });
+      var rfErr = '';
+      var rs = form.elements.regStart.value, re = form.elements.regEnd.value, seen = {};
+      tiers.forEach(function (t) {
+        if (rfErr) return;
+        if (!t.until) rfErr = '退款規定的日期請填完整';
+        else if (t.pct === '' || !(Number(t.pct) >= 0 && Number(t.pct) <= 100)) rfErr = '退還比例請填 0 到 100';
+        else if ((rs && t.until < rs) || (re && t.until > re)) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）要在招生期間內';
+        else if (seen[t.until]) rfErr = '退款規定有重複的日期';
+        seen[t.until] = true;
+      });
+      if (rfErr) { toast(rfErr, true); return; }
+      var refund = { tiers: tiers.map(function (t) { return { until: t.until, pct: Math.round(Number(t.pct)) }; }).sort(function (a, b) { return a.until < b.until ? -1 : 1; }), note: form.elements.refundNote.value.replace(/\r\n/g, '\n').trim() };
+      if (JSON.stringify(refund) !== JSON.stringify(p.refund || { tiers: [], note: '' })) patch.refund = refund;
       var contacts = $$('.ct-row', form).map(function (r) {
         var c = {}; $$('input', r).forEach(function (i) { c[i.dataset.k] = i.value.trim(); }); return c;
       }).filter(function (c) { return c.title || c.name || c.phone || c.email || c.ig || c.line || c.link; });
@@ -1018,6 +1242,8 @@ App.page('students', function (root, params) {
       sync();
     });
     sync();
+    $('.squad-sum', body).insertAdjacentHTML('afterend', '<div><button class="btn sm ghost" type="button" data-a="staff">各小隊專輔與隨輔…</button></div>');
+    $('[data-a=staff]', body).addEventListener('click', function () { openSquadStaff(); });
     modal({ title: '分小隊', desc: '共 ' + n + ' 隊，' + list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回。', body: body, wide: true,
       buttons: D.readOnly ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
       if (!ok) return;
@@ -1033,6 +1259,8 @@ App.page('students', function (root, params) {
   $('#st-settings', root).addEventListener('click', function () { if (D) openSettings(); });
   $('#st-bulk', root).addEventListener('click', function () { if (D) openBulk(); });
   $('#st-tpl', root).addEventListener('click', function () { if (D) openProjectTemplates(); });
+  $('#st-forms', root).addEventListener('click', function () { if (D) openForms(); });
+  $('#st-portal', root).addEventListener('click', function () { if (D) openPortal(); });
   $('#st-squad', root).addEventListener('click', function () { if (D) openSquads(); });
   $('#st-cols', root).addEventListener('click', function () { if (D) openColumns(); });
   $('#st-squad-filter', root).addEventListener('change', function (e) { squadFilter = e.target.value; renderTable(); });
