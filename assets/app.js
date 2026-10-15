@@ -249,18 +249,36 @@ function echoSampleHtml(fields) {
     }).join('') + '</table>';
 }
 
-/** 聯絡人員小表格（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
+/** IG、LINE 連結（與後端 igLink_、lineLink_ 相同） */
+function igLink(v) {
+  v = String(v || '').trim();
+  var m = v.match(/^(?:https?:\/\/)?(?:www\.)?instagram\.com\/([A-Za-z0-9._]{1,30})\/?(?:\?.*)?$/i) || v.match(/^@?([A-Za-z0-9._]{1,30})$/);
+  return m ? { href: 'https://www.instagram.com/' + m[1] + '/', label: 'IG @' + m[1] } : null;
+}
+function lineLink(v) {
+  v = String(v || '').trim();
+  if (/^https?:\/\/[^\s"'<>]+$/i.test(v)) return { href: v, label: 'LINE' };
+  var m = v.match(/^@?([A-Za-z0-9._-]{2,40})$/);
+  return m ? { href: 'https://line.me/ti/p/' + (v.charAt(0) === '@' ? '@' : '~') + m[1], label: 'LINE ID：' + v } : null;
+}
+
+/** 聯絡人員（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
 function contactsSampleHtml(list) {
-  list = (list || [{ title: '總召', name: 'OOO', phone: '0900-000-000', email: 'ooo@gmail.com' }]).filter(function (c) { return c && c.name; });
+  list = (list || [{ title: '總召', name: 'OOO', phone: '0900-000-000', email: 'ooo@gmail.com', ig: '@ooo_camp', line: 'ooo' }]).filter(function (c) { return c && c.name; });
   if (!list.length) return '';
-  var td = 'padding:6px 10px;border-bottom:1px solid #eef0ee;vertical-align:top';
+  var a = 'color:#1565c0;text-decoration:none';
   return '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">聯絡人員</div>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#f9faf8">' + list.map(function (c) {
-      return '<tr><td style="' + td + ';color:#5b665f;white-space:nowrap">' + esc(c.title || '') + '</td>' +
-        '<td style="' + td + ';color:#1f2937;font-weight:600;white-space:nowrap">' + esc(c.name) + '</td>' +
-        '<td style="' + td + ';white-space:nowrap;color:#1f2937">' + esc(c.phone || '') + '</td>' +
-        '<td style="' + td + ';word-break:break-all;color:#1565c0">' + esc(c.email || '') + '</td></tr>';
-    }).join('') + '</table>';
+    '<div style="font-size:13px;line-height:1.7;background:#f9faf8;border-radius:8px">' + list.map(function (c) {
+      var ways = [];
+      if (c.phone) ways.push('<span style="color:#1f2937">' + esc(c.phone) + '</span>');
+      if (c.email) ways.push('<span style="' + a + '">' + esc(c.email) + '</span>');
+      var ig = c.ig ? igLink(c.ig) : null, ln = c.line ? lineLink(c.line) : null;
+      if (ig) ways.push('<span style="' + a + '">' + esc(ig.label) + '</span>');
+      if (ln) ways.push('<span style="' + a + '">' + esc(ln.label) + '</span>');
+      if (c.link && /^https?:\/\//i.test(c.link)) ways.push('<span style="' + a + '">' + esc(String(c.link).replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '')) + '</span>');
+      return '<div style="padding:8px 12px;border-bottom:1px solid #eef0ee">' + (c.title ? '<span style="color:#5b665f;margin-right:8px">' + esc(c.title) + '</span>' : '') +
+        '<b style="color:#1f2937">' + esc(c.name) + '</b>' + (ways.length ? '<div style="margin-top:2px;word-break:break-all">' + ways.join('<span style="color:#c4c9c5">　｜　</span>') + '</div>' : '') + '</div>';
+    }).join('') + '</div>';
 }
 
 /** 在游標處插入，或把選取的文字包起來 */
@@ -654,7 +672,7 @@ function mailTextToHtml(text) {
 /** 編輯時即時預覽：代入範例值後轉成與實際信件相同的 HTML */
 /** 內部備註 [備註]…[/備註]：寄出時拿掉（與後端 stripNotes_ 相同）；預覽可選擇顯示成黃色便條 */
 var NOTE_RE = /\[備註\]([\s\S]*?)\[\/備註\]/g;
-var MAIL_NOTES_SHOWN = (function () { try { return localStorage.getItem('camp-show-notes') === '1'; } catch (e) { return false; } })();
+var MAIL_NOTES_SHOWN = (function () { try { return localStorage.getItem('camp-show-notes') !== '0'; } catch (e) { return true; } })();   // 預設顯示
 function stripNotes(text) {
   return String(text || '').replace(/^[ \t\u3000]*\[備註\][\s\S]*?\[\/備註\][ \t\u3000]*(?:\r?\n|$)/gm, '').replace(NOTE_RE, '');
 }
@@ -708,6 +726,8 @@ function openTemplateEditor(t, opts) {
   var footMode = t.footer === '-' ? 'none' : t.footer ? 'custom' : 'default';
   var sigMode = t.signature ? 'custom' : 'default';
   var defSig = String(opts.signature || '').trim() || DEFAULT_SIGNATURE;
+  var defHead = normHex(opts.headerColor) || '#2f5d62';   // 沒自訂時用的顏色（專案預設，沒設就是墨綠）
+  var headCustom = !!normHex(t.headerColor) && normHex(t.headerColor) !== defHead;
   var body = el('<div class="tpl-editor"><div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
     (opts.note ? '<div class="banner" style="background:var(--surface-2);margin:0">' + esc(opts.note) + '</div>' : '') +
     '<div class="field"><div class="row" style="gap:8px"><span class="grow">主旨</span><span class="subj-var"></span></div><input class="input" name="subject"></div>' +
@@ -727,8 +747,8 @@ function openTemplateEditor(t, opts) {
     '<details class="fmt-details"><summary class="small">格式寫法</summary>' + help + '</details>' +
     '<div class="small tpl-err" style="color:var(--bad);min-height:16px"></div></div>' +
     '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="row wrap" style="gap:8px"><span class="small muted grow">即時預覽（文字以 OOO、數字以 000 代入）</span><label class="check small"><input type="checkbox" class="note-toggle"' + (MAIL_NOTES_SHOWN ? ' checked' : '') + '><span>顯示內部備註</span></label></div>' +
-    '<div class="row wrap tpl-head" style="gap:8px"><span class="small">' + esc(opts.headerLabel || '信件標頭顏色') + '</span>' + hexField('tpl-headhex', normHex(opts.headerColor) || '#2f5d62') +
-    (opts.onSaveHeader ? '<button class="btn sm" type="button" data-head-save>套用顏色</button>' : '') + '<span class="small muted grow">' + esc(opts.headerHint || '') + '</span></div>' +
+    '<div class="row wrap tpl-head" style="gap:8px"><span class="small">這封信的標頭顏色</span>' + hexField('tpl-headhex', normHex(t.headerColor) || defHead) +
+    '<button class="btn sm ghost" type="button" data-head-reset>恢復預設</button><span class="small muted grow head-state"></span></div>' +
     '<div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe></div></div>');
   var subj = $('[name=subject]', body), ta = $('[name=body]', body), frame = $('iframe', body);
   subj.value = t.subject; ta.value = t.body;
@@ -779,14 +799,19 @@ function openTemplateEditor(t, opts) {
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
   bindHexField($('.tpl-headhex', body));
-  $('.tpl-headhex input[type=color]', body).addEventListener('input', function () { preview(); });
-  var headSave = $('[data-head-save]', body);
-  if (headSave) headSave.addEventListener('click', function () {
+  function headState() {
+    $('.head-state', body).textContent = headCustom ? '這封信自訂顏色' : '目前用預設 ' + defHead + (defHead === '#2f5d62' ? '（墨綠）' : '（專案設定）');
+    $('[data-head-reset]', body).disabled = !headCustom;
+  }
+  $('.tpl-headhex', body).addEventListener('input', function () {
     var hx = normHex($('.tpl-headhex .fmt-hexin', body).value);
-    if (!hx) { toast('色號格式是 # 加 6 碼（例如 #2f5d62）或 3 碼', true); return; }
-    Promise.resolve(opts.onSaveHeader(hx)).then(function () { opts.headerColor = hx; toast('已套用信件標頭顏色'); })
-      .catch(function (e) { toast(e.message, true); });
+    headCustom = !!hx && hx !== defHead; headState();
   });
+  $('[data-head-reset]', body).addEventListener('click', function () {
+    $('.tpl-headhex .fmt-hexin', body).value = defHead; $('.tpl-headhex input[type=color]', body).value = defHead;
+    headCustom = false; headState(); preview();
+  });
+  headState();
   var echoSave = $('[data-echo-save]', body);
   if (echoSave) {
     echoSave.addEventListener('click', function () {
@@ -810,13 +835,15 @@ function openTemplateEditor(t, opts) {
     label: '儲存', cls: 'primary',
     validate: function () {
       if (!subj.value.trim() || !ta.value.trim()) { $('.tpl-err', body).textContent = '主旨與內容不可空白'; return false; }
+      if (!normHex($('.tpl-headhex .fmt-hexin', body).value)) { $('.tpl-err', body).textContent = '標頭顏色格式是 # 加 6 碼（例如 #2f5d62）或 3 碼'; return false; }
       return true;
     },
     value: function () {
       var fm = footSel.value, ft = footTa.value.replace(/\r\n/g, '\n').trim();
       return { subject: subj.value, body: ta.value,
         footer: fm === 'default' ? '' : fm === 'none' || !ft ? '-' : ft,
-        signature: sigSel.value === 'custom' ? sigIn.value.trim() : '' };
+        signature: sigSel.value === 'custom' ? sigIn.value.trim() : '',
+        headerColor: headCustom ? normHex($('.tpl-headhex .fmt-hexin', body).value) : '' };
     }
   });
   return modal({ title: '編輯範本：' + t.name, cls: 'xwide', body: body, buttons: buttons });
