@@ -15,6 +15,7 @@ function store(key, val, persist) {
     if (val === undefined) return sessionStorage.getItem(key) || localStorage.getItem(key);
     sessionStorage.removeItem(key);
     localStorage.removeItem(key);
+    if (key === 'camp_token' && val === null) cacheClear();   // 登出或換人：畫面快取一起清掉
     if (val !== null) (persist ? localStorage : sessionStorage).setItem(key, val);
   } catch (e) { return null; }
 }
@@ -48,6 +49,50 @@ function api(name) {
   });
 }
 
+/* ---------- 畫面資料快取：切換頁面先顯示上次的資料，同時向後端拿最新的 ----------
+ * 存在 sessionStorage（只在這個分頁，關掉就清掉），並綁定登入 token，換人登入不會看到別人的資料。 */
+var CACHE_PREFIX = 'camp-c:';
+function cacheKey(name, args) { return CACHE_PREFIX + name + ':' + JSON.stringify(args || []); }
+function cacheGet(key) {
+  try {
+    var o = JSON.parse(sessionStorage.getItem(key) || 'null');
+    return o && o.t === App.token ? o.d : null;
+  } catch (e) { return null; }
+}
+function cacheSet(key, data) {
+  try { sessionStorage.setItem(key, JSON.stringify({ t: App.token, d: data })); }
+  catch (e) { try { sessionStorage.removeItem(key); } catch (e2) {} }   // 資料太大存不下就算了
+}
+function cacheClear() {
+  try { Object.keys(sessionStorage).forEach(function (k) { if (k.indexOf(CACHE_PREFIX) === 0) sessionStorage.removeItem(k); }); } catch (e) {}
+}
+/**
+ * 讀取型 API 的快速版：有上次的資料就先 show(data, false)，拿到最新的再 show(data, true)。
+ * 用法 apiFast('getProjectData', prefix, show)；回傳的 Promise 在拿到最新資料後完成。
+ */
+function apiFast(name) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  var show = args.pop();
+  var key = cacheKey(name, args);
+  var hit = cacheGet(key);
+  if (hit) show(hit, false);
+  return api.apply(null, [name].concat(args)).then(function (d) {
+    cacheSet(key, d);
+    show(d, true);
+    return d;
+  });
+}
+/** 背景預先載入（還沒有快取的才抓），一次一個，不影響畫面 */
+function prefetch(list) {
+  var i = 0;
+  (function next() {
+    if (i >= list.length) return;
+    var it = list[i++], key = cacheKey(it[0], it.slice(1));
+    if (cacheGet(key)) return next();
+    api.apply(null, it).then(function (d) { cacheSet(key, d); }).catch(function () {}).then(next);
+  })();
+}
+
 function esc(s) {
   return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -76,7 +121,7 @@ function $(sel, root) { return (root || document).querySelector(sel); }
 function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
 var STATUS_COLORS = {
-  '已報名': 'info', '繳款待核覆': 'brand', '匯款逾期': 'bad', '匯款異常': 'bad', '程序完成': 'ok',
+  '已報名': 'info', '資格審核中': 'brand', '繳款待核覆': 'brand', '匯款逾期': 'bad', '匯款異常': 'bad', '程序完成': 'ok',
   '候補中': 'warn', '招生期外': 'warn', '報名取消': 'mute', '報名失敗': 'mute',
   '運作中': 'ok', '系統維護': 'warn', '已停止': 'bad', '已封存': 'mute', '已過期': 'mute', '全部停止': 'bad',
   '待核准': 'warn', '未核准': 'bad'
@@ -1080,15 +1125,33 @@ var Bell = {
     });
     body.appendChild(el('<div class="bell-foot">未讀超過 ' + this.data.autoReadDays + ' 天自動標為已讀，通知保留 30 天</div>'));
   },
+  /** 點通知：先看完整內容，再決定要不要前往學員或專案（同一個專案頁直接打開學員，不重新載入） */
   open: function (n) {
     var self = this;
-    var go2 = function () {
-      self.close();
-      if (n.admin) { go('admin', { tab: n.project ? 'projects' : 'staff' }); return; }
-      if (n.project) go('students', n.studentId ? { prefix: n.project, title: n.projectName, student: n.studentId } : { prefix: n.project, title: n.projectName });
-    };
-    if (n.read) { go2(); return; }
-    api('markNotifications', [n.id]).then(function (r) { self.setCount(r.unread); }).catch(function () {}).then(go2);
+    self.close();
+    if (!n.read) {
+      n.read = true;
+      api('markNotifications', [n.id]).then(function (r) { self.setCount(r.unread); }).catch(function () {});
+    }
+    var body = el('<div class="notify-detail"><div class="row wrap" style="gap:8px"><span class="pill"></span><span class="small muted nd-proj"></span><span class="spacer"></span><span class="small muted nd-time"></span></div><div class="nd-body"></div></div>');
+    $('.pill', body).className = 'pill ' + (n.tone || 'mute');
+    $('.pill', body).textContent = n.label || '通知';
+    $('.nd-proj', body).textContent = n.project ? n.project + (n.projectName ? ' ' + n.projectName : '') : '';
+    $('.nd-time', body).textContent = fmtTime(n.time);
+    $('.nd-body', body).textContent = n.body || '（沒有其他內容）';
+    var buttons = [{ label: '關閉', value: null }];
+    if (n.admin) buttons.push({ label: '前往系統管理', cls: 'primary', value: 'admin' });
+    else if (n.project && n.studentId) buttons.push({ label: '查看這位學員', cls: 'primary', value: 'student' });
+    else if (n.project) buttons.push({ label: '前往專案', cls: 'primary', value: 'project' });
+    modal({ title: n.title, body: body, buttons: buttons }).then(function (v) {
+      if (v === 'admin') go('admin', { tab: n.project ? 'projects' : 'staff' });
+      if (v === 'project') go('students', { prefix: n.project, title: n.projectName });
+      if (v === 'student') {
+        // 已經在這個專案的名單頁：直接打開，不重新載入
+        if (App.openStudent && getParams().prefix === n.project && App.openStudent(n.studentId)) return;
+        go('students', { prefix: n.project, title: n.projectName, student: n.studentId });
+      }
+    });
   },
   settings: function () {
     var self = this, d = this.data;
@@ -1126,15 +1189,29 @@ App.page = function (name, init) {
   function start() {
     App.token = store('camp_token');
     if (!App.token) { location.href = 'index.html'; return; }
-    api('whoami').then(function (u) {
+    // 上次確認過的登入資料先用，畫面不用等；背景再向後端確認一次（失效會自動跳回登入頁）
+    var known = cacheGet(cacheKey('whoami'));
+    var quick = !!(known && !known.mustChange && !known.termsNeeded);
+    var check = api('whoami').then(function (u) {
+      cacheSet(cacheKey('whoami'), u);
+      if (quick) { if (u.mustChange || u.termsNeeded) location.reload(); else App.user = u; }   // 需要改密碼或重新同意條款：重新走一次檢查
+      return u;
+    });
+    if (quick) check.catch(function () {});
+    var who = quick ? Promise.resolve(known) : check;
+    who.then(function (u) {
       App.user = u;
       var params = getParams();
       renderTopbar(name, params);
       var root = $('#app').firstElementChild;
       root.classList.remove('hidden');
     var ld = $('#page-loading'); if (ld) ld.remove();
+      var flagged = u.mustChange || u.termsNeeded;
       var gate = u.mustChange ? forceNewPassword() : Promise.resolve();
-      gate.then(function () { return u.termsNeeded ? requireTerms() : null; }).then(function () { init(root, params); });
+      gate.then(function () { return u.termsNeeded ? requireTerms() : null; }).then(function () {
+        if (flagged) cacheSet(cacheKey('whoami'), Object.assign({}, u, { mustChange: false, termsNeeded: false }));   // 已改密碼／已同意，下一頁不用再等
+        init(root, params);
+      });
     }).catch(function (e) {
       $('#app').innerHTML = '<div class="card card-pad empty"></div>';
       $('#app .empty').textContent = e.message;
@@ -1149,7 +1226,8 @@ App.loginPage = function () {
     var msg = getParams().msg;
     if (msg) $('#login-error').textContent = msg;
     App.token = store('camp_token');
-    if (App.token && !msg) api('whoami').then(function () { go('menu'); }).catch(function () { store('camp_token', null); });
+    if (App.token && !msg) { location.replace('menu.html'); return; }   // 選單頁會驗證 token，失效就帶訊息跳回登入頁
+    if (msg) store('camp_token', null);
     $('#login-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var f = e.target;
