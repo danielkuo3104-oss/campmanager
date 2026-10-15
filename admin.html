@@ -107,7 +107,7 @@ App.page('admin', function (root, params) {
       var td = $$('td', tr);
       td[0].textContent = s.name;
       td[1].textContent = s.email;
-      td[2].innerHTML = '<span class="role-tag' + (s.isRoot ? ' root' : '') + '">' + esc(s.role) + '</span>';
+      td[2].innerHTML = '<span class="role-tag' + (s.isOwner ? ' owner' : s.isRoot ? ' root' : '') + '">' + esc(s.role) + '</span>' + (s.isOwner && s.isChief ? '<span class="role-tag root" style="margin-left:4px">總管</span>' : '');
       td[3].textContent = s.isRoot || s.perms.indexOf('allProjects') >= 0 ? '全部專案' : (s.projects.join('、') || '—');
       td[4].innerHTML = s.isRoot ? '<span class="small muted">全部</span>' : s.perms.length ? '<div class="perm-tags">' + s.perms.map(function (k) { return '<span class="perm-tag">' + esc(permLabel(k)) + '</span>'; }).join('') + '</div>' : '<span class="small muted">—</span>';
       td[5].innerHTML = (s.applyStatus === '已拒絕' ? '<span class="pill mute">申請未通過</span>' :
@@ -119,7 +119,7 @@ App.page('admin', function (root, params) {
       // 有授權的人只有總管能停用或重設密碼（避免互相接管）
       var touchable = !s.isRoot && (D.me.isRoot || !s.perms.length || s.email === D.me.email);
       if (D.me.isRoot && !s.isRoot && s.enabled) btn('權限', function () { editPerms(s); });
-      if (can('manageStaff') && (!s.isRoot || D.me.isRoot)) btn('編輯', function () { editStaff(s); });
+      if (can('manageStaff') && (!s.isRoot || D.me.isRoot) && (!s.isOwner || D.me.isOwner)) btn('編輯', function () { editStaff(s); });
       if (can('manageStaff') && touchable) btn('重設密碼', function () { resetPw(s); });
       if (s.applyStatus === '已拒絕' && can('approveStaff')) btn('改為核准', function () { approveApply(s); });
       else if (can('manageStaff') && touchable) btn(s.enabled ? '停用' : '啟用', function () { toggleStaff(s); }, s.enabled ? 'danger' : '');
@@ -134,7 +134,7 @@ App.page('admin', function (root, params) {
       '<label class="field"><span>名稱</span><input class="input" name="name"></label>' +
       '<label class="field"><span>信箱</span><input class="input" name="email" type="email"></label>' +
       (isNew ? '<label class="field"><span>密碼</span><input class="input" name="password" type="password" autocomplete="new-password"><span class="hint">至少 8 個字元</span></label>' : '') +
-      (s && s.isRoot ? '<div class="hint">總管只能修改名稱；要換人請到「權限與移交」移交總管。</div>' :
+      (s && s.isRoot ? '<div class="hint">' + (s.isOwner ? esc(D.ownerTitle || '創辦人') : '總管') + '只能修改名稱；總管要換人請到「權限與移交」。</div>' :
         '<div class="field"><span class="small muted">可管理專案</span><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">' +
         D.projects.map(function (p) { return '<label class="check"><input type="checkbox" name="proj" value="' + esc(p.prefix) + '"' + (s && s.projects.indexOf(p.prefix) >= 0 ? ' checked' : '') + '><span>' + esc(p.prefix + '　' + p.name) + '</span></label>'; }).join('') +
         '</div></div>') +
@@ -351,7 +351,7 @@ App.page('admin', function (root, params) {
 
   /* ---------- 信件範本 ---------- */
   function editTemplate(t) {
-    openTemplateEditor(t, {}).then(function (v) {
+    openTemplateEditor(t, { footer: D.mailFooter, closingNote: '（附註與署名示意：各專案可在專案設定修改；署名留空時用「營隊名稱 籌辦團隊 敬上」）' }).then(function (v) {
       if (!v) return;
       withBusy(api('saveTemplate', t.code, v.subject, v.body)).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
     });
@@ -377,6 +377,23 @@ App.page('admin', function (root, params) {
     body.appendChild(card);
   }
 
+  /** 系統預設的信件附註：每封信最後的灰色小字；各專案可自訂或不加 */
+  function renderFooter(body) {
+    var card = el('<div class="card card-pad" style="margin-top:16px"><div class="row"><div class="grow"><h3 style="margin:0">信件附註（系統預設）</h3>' +
+      '<div class="small muted">每封信內容之後、署名之前，以分隔線隔開的灰色小字。各專案可在「專案設定 → 信件附註」改成自己的或不加；清空表示預設不加附註。</div></div></div>' +
+      '<div class="field" style="margin-top:12px"><textarea class="input" rows="5"></textarea></div>' +
+      '<div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" type="button" data-a="dflt">填入原始預設</button><button class="btn primary" type="button" data-a="save">儲存附註</button></div></div>');
+    var ta = $('textarea', card);
+    ta.value = D.mailFooter || '';
+    var ed = chipEditor(ta);
+    ta.parentNode.insertBefore(formatToolbar(ed, { vars: true }), ta);
+    $('[data-a=dflt]', card).addEventListener('click', function () { ed.value = D.mailFooterDefault; });
+    $('[data-a=save]', card).addEventListener('click', function () {
+      withBusy(api('saveMailFooter', ed.value)).then(function (r) { toast(r ? '信件附註已儲存' : '內容沒有變更'); load(); }).catch(function (e) { toast(e.message, true); });
+    });
+    body.appendChild(card);
+  }
+
   function renderTemplates(body) {
     var card = el('<div class="card"><div class="toolbar"><div class="grow small muted">這裡是系統預設範本，所有專案共用；各專案可在「報名與學員管理 → 信件範本」複製一份直接修改（例如加上飯店、總召資訊）。</div></div>' +
       '<table class="simple"><thead><tr><th>通知</th><th>主旨</th><th></th></tr></thead><tbody></tbody></table></div>');
@@ -389,10 +406,11 @@ App.page('admin', function (root, params) {
       tb.appendChild(tr);
     });
     body.appendChild(card);
+    renderFooter(body);
     renderPresets(body);
   }
 
-  /* ---------- 權限與移交（只有總管） ---------- */
+  /* ---------- 權限與移交（總管與創辦人） ---------- */
   function editPerms(s) {
     var form = el('<form class="perm-form" onsubmit="return false"></form>');
     D.permDefs.forEach(function (x) {
@@ -466,29 +484,70 @@ App.page('admin', function (root, params) {
     });
     body.appendChild(tm);
 
-    var tc = el('<div class="card card-pad transfer-card"><h3>移交總管</h3><div class="small muted" style="margin-bottom:12px">把總管交給另一位已啟用的管理員。移交後你會變成共同管理，系統管理的功能改由對方使用；雙方都會收到通知信，並記錄在操作紀錄。</div>' +
-      '<div class="row" style="justify-content:flex-end"><button class="btn danger" type="button">移交總管…</button></div></div>');
-    $('button', tc).addEventListener('click', transfer);
+    var OWN = D.ownerTitle || '創辦人';
+    var chief = D.staff.filter(function (s) { return s.isChief; })[0];
+    var owner = D.staff.filter(function (s) { return s.isOwner; })[0];
+    var desc, btns;
+    if (D.me.isOwner && D.me.isChief) {
+      desc = '你是' + OWN + '，目前也擔任總管。可以把總管交給另一位管理員負責日常管理；你仍保有全部權限，隨時可以收回。雙方都會收到通知信，並記錄在操作紀錄。';
+      btns = '<button class="btn danger" type="button" data-t="give">指派總管…</button>';
+    } else if (D.me.isOwner) {
+      desc = '目前的總管是 ' + (chief ? chief.name + '（' + chief.email + '）' : '（未指定）') + '。你是' + OWN + '，不受移交影響、保有全部權限，可以隨時收回總管或改指派給其他人。';
+      btns = '<button class="btn" type="button" data-t="give">改指派…</button><button class="btn danger" type="button" data-t="reclaim">收回總管…</button>';
+    } else {
+      desc = '把總管交給另一位已啟用的管理員。移交後你會變成共同管理，系統管理的功能改由對方使用；雙方都會收到通知信，並記錄在操作紀錄。' +
+        (owner ? OWN + ' ' + owner.name + ' 不受影響，隨時可以收回總管。' : '');
+      btns = '<button class="btn danger" type="button" data-t="give">移交總管…</button>';
+    }
+    var tc = el('<div class="card card-pad transfer-card"><h3>' + (D.me.isOwner ? '總管指派' : '移交總管') + '</h3><div class="small muted" style="margin-bottom:12px"></div>' +
+      '<div class="row" style="justify-content:flex-end;gap:8px">' + btns + '</div></div>');
+    $('.small', tc).textContent = desc;
+    $$('[data-t]', tc).forEach(function (b) { b.addEventListener('click', function () { transfer(b.getAttribute('data-t'), chief); }); });
     body.appendChild(tc);
   }
 
-  function transfer() {
+  function transfer(mode, chief) {
+    var OWN = D.ownerTitle || '創辦人';
+    var me = D.staff.filter(function (s) { return s.email === D.me.email; })[0] || { name: '你', email: D.me.email };
+    function done(msg) {
+      toast(msg);
+      if (D.me.isOwner) load(); else setTimeout(function () { go('menu'); }, 1200);
+    }
+    if (mode === 'reclaim') {
+      var other = chief && !chief.isOwner ? chief : null;
+      formDialog({
+        title: '收回總管', desc: '收回後你會重新擔任總管' + (other ? '，' + other.name + ' 改為共同管理' : '') + '。雙方都會收到通知信。', okLabel: '收回總管', danger: true,
+        fields: (other ? [{ name: 'keep', label: other.name + ' 改為共同管理後，仍可以管理所有現有專案', type: 'checkbox', value: true }] : [])
+          .concat([{ name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true }])
+      }).then(function (v) {
+        if (!v) return;
+        withBusy(api('transferRoot', D.me.email, v.pw, !!v.keep)).then(function () { done('已收回總管'); }).catch(function (e) { toast(e.message, true); });
+      });
+      return;
+    }
     var co = D.staff.filter(function (s) { return !s.isRoot && s.enabled; });
-    if (!co.length) { toast('沒有可以移交的對象，請先新增並啟用一位共同管理員', true); return; }
+    if (!co.length) { toast('沒有可以指派的對象，請先新增並啟用一位共同管理員', true); return; }
+    var keepLabel = D.me.isOwner
+      ? (chief && !chief.isOwner ? '原總管 ' + chief.name + ' 改為共同管理後，仍可以管理所有現有專案' : null)
+      : '移交後我仍可以管理所有現有專案';
+    var fields = [{ name: 'to', label: '新總管', type: 'select', options: co.map(function (s) { return { value: s.email, label: s.name + '（' + s.email + '）' }; }), required: true }];
+    if (keepLabel) fields.push({ name: 'keep', label: keepLabel, type: 'checkbox', value: true });
+    fields.push({ name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true });
     formDialog({
-      title: '移交總管', desc: '這個操作會立即生效，只有新總管能再移交回來。', okLabel: '確認移交', danger: true,
-      fields: [
-        { name: 'to', label: '新總管', type: 'select', options: co.map(function (s) { return { value: s.email, label: s.name + '（' + s.email + '）' }; }), required: true },
-        { name: 'keep', label: '移交後我仍可以管理所有現有專案', type: 'checkbox', value: true },
-        { name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true }
-      ]
+      title: D.me.isOwner ? '指派總管' : '移交總管',
+      desc: '這個操作會立即生效。' + (D.me.isOwner ? '你仍是' + OWN + '，隨時可以收回。' : OWN + '隨時可以收回總管。'),
+      okLabel: '確認', danger: true, fields: fields
     }).then(function (v) {
       if (!v) return;
       var t = co.filter(function (s) { return s.email === v.to; })[0];
-      confirmDialog({ title: '確定把總管移交給 ' + t.name + '？', lines: [t.email + ' 會成為總管', '你會改為共同管理' + (v.keep ? '，保留所有現有專案' : ''), '系統管理頁面會關閉，回到功能選單'], danger: true, okLabel: '移交' })
+      var lines = [t.email + ' 會成為總管'];
+      if (!D.me.isOwner) lines.push('你會改為共同管理' + (v.keep ? '，保留所有現有專案' : ''), '系統管理頁面會關閉，回到功能選單');
+      else if (chief && !chief.isOwner) lines.push(chief.name + ' 改為共同管理' + (v.keep ? '，保留所有現有專案' : ''));
+      else lines.push('你仍是' + OWN + '，保有全部權限');
+      confirmDialog({ title: '確定把總管交給 ' + t.name + '？', lines: lines, danger: true, okLabel: '確認' })
         .then(function (ok) {
           if (!ok) return;
-          withBusy(api('transferRoot', v.to, v.pw, !!v.keep)).then(function () { toast('已移交給 ' + t.name); setTimeout(function () { go('menu'); }, 1200); }).catch(function (e) { toast(e.message, true); });
+          withBusy(api('transferRoot', v.to, v.pw, !!v.keep)).then(function () { done('總管已交給 ' + t.name); }).catch(function (e) { toast(e.message, true); });
         });
     });
   }
