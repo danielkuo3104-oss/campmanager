@@ -50,7 +50,7 @@ App.page('menu', function (root) {
     sys.appendChild(t);
   }
   sysTile('操作紀錄', '查詢所有操作與寄信紀錄', function () { go('logs'); });
-  if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' : '使用總管授予你的管理功能', function () { go('admin'); });
+  if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' + (App.user.isOwner && !App.user.isChief ? '（總管已交給其他人）' : '') : '使用總管授予你的管理功能', function () { go('admin'); });
 
   api('listProjects').then(function (r) {
     if (r.globalStop) {
