@@ -24,6 +24,7 @@ function exportSystemFields_(groups) {
   return [
     { key: 'sys:no', label: '序號', get: function (s, i) { return String(i + 1); } },
     { key: 'sys:status', label: '狀態', get: function (s) { return s.status; } },
+    { key: 'sys:squad', label: '小隊', get: function (s) { return s.squad === '' || s.squad === undefined ? '' : String(s.squad); } },
     { key: 'sys:time', label: '報名時間', get: function (s) { return fmtTime(s.time); } },
     { key: 'sys:id', label: '學員編號', get: function (s) { return s.id; } },
     { key: 'sys:price', label: '應繳金額', get: function (s) { return s.price === '' ? '' : money(s.price); } },
@@ -45,6 +46,16 @@ function exportCellText_(v) {
   return s;
 }
 
+/** 中文姓名依筆畫排序（瀏覽器的繁體中文排序就是筆畫序） */
+var STROKE_CMP = (window.Intl && Intl.Collator) ? new Intl.Collator('zh-Hant-TW').compare : function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+
+/** 功能欄：簽到、繳費確認、簽名、備註等空白欄位（印出來手寫用） */
+var EXPORT_TOOLS = [
+  { kind: 'check', label: '勾選欄', dflt: '報到', hint: '每格一個方框；多個欄位用、分開，例如：報到、保險、繳費' },
+  { kind: 'sign', label: '簽名欄', dflt: '簽名', hint: '加寬的空白欄，列高也會加高' },
+  { kind: 'note', label: '備註欄', dflt: '備註', hint: '最寬的空白欄' }
+];
+
 /**
  * 開啟匯出視窗。
  * o: {prefix, project, groups, filtered:[], all:[], filterLabel, displayCols:[]}
@@ -63,6 +74,14 @@ function openExportDialog(o) {
     '<div class="export-row"><span class="export-label">匯出範圍</span><div class="seg">' +
       '<label><input type="radio" name="scope" value="filtered" checked><span>目前畫面（' + esc(o.filterLabel) + '，' + o.filtered.length + ' 筆）</span></label>' +
       '<label><input type="radio" name="scope" value="all"><span>全部學員（' + o.all.length + ' 筆）</span></label></div></div>' +
+    (o.squads > 0 ? '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
+      '<label><input type="radio" name="order" value="screen" checked><span>與畫面相同</span></label>' +
+      '<label><input type="radio" name="order" value="squad"><span>依小隊（隊內依姓名筆畫）</span></label>' +
+      '<label><input type="radio" name="order" value="stroke"><span>依姓名筆畫</span></label></div>' +
+      '<label class="check export-break hidden"><input type="checkbox" name="squadBreak" checked><span>每個小隊從新的一頁開始</span></label></div>'
+      : '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
+      '<label><input type="radio" name="order" value="screen" checked><span>與畫面相同</span></label>' +
+      '<label><input type="radio" name="order" value="stroke"><span>依姓名筆畫</span></label></div></div>') +
     '<div class="export-row"><span class="export-label">紙張方向</span><div class="seg">' +
       '<label><input type="radio" name="orient" value="portrait" checked><span>直式 A4</span></label>' +
       '<label><input type="radio" name="orient" value="landscape"><span>橫式 A4</span></label></div></div>' +
@@ -71,14 +90,37 @@ function openExportDialog(o) {
         '<div class="export-cols" data-g="sys">' + sys.map(function (f) { return checkHtml(f.key, f.label, f.key === 'sys:no' || f.key === 'sys:status'); }).join('') + '</div></div>' +
       '<div class="export-group"><div class="export-group-head"><b>表單題目</b><span class="spacer"></span><button type="button" class="link" data-all="q">全選</button><button type="button" class="link" data-none="q">清除</button></div>' +
         '<div class="export-cols" data-g="q">' + (questions.length ? questions.map(function (q) { return checkHtml('q:' + q, q, display.indexOf(q) >= 0); }).join('') : '<span class="muted small">尚未讀取表單題目</span>') + '</div></div>' +
+      '<div class="export-group"><div class="export-group-head"><b>功能欄</b><span class="small muted">　空白欄位，印出來手寫或打勾；標題可以改</span></div>' +
+        '<div class="export-tools">' + EXPORT_TOOLS.map(function (t) {
+          return '<div class="export-tool"><label class="check"><input type="checkbox" name="tool" value="' + t.kind + '"><span>' + esc(t.label) + '</span></label>' +
+            '<input class="input sm" name="tool_' + t.kind + '" value="' + esc(t.dflt) + '" aria-label="' + esc(t.label) + '標題"><span class="small muted">' + esc(t.hint) + '</span></div>';
+        }).join('') + '</div></div>' +
     '</div></div>' +
     '<div class="small muted export-hint"></div>' +
     '<div class="small export-err" style="color:var(--bad);min-height:16px"></div></div>');
 
   function selected() { return $$('input[name=col]:checked', body).map(function (i) { return i.value; }); }
+  function tools() {
+    var out = [];
+    $$('input[name=tool]:checked', body).forEach(function (i) {
+      var title = $('input[name=tool_' + i.value + ']', body).value.trim();
+      var names = i.value === 'check' ? title.split(/[、,，\s]+/).filter(String) : [title || EXPORT_TOOLS.filter(function (t) { return t.kind === i.value; })[0].dflt];
+      if (!names.length) names = ['報到'];
+      names.forEach(function (n) { out.push({ kind: i.value, label: n }); });
+    });
+    return out;
+  }
+  // 改功能欄標題時自動勾選
+  $$('.export-tool .input', body).forEach(function (inp) {
+    inp.addEventListener('input', function () {
+      var cb = $('input[name=tool]', inp.parentNode), on = !!inp.value.trim();
+      if (cb.checked !== on) { cb.checked = on; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+      hint();
+    });
+  });
   function hint() {
-    var n = selected().length;
-    $('.export-hint', body).textContent = '已選 ' + n + ' 欄。欄位多於 7 欄時建議用橫式；PDF 的欄位順序與上面相同。';
+    var n = selected().length + tools().length;
+    $('.export-hint', body).textContent = '已選 ' + n + ' 欄。欄位多於 7 欄時建議用橫式；PDF 的欄位順序與上面相同，功能欄放在最後。';
   }
   $$('[data-all],[data-none]', body).forEach(function (b) {
     b.addEventListener('click', function () {
@@ -88,9 +130,10 @@ function openExportDialog(o) {
     });
   });
   body.addEventListener('change', function (e) {
-    if (e.target.name === 'col') {
+    if (e.target.name === 'order') { var br = $('.export-break', body); if (br) br.classList.toggle('hidden', e.target.value !== 'squad'); }
+    if (e.target.name === 'col' || e.target.name === 'tool') {
       // 欄位一多自動建議橫式（使用者仍可改回）
-      if (selected().length > 7 && !body.dataset.touched) $('input[name=orient][value=landscape]', body).checked = true;
+      if (selected().length + tools().length > 7 && !body.dataset.touched) $('input[name=orient][value=landscape]', body).checked = true;
       hint();
     }
     if (e.target.name === 'orient') body.dataset.touched = '1';
@@ -104,14 +147,16 @@ function openExportDialog(o) {
     buttons: [{ label: '取消', value: null }, {
       label: '匯出 PDF', cls: 'primary',
       validate: function () {
-        if (!selected().length) { $('.export-err', body).textContent = '請至少勾選一個欄位'; return false; }
+        if (!selected().length && !tools().length) { $('.export-err', body).textContent = '請至少勾選一個欄位'; return false; }
         return true;
       },
       value: function () {
         return {
           scope: $('input[name=scope]:checked', body).value,
           orientation: $('input[name=orient]:checked', body).value,
-          keys: selected()
+          keys: selected(), tools: tools(),
+          order: $('input[name=order]:checked', body).value,
+          squadBreak: !!($('input[name=squadBreak]', body) || {}).checked
         };
       }
     }]
@@ -122,9 +167,16 @@ function openExportDialog(o) {
       var q = k.slice(2);
       return { key: k, label: q, get: function (s) { return exportCellText_((s.data || {})[q]); } };
     });
-    var list = v.scope === 'all' ? o.all : o.filtered;
+    v.tools.forEach(function (t, i) {
+      fields.push({ key: 'tool:' + i, label: t.label, tool: t.kind, get: function () { return t.kind === 'check' ? '☐' : ''; } });
+    });
+    var list = (v.scope === 'all' ? o.all : o.filtered).slice();
+    if (v.order === 'stroke') list.sort(function (a, b) { return STROKE_CMP(a.name, b.name); });
+    if (v.order === 'squad') list.sort(function (a, b) {
+      return (a.squad === '' || a.squad === undefined ? 999 : a.squad) - (b.squad === '' || b.squad === undefined ? 999 : b.squad) || STROKE_CMP(a.name, b.name);
+    });
     if (!list.length) { toast('沒有可匯出的學員', true); return; }
-    var scopeText = v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel;
+    var scopeText = (v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel) + (v.order === 'squad' ? '　·　依小隊' : v.order === 'stroke' ? '　·　依筆畫' : '');
     return confirmDialog({
       title: '此內容包含學員個資', desc: '匯出的 PDF 含有學員個人資料，僅供營隊用途使用。',
       lines: ['請勿轉寄、公開或用於營隊以外的目的', '用畢請妥善保管或刪除檔案', '每頁頁尾會標示「含學員個資，僅供營隊用途」，匯出會記錄在操作紀錄'],
@@ -133,7 +185,7 @@ function openExportDialog(o) {
     if (!agreed) return;
     busy(true);
     return api('logExport', o.prefix, { columns: fields.map(function (f) { return f.label; }), count: list.length, orientation: v.orientation, scope: scopeText })
-      .then(function () { return buildStudentsPdf_({ project: p, fields: fields, list: list, orientation: v.orientation, scopeText: scopeText }); })
+      .then(function () { return buildStudentsPdf_({ project: p, fields: fields, list: list, orientation: v.orientation, scopeText: scopeText, bySquad: v.order === 'squad', squadBreak: v.order === 'squad' && v.squadBreak }); })
       .then(function (r) { busy(false); toast('已匯出 ' + list.length + ' 筆，共 ' + r.pages + ' 頁'); })
       .catch(function (e) { busy(false); toast(e.message, true); });
     });
@@ -157,7 +209,11 @@ function buildStudentsPdf_(o) {
       document.body.appendChild(host);
       var pages = [];
       var tableStyle = '';
-      var head = '<tr>' + o.fields.map(function (f) { return '<th>' + esc(f.label) + '</th>'; }).join('') + '</tr>';
+      var TOOL_W = { check: 40, sign: 100, note: 140 };
+      function toolStyle(f) { return f.tool ? ' style="width:' + TOOL_W[f.tool] + 'px;min-width:' + TOOL_W[f.tool] + 'px"' : ''; }
+      var head = '<tr>' + o.fields.map(function (f) { return '<th' + toolStyle(f) + (f.tool ? ' class="tool"' : '') + '>' + esc(f.label) + '</th>'; }).join('') + '</tr>';
+      var hasSign = o.fields.some(function (f) { return f.tool === 'sign'; });
+      function squadLabel(s) { return s.squad === '' || s.squad === undefined ? '未分隊' : '第 ' + s.squad + ' 小隊'; }
 
       function newPage() {
         var first = !pages.length;
@@ -182,9 +238,12 @@ function buildStudentsPdf_(o) {
 
       var avail = H - PAD - FOOT - PAD / 2;
       // 先算好每格內容；內容都很短的欄位（狀態、電話、金額）不換行，長文字欄位才換行
-      var rows = o.list.map(function (s, i) { return o.fields.map(function (f) { return String(f.get(s, i) || ''); }); });
+      // 依小隊排列時，序號在每一隊重新從 1 開始
+      var seq = [], cnt = {};
+      o.list.forEach(function (s) { var k = o.bySquad ? squadLabel(s) : ''; cnt[k] = (cnt[k] || 0) + 1; seq.push(cnt[k] - 1); });
+      var rows = o.list.map(function (s, i) { return o.fields.map(function (f) { return String(f.get(s, seq[i]) || ''); }); });
       var noWrap = o.fields.map(function (f, c) {
-        return rows.every(function (r) { return r[c].length <= 14; });
+        return !f.tool && rows.every(function (r) { return r[c].length <= 14; });
       });
       // 欄位太多放不下時，自動縮小字級；最小 6px 仍放不下就讓短欄位也換行
       var contentW = W - PAD * 2;
@@ -194,7 +253,7 @@ function buildStudentsPdf_(o) {
         var tb = t.querySelector('tbody');
         rows.forEach(function (r) {
           var tr = document.createElement('tr');
-          r.forEach(function (v, c) { var td = document.createElement('td'); td.textContent = v; if (useNw && noWrap[c]) td.className = 'nw'; tr.appendChild(td); });
+          r.forEach(function (v, c) { var td = document.createElement('td'); td.textContent = v; if (useNw && noWrap[c]) td.className = 'nw'; if (o.fields[c].tool) td.style.minWidth = TOOL_W[o.fields[c].tool] + 'px'; tr.appendChild(td); });
           tb.appendChild(tr);
         });
         var box = el('<div class="pdf-page" style="width:' + (contentW * 4) + 'px"></div>');
@@ -210,20 +269,41 @@ function buildStudentsPdf_(o) {
       tableStyle = 'font-size:' + font + 'px' + (font < 9 ? ';--cellpad:' + Math.max(2, Math.round(font / 2.2)) + 'px' : '');
 
       var pg = newPage();
+      var lastSquad = null;
+      function fits() { return $('.pdf-flow', pg).offsetHeight <= avail; }
       o.list.forEach(function (s, i) {
+        var tb = $('tbody', pg);
+        if (o.bySquad && squadLabel(s) !== lastSquad) {
+          var n = o.list.filter(function (x) { return squadLabel(x) === squadLabel(s); }).length;
+          if (o.squadBreak && lastSquad !== null && tb.children.length) { pg = newPage(); tb = $('tbody', pg); }
+          var hr = el('<tr class="squad-head"><td colspan="' + o.fields.length + '"></td></tr>');
+          hr.firstChild.textContent = squadLabel(s) + '（' + n + ' 人）';
+          tb.appendChild(hr);
+          if (!fits() && tb.children.length > 1) { tb.removeChild(hr); pg = newPage(); tb = $('tbody', pg); tb.appendChild(hr); }
+          lastSquad = squadLabel(s);
+        }
         var tr = document.createElement('tr');
         if (['報名取消', '報名失敗'].indexOf(s.status) >= 0) tr.className = 'gone';
+        if (hasSign) tr.classList.add('tall');
         rows[i].forEach(function (v, c) {
           var td = document.createElement('td');
           td.textContent = v;
           if (noWrap[c]) td.className = 'nw';
+          if (o.fields[c].tool) td.classList.add('tool', 'tool-' + o.fields[c].tool);
           tr.appendChild(td);
         });
-        var tb = $('tbody', pg);
         tb.appendChild(tr);
-        if ($('.pdf-flow', pg).offsetHeight > avail && tb.children.length > 1) {
+        if (!fits() && tb.children.length > 1) {
           tb.removeChild(tr);
+          var prevHead = tb.lastElementChild && tb.lastElementChild.classList.contains('squad-head') ? tb.lastElementChild : null;
+          if (prevHead) tb.removeChild(prevHead);       // 小隊標題不要孤單留在上一頁底部
           pg = newPage();
+          if (prevHead) $('tbody', pg).appendChild(prevHead);
+          else if (o.bySquad) {                         // 跨頁的小隊在新頁標示「（續）」
+            var cont = el('<tr class="squad-head"><td colspan="' + o.fields.length + '"></td></tr>');
+            cont.firstChild.textContent = squadLabel(s) + '（續）';
+            $('tbody', pg).appendChild(cont);
+          }
           $('tbody', pg).appendChild(tr);
         }
       });
