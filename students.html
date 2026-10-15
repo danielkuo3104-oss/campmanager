@@ -453,6 +453,7 @@ App.page('students', function (root, params) {
       ask('調整候補順位', [{ name: 'rank', label: '新的順位', type: 'number', required: true, value: s.rank }], function (v) { run(s, 'setRank', v); });
     });
     add('調整團報歸屬…', tierOk(s), function () { askGroup(s); });
+    add('手動綁組…', tierOk(s), function () { askBind(s); });
     if (s.groupId && D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '程序完成') add('改為個人報名（重算價格）…', true, function () { askIndividual(s); }, false, 'opt');
     if (D.project.squads > 0) add('調整小隊…', tierOk(s), function () {
       var opts = [{ value: '', label: '未分隊' }];
@@ -481,6 +482,50 @@ App.page('students', function (root, params) {
 
   function P(key) { return D.presets && D.presets[key] || []; }
 
+  /** 專案設定裡的預製表單：開關、連結、改內容／跟著系統預設；每個動作直接存 */
+  function renderFormSettings(box) {
+    var ro = D.readOnly, list = D.project.forms || [];
+    function saveForms(mut, msg) {
+      var out = {};
+      list.forEach(function (f) {
+        var o = {};
+        if (!f.open) o.off = true;
+        ['title', 'intro', 'done', 'button'].forEach(function (k) { if (f[k + 'Own']) o[k] = f[k]; });
+        out[f.kind] = o;
+      });
+      mut(out);
+      withBusy(api('updateProjectSettings', prefix, { forms: out })).then(function () { toast(msg); cacheClear(); return load().then(function () { if ($('.pf-list')) renderFormSettings($('.pf-list')); }); }).catch(function (e) { toast(e.message, true); });
+    }
+    box.innerHTML = '';
+    if (!D.project.siteUrl) box.appendChild(el('<div class="small" style="color:var(--warn);margin-bottom:8px">還沒記錄網站網址：總管登入一次就會自動記下，之後信裡才會出現表單按鈕。</div>'));
+    list.forEach(function (f) {
+      var own = ['title', 'intro', 'done', 'button'].some(function (k) { return f[k + 'Own']; });
+      var row = el('<div class="pf-set"><label class="check"><input type="checkbox"' + (f.open ? ' checked' : '') + (ro ? ' disabled' : '') + '><span><b></b></span></label>' +
+        '<span class="small muted grow pf-state"></span>' +
+        (f.url ? '<button class="btn sm ghost" type="button" data-a="copy">複製連結</button><a class="btn sm ghost" target="_blank" rel="noopener" data-a="open">打開</a>' : '') +
+        (ro ? '' : (own ? '<button class="btn sm ghost" type="button" data-a="reset">跟著系統預設</button>' : '') + '<button class="btn sm" type="button" data-a="edit">編輯內容</button>') + '</div>');
+      $('b', row).textContent = f.name;
+      $('.pf-state', row).textContent = (f.open ? '開放中' : '已關閉') + '・' + (own ? '這個專案自訂' : '跟著系統預設');
+      if ($('[data-a=open]', row)) $('[data-a=open]', row).href = f.url;
+      if ($('[data-a=copy]', row)) $('[data-a=copy]', row).addEventListener('click', function () {
+        (navigator.clipboard ? navigator.clipboard.writeText(f.url) : Promise.reject()).then(function () { toast('已複製表單連結'); }).catch(function () { prompt('表單連結', f.url); });
+      });
+      $('input', row).addEventListener('change', function (e) {
+        var on = e.target.checked;
+        saveForms(function (out) { if (on) delete out[f.kind].off; else out[f.kind].off = true; }, on ? '已開放「' + f.name + '」' : '已關閉「' + f.name + '」，信裡的按鈕也不會出現');
+      });
+      if ($('[data-a=edit]', row)) $('[data-a=edit]', row).addEventListener('click', function () {
+        openFormEditor(f, '只影響這個專案；跟系統預設一樣的部分會繼續跟著預設。').then(function (v) {
+          if (v) saveForms(function (out) { ['title', 'intro', 'done', 'button'].forEach(function (k) { out[f.kind][k] = v[k]; }); }, '已儲存「' + f.name + '」');
+        });
+      });
+      if ($('[data-a=reset]', row)) $('[data-a=reset]', row).addEventListener('click', function () {
+        saveForms(function (out) { out[f.kind] = f.open ? {} : { off: true }; }, '「' + f.name + '」改回跟著系統預設');
+      });
+      box.appendChild(row);
+    });
+  }
+
   /** 可放進信件「回覆內容」的題目：低收／中低收身分那題不放，以示尊重 */
   function mailQuestions() {
     var hide = [].concat(D.project.mapping.lowIncome || []);
@@ -507,6 +552,16 @@ App.page('students', function (root, params) {
     if (s.status === '候補中' && D.stats.available < 1) fields.push({ name: 'over', label: '沒有空位也錄取（超收）', type: 'checkbox', value: false });
     fields.push({ name: 'sendMail', label: s.status === '候補中' ? '寄報名成功通知（下一步可預覽）' : '金額有變時寄「報名費用異動通知」', type: 'checkbox', value: true });
     ask('改為個人報名：' + s.name, fields, function (v) { run(s, 'toIndividual', v); });
+  }
+
+  /** 手動綁組：模糊比對也對不到時（例如名字寫錯太多），一次勾選好幾位併成同一團 */
+  function askBind(s) {
+    var mates = s.groupId ? D.students.filter(function (x) { return x.groupId === s.groupId && x.id !== s.id && tierOk(x); }).map(function (x) { return x.name; }) : [];
+    var opts = D.students.filter(function (x) { return x.id !== s.id && tierOk(x) && (!s.groupId || x.groupId !== s.groupId); })
+      .map(function (x) { return { value: x.id, label: x.name, sub: x.status + (x.groupId ? '・已在其他團' : '') + (x.partners && x.partners.length ? '・寫的同伴：' + x.partners.join('、') : '') }; });
+    ask('手動綁組：' + s.name, [{ name: 'withIds', label: '勾選要和 ' + s.name + ' 同一團的人', type: 'checklist', options: opts, required: true,
+      hint: (mates.length ? '目前同團：' + mates.join('、') + '。' : '') + (s.partners && s.partners.length ? s.name + ' 寫的同伴：' + s.partners.join('、') + '。' : '') + '勾選的人會併進這一團；已在其他團的人會移過來。' }],
+      function (v) { run(s, 'setGroup', v); });
   }
 
   function askGroup(s) {
@@ -652,6 +707,8 @@ App.page('students', function (root, params) {
       f('price', '原價', 'number', p.price) + f('groupPrice', '團報價', 'number', p.groupPrice) +
       f('earlyPrice', '早鳥價', 'number', p.earlyPrice) + f('earlyDeadline', '早鳥期限', 'date', p.earlyDeadline) +
       f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
+      '<div class="field"><span>匯款期限鄰近通知</span><label class="check" style="min-height:38px"><input type="checkbox" name="remindOn"' + (p.remind && p.remind.on ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>自動寄給還沒匯款的人</span></label></div>' +
+      '<div class="field"><span>期限前幾小時寄</span><input class="input" name="remindHours" type="number" min="1" max="336" value="' + esc(p.remind ? p.remind.hours : 24) + '"' + (ro ? ' disabled' : '') + '><span class="hint">例如 24 是期限前一天、72 是前三天；每人每個期限只寄一次</span></div>' +
       '</div><div class="field bank-fields" style="margin-top:10px"><span>匯款帳號</span><div class="bank-grid">' +
       [['bank', '銀行（例如 台灣銀行）'], ['code', '銀行代碼（例如 004）'], ['branch', '分行（例如 新竹分行）'], ['name', '戶名'], ['no', '帳號']].map(function (x) {
         return '<input class="input" name="bank_' + x[0] + '" placeholder="' + esc(x[1]) + '" aria-label="' + esc(x[1]) + '" value="' + esc(p.bank ? p.bank[x[0]] || '' : '') + '"' + (ro ? ' disabled' : '') + '>';
@@ -662,6 +719,7 @@ App.page('students', function (root, params) {
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
       '<div class="field"><span>信件標頭預設顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">沒自訂顏色的信都用這個（原本是墨綠 #2f5d62）；每種信可在「信件範本」各自改顏色來區分</span></div>' +
       '</div></div>' +
+      '<div class="drawer-section"><h3>預製表單</h3><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}} 會出現置中的按鈕。內容沒改的跟著系統預設（系統管理 → 信件範本）；改動會立即儲存。</p><div class="pf-list"></div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
       '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。第一格填職稱（總召）或官方帳號名稱（例如 醫工營 IG），官方帳號可以不填姓名；電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
       '<div class="ct-list"></div>' +
@@ -726,6 +784,7 @@ App.page('students', function (root, params) {
     });
 
     bindHexField($('.set-head', d.body));
+    renderFormSettings($('.pf-list', d.body));
     var ctList = $('.ct-list', d.body);
     function ctRow(c) {
       c = c || {};
@@ -772,6 +831,10 @@ App.page('students', function (root, params) {
         var v = form.elements[k].value;
         if (String(v) !== String(p[k] === undefined ? '' : p[k])) patch[k] = v;
       });
+      var rh = Number(form.elements.remindHours.value);
+      if (!(rh >= 1 && rh <= 336)) { toast('匯款期限提醒請填 1 到 336 小時', true); return; }
+      var remind = { on: form.elements.remindOn.checked, hours: Math.round(rh) };
+      if (!p.remind || remind.on !== p.remind.on || remind.hours !== p.remind.hours) patch.remind = remind;
       var bank = {};
       ['bank', 'code', 'branch', 'name', 'no'].forEach(function (k) { bank[k] = form.elements['bank_' + k].value.trim(); });
       var bankChanged = ['bank', 'code', 'branch', 'name', 'no'].some(function (k) { return bank[k] !== (p.bank ? p.bank[k] || '' : ''); });
