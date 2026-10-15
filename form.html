@@ -27,6 +27,19 @@
     .pf-done { line-height: 1.8; padding: 8px 0; }
     .pf-foot { color: var(--text-3); font-size: 13px; text-align: center; line-height: 1.7; }
     .pf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .pf-row > * { min-width: 0; }
+    /* iPhone 的日期欄位有固定的最小寬度、文字置中，會撐破版面：改成跟一般欄位一樣 */
+    .pf-body input[type=date] { -webkit-appearance: none; appearance: none; display: block; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; text-align: left; }
+    .pf-body input[type=date]::-webkit-date-and-time-value { text-align: left; }
+    .pf-sec { font-weight: 700; color: var(--text); margin-top: 4px; }
+    .pf-est { padding: 12px 16px; border-radius: 12px; background: var(--surface-2, #f4f5f3); line-height: 1.7; font-size: 14px; }
+    .pf-policy table { width: 100%; }
+    .pf-mask { position: fixed; inset: 0; background: rgba(20, 24, 22, .45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+    .pf-dlg { background: var(--surface, #fff); border-radius: 18px; width: 100%; max-width: 480px; padding: 22px; display: flex; flex-direction: column; gap: 14px; max-height: 85vh; overflow: auto; }
+    .pf-dlg h2 { margin: 0; font-size: 18px; }
+    .pf-dlg .pf-info div { grid-template-columns: 96px 1fr; }
+    .pf-dlg-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    @media (min-width: 521px) { .pf-mask { align-items: center; } }
     @media (max-width: 520px) { .pf-row { grid-template-columns: 1fr; } .pf-body { padding: 20px 16px; } }
   </style>
 </head>
@@ -54,6 +67,25 @@
       .then(function (j) { if (!j.ok) throw new Error(j.error || '發生錯誤'); return j.result; });
   }
   function busy(btn, on, label) { btn.disabled = on; btn.textContent = on ? '處理中…' : label; }
+
+  /** 二次確認：列出要送出的內容，按「確定送出」才送 */
+  function confirmBox(title, rows, warn, danger) {
+    return new Promise(function (resolve) {
+      var mask = document.createElement('div');
+      mask.className = 'pf-mask';
+      mask.innerHTML = '<div class="pf-dlg" role="dialog" aria-modal="true"><h2></h2><div class="pf-info">' +
+        rows.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span style="white-space:pre-wrap;word-break:break-word">' + esc(x[1]) + '</span></div>'; }).join('') +
+        '</div><div class="pf-msg"></div><div class="pf-dlg-btns"><button class="btn ghost" type="button" data-v="0">返回修改</button><button class="btn ' + (danger ? 'danger' : 'primary') + '" type="button" data-v="1">確定送出</button></div></div>';
+      mask.querySelector('h2').textContent = title;
+      mask.querySelector('.pf-msg').textContent = warn;
+      function done(v) { mask.remove(); document.removeEventListener('keydown', key); resolve(v); }
+      function key(e) { if (e.key === 'Escape') done(false); }
+      mask.addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) done(b.getAttribute('data-v') === '1'); else if (e.target === mask) done(false); });
+      document.addEventListener('keydown', key);
+      document.body.appendChild(mask);
+      mask.querySelector('[data-v="1"]').focus();
+    });
+  }
 
   function closed(msg) {
     head.textContent = '營隊表單';
@@ -97,8 +129,18 @@
         '<div class="pf-row"><label class="field"><span>匯款金額（元）</span><input class="input" name="amount" inputmode="numeric" value="' + esc(r.price) + '"></label>' +
         '<label class="field"><span>匯款日期</span><input class="input" name="date" type="date" value="' + esc(r.today) + '"></label></div>';
     } else {
-      if (r.paid) fields += '<div class="pf-msg">你已經繳費。送出後報名不會馬上取消，籌辦團隊會聯絡你處理退款。</div>';
+      if (r.refundHtml) fields += '<div class="pf-policy">' + r.refundHtml + '</div>';
       fields += '<label class="field"><span>取消原因<em>*</em></span><textarea class="input" name="reason" rows="2" maxlength="500" required></textarea></label>';
+      if (r.paid) {
+        var est = r.refund || {};
+        fields += '<div class="pf-msg">你已經繳費。送出後報名不會馬上取消，籌辦團隊核對後會退款到下面的帳戶並寄信通知。</div>' +
+          (est.pct !== null && est.pct !== undefined ? '<div class="pf-est">依退款規定，今天申請可退還 <b>' + esc(est.pct) + '%</b>' + (est.amount !== '' ? '，約 <b>' + esc(Number(est.amount).toLocaleString('en-US')) + ' 元</b>' : '') + '（實際金額以籌辦團隊核對為準）</div>' : '') +
+          '<div class="pf-sec">退款帳戶</div>' +
+          '<div class="pf-row"><label class="field"><span>銀行<em>*</em></span><input class="input" name="r_bank" required maxlength="60" placeholder="例如 台灣銀行（004）"></label>' +
+          '<label class="field"><span>分行<em>*</em></span><input class="input" name="r_branch" required maxlength="60" placeholder="例如 新竹分行"></label></div>' +
+          '<div class="pf-row"><label class="field"><span>帳號<em>*</em></span><input class="input" name="r_no" required maxlength="30" inputmode="numeric" placeholder="完整帳號"></label>' +
+          '<label class="field"><span>戶名<em>*</em></span><input class="input" name="r_name" required maxlength="60"></label></div>';
+      }
     }
     fields += '<label class="field"><span>' + esc(F.noteLabel) + '</span><textarea class="input" name="note" rows="3" maxlength="1000" placeholder="選填"></textarea></label>';
     var danger = kind !== 'pay';
@@ -112,12 +154,26 @@
       var btn = form.querySelector('button[type=submit]'), err = form.querySelector('.pf-err');
       err.textContent = '';
       var data = {};
-      ['last5', 'amount', 'date', 'reason', 'note'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value; });
-      if (kind === 'pay' && !/^\d{5}$/.test(data.last5.trim())) { err.textContent = '匯款帳號後五碼請填 5 位數字'; return; }
-      busy(btn, true, '送出');
-      call('publicSubmit', prefix, kind, who.name, who.key, data).then(function (res) {
-        body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="pf-done">' + res.doneHtml + '</div>';
-      }).catch(function (e2) { err.textContent = e2.message; busy(btn, false, '送出'); });
+      ['last5', 'amount', 'date', 'reason', 'note', 'r_bank', 'r_branch', 'r_no', 'r_name'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value.trim(); });
+      if (kind === 'pay' && !/^\d{5}$/.test(data.last5)) { err.textContent = '匯款帳號後五碼請填 5 位數字'; return; }
+      if (data.r_no !== undefined && !/^[\d\s-]{6,30}$/.test(data.r_no)) { err.textContent = '退款帳號請填數字（可含 - 或空白）'; return; }
+      // 送出前再確認一次
+      var rows = [['學員姓名', who.name]];
+      if (kind === 'pay') rows.push(['後五碼', data.last5], ['匯款金額', data.amount ? data.amount + ' 元' : '（未填）'], ['匯款日期', data.date || '（未填）']);
+      else rows.push(['取消原因', data.reason]);
+      if (data.r_bank !== undefined) rows.push(['退款銀行', data.r_bank + ' ' + data.r_branch], ['退款帳號', data.r_no], ['戶名', data.r_name]);
+      if (data.note) rows.push([F.noteLabel, data.note]);
+      var warn = kind === 'pay' ? '送出後狀態會改為「繳款待核覆」，籌辦團隊查帳後會寄確認信。'
+        : r.paid ? '送出後會通知籌辦團隊處理退款，退款完成前報名仍然有效。'
+        : kind === 'unwait' ? '送出後會立即取消你的候補，無法復原。' : '送出後會立即取消你的報名，無法復原。';
+      confirmBox(kind === 'pay' ? '確定送出匯款回報？' : kind === 'unwait' ? '確定取消候補？' : '確定取消報名？', rows, warn, kind !== 'pay' && !r.paid).then(function (yes) {
+        if (!yes) return;
+        busy(btn, true, '送出');
+        call('publicSubmit', prefix, kind, who.name, who.key, data).then(function (res) {
+          body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="pf-done">' + res.doneHtml + '</div>';
+          window.scrollTo(0, 0);
+        }).catch(function (e2) { err.textContent = e2.message; busy(btn, false, '送出'); });
+      });
     });
   }
 
