@@ -320,14 +320,15 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區按鈕', '學員專區連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
-  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%',
+  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%',
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
-  '取消候補按鈕': '[center][button=https://example.com/form.html]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
-  '取消報名按鈕': '[center][button=https://example.com/form.html]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel' };
+  '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
+  '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel',
+  '學員專區按鈕': '[center][button=https://example.com/portal.html]學員專區：查詢報名進度[/button][/center]', '學員專區連結': 'https://example.com/portal.html?p=OOOO' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
 function echoSampleHtml(fields) {
@@ -365,6 +366,30 @@ function payInfoSampleHtml() {
       return '<tr><td style="padding:10px 16px;width:84px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top' + (i ? ';border-top:1px solid #e3e8e5' : '') + '">' + esc(r[0]) + '</td>' +
         '<td style="padding:10px 16px 10px 0;' + style + (i ? ';border-top:1px solid #e3e8e5' : '') + '">' + esc(r[1]) + '</td></tr>';
     }).join('') + '</table>';
+}
+
+/** {{退款規定}}（與後端 refundHtml_ 相同）；沒有傳入規定時用示意資料 */
+function dayW(ymd) {
+  var m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return 'OOOO/OO/OO（O）';
+  return m[1] + '/' + m[2] + '/' + m[3] + '（' + '日一二三四五六'.charAt(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()) + '）';
+}
+function refundSampleHtml(r) {
+  var sample = !r;
+  r = r || { tiers: [{ until: '', pct: 100 }, { until: '', pct: 50 }], note: '自行取消報名者，需自行負擔衍生費用（郵匯費、手續費等）。' };
+  var tiers = r.tiers || [];
+  if (!tiers.length && !r.note) return sample ? '' : '<div style="font-size:12px;color:#9ca3af">（這個專案還沒設定退款規定，寄出時不會出現；到「專案設定 → 退款規定」設定）</div>';
+  var rows = tiers.map(function (t) { return [dayW(t.until) + ' 前取消', t.pct ? '退還 ' + t.pct + '%' : '不予退費']; });
+  if (tiers.length && tiers[tiers.length - 1].pct > 0) rows.push([dayW(tiers[tiers.length - 1].until) + ' 之後取消', '不予退費']);
+  var td = 'padding:9px 16px;border-top:1px solid #e3e8e5;';
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:12px 0;border-collapse:separate;border-spacing:0;background:#f6f8f7;border:1px solid #e3e8e5;border-radius:12px">' +
+    '<tr><td colspan="2" style="padding:10px 16px;font-weight:700;color:#1f2937">退款規定</td></tr>' +
+    rows.map(function (x) {
+      return '<tr><td style="' + td + 'color:#374151;font-size:14px">' + esc(x[0]) + '</td>' +
+        '<td style="' + td + 'text-align:right;white-space:nowrap;font-weight:700;color:' + (x[1] === '不予退費' ? '#6b7280' : '#1f2937') + '">' + esc(x[1]) + '</td></tr>';
+    }).join('') +
+    (r.note ? '<tr><td colspan="2" style="' + td + 'color:#6b7280;font-size:13px;line-height:1.7">' + mailTextToHtml(esc(r.note)) + '</td></tr>' : '') +
+    '</table>';
 }
 
 /** 聯絡人員（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
@@ -444,14 +469,64 @@ function formatToolbar(ta, opts) {
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
     '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
+    '<button type="button" class="fmt-btn" data-f="img" title="圖片：[img]https://圖片網址[/img]">圖片</button><button type="button" class="fmt-btn" data-f="map" title="地點：[map]地址[/map]">地點</button><button type="button" class="fmt-btn" data-f="table" title="表格：每行 | 儲存格 | 儲存格 |">表格</button>' +
     '<span class="fmt-sep"></span><button type="button" class="fmt-btn fmt-note" data-f="note" title="內部備註 [備註]…[/備註]：給之後維護的人看，寄出時自動拿掉">備註</button>' +
     (opts.vars ? '<span class="fmt-sep"></span><select class="fmt-var"><option value="">插入變數…</option>' + MAIL_VARS.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('') + '</select>' : '') +
     '</div><div class="fmt-link hidden">' +
     '<div class="seg sm"><label><input type="radio" name="fmt-kind" value="link" checked><span>文字連結</span></label><label><input type="radio" name="fmt-kind" value="button"><span>按鈕</span></label></div>' +
     '<input class="input" data-k="text" placeholder="顯示文字，例如：前往繳費"><input class="input" data-k="url" placeholder="網址 https://…">' + hexField('fmt-hex-link', '') +
     '<button type="button" class="btn sm primary" data-f="insert">插入</button><button type="button" class="btn sm ghost" data-f="close">取消</button>' +
-    '<div class="small fmt-err"></div></div><div class="small fmt-err fmt-hex-err"></div></div>');
+    '<div class="small fmt-err"></div></div>' +
+    '<div class="fmt-link fmt-ins hidden"><b class="fmt-ins-title"></b><input class="input" data-k="a"><input class="input" data-k="b">' +
+    '<button type="button" class="btn sm primary" data-f="ins-ok">插入</button><button type="button" class="btn sm ghost" data-f="ins-close">取消</button>' +
+    '<div class="small muted fmt-ins-tip"></div><div class="small fmt-err"></div></div><div class="small fmt-err fmt-hex-err"></div></div>');
   var panel = $('.fmt-link', bar);
+  var ins = $('.fmt-ins', bar), insKind = '';
+  var INS = {
+    img: { title: '插入圖片', a: '圖片網址 https://…', b: '圖片說明（選填）', tip: '可貼 Google 雲端硬碟的分享連結（檔案要設成「知道連結的任何人都能查看」），或其他 https 開頭的圖片網址。' },
+    map: { title: '插入地點', a: '地點名稱或地址，例如：台北車站東三門', b: 'Google 地圖分享網址（選填）', tip: '會顯示成地點卡片與「在 Google 地圖開啟」連結；學員專區還會顯示地圖。' },
+    table: { title: '插入表格', a: '欄數（2–6）', b: '列數（不含標題列，1–20）', tip: '插入後直接改文字：每行一列，儲存格用「|」分開，第一行是標題列。' }
+  };
+  function openIns(kind) {
+    insKind = kind; panel.classList.add('hidden'); ins.classList.remove('hidden');
+    var c = INS[kind];
+    $('.fmt-ins-title', ins).textContent = c.title;
+    $('[data-k=a]', ins).placeholder = c.a; $('[data-k=b]', ins).placeholder = c.b;
+    $('[data-k=a]', ins).value = kind === 'table' ? '2' : (kind === 'map' ? ta.value.slice(ta.selectionStart, ta.selectionEnd) : '');
+    $('[data-k=b]', ins).value = kind === 'table' ? '3' : '';
+    $('.fmt-ins-tip', ins).textContent = c.tip; $('.fmt-err', ins).textContent = '';
+    $('[data-k=a]', ins).focus();
+  }
+  // 圖片、地點、表格自成一段：前後不是換行就補上
+  function insertBlock(code) {
+    var v = ta.value, a = ta.selectionStart, z = ta.selectionEnd;
+    var pre = a > 0 && v[a - 1] !== '\n' ? '\n' : '', post = z < v.length && v[z] !== '\n' ? '\n' : '';
+    ta.value = v.slice(0, a) + pre + code + post + v.slice(z);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = a + pre.length + code.length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ins.classList.add('hidden');
+  }
+  function insOk() {
+    var A = $('[data-k=a]', ins).value.trim(), B = $('[data-k=b]', ins).value.trim(), err = $('.fmt-err', ins);
+    if (insKind === 'img') {
+      if (!/^https:\/\/[^\s"'<>\[\]]+$/.test(A)) { err.textContent = '圖片網址需以 https:// 開頭，且不能有空白'; return; }
+      insertBlock('[img' + (B ? '=' + B.replace(/[\[\]]/g, '') : '') + ']' + A + '[/img]');
+    }
+    if (insKind === 'map') {
+      if (!A) { err.textContent = '請填地點名稱或地址'; return; }
+      if (B && !/^https?:\/\/[^\s"'<>\]]+$/.test(B)) { err.textContent = '地圖網址需以 https:// 開頭，且不能有空白'; return; }
+      insertBlock('[map' + (B ? '=' + B : '') + ']' + A.replace(/[\[\]]/g, '') + '[/map]');
+    }
+    if (insKind === 'table') {
+      var c = Math.min(6, Math.max(2, parseInt(A, 10) || 2)), r = Math.min(20, Math.max(1, parseInt(B, 10) || 3)), rows = [], i, cells;
+      cells = []; for (i = 0; i < c; i++) cells.push(i ? '說明' : '項目'); rows.push('| ' + cells.join(' | ') + ' |');
+      cells = []; for (i = 0; i < c; i++) cells.push('內容');
+      for (i = 0; i < r; i++) rows.push('| ' + cells.join(' | ') + ' |');
+      insertBlock(rows.join('\n'));
+    }
+  }
+  ins.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); insOk(); } });
   bindHexField($('.fmt-hex-main', bar)); bindHexField($('.fmt-hex-link', bar));
   function mainHex() {
     var c = normHex($('.fmt-hex-main .fmt-hexin', bar).value);
@@ -508,7 +583,10 @@ function formatToolbar(ta, opts) {
       if (hx && f === 'color') wrapSelection(ta, '[' + hx + ']', '[/#]', '彩色文字');
       if (hx && f === 'bg') wrapSelection(ta, '[hl=' + hx + ']', '[/hl]', '標記文字');
     }
-    if (f === 'link' || f === 'button') openLink(f);
+    if (f === 'link' || f === 'button') { ins.classList.add('hidden'); openLink(f); }
+    if (f === 'img' || f === 'map' || f === 'table') openIns(f);
+    if (f === 'ins-ok') insOk();
+    if (f === 'ins-close') ins.classList.add('hidden');
     if (f === 'close') panel.classList.add('hidden');
     if (f === 'insert') {
       var kind = $('input[name=fmt-kind]:checked', panel).value;
@@ -729,6 +807,31 @@ function tint(hex, ratio) {
   return out;
 }
 
+/** 表格：每行以「|」開頭，儲存格用「|」分隔；第一行是標題列；|---|---| 這種分隔行會略過 */
+var TABLE_ROW_RE = /^\s*\|(.*?)\|?\s*$/;
+var TABLE_SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*$/;
+function mdTable(rows) {
+  var n = 0;
+  rows = rows.map(function (r) { var c = r.split('|'); n = Math.max(n, c.length); return c; });
+  var cell = 'border:1px solid #e5e7eb;padding:8px 10px;text-align:left;vertical-align:top';
+  return '<div style="overflow-x:auto;margin:10px 0"><table style="border-collapse:collapse;width:100%;font-size:14px;line-height:1.6">' + rows.map(function (r, i) {
+    var tag = i ? 'td' : 'th', out = '<tr>';
+    for (var k = 0; k < n; k++) out += '<' + tag + ' style="' + cell + (i ? '' : ';background:#f3f4f6;font-weight:700') + '">' + String(r[k] === undefined ? '' : r[k]).trim() + '</' + tag + '>';
+    return out + '</tr>';
+  }).join('') + '</table></div>';
+}
+
+/** Google 雲端硬碟的分享連結換成可以直接顯示的圖片網址（檔案要設成「知道連結的人都能查看」） */
+function driveImg(url) {
+  var m = String(url).match(/^https:\/\/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&(?:amp;)?)?id=)([\w-]{20,})/);
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&amp;sz=w1600' : url;
+}
+
+/** 已跳脫的文字還原成原字（地圖搜尋用） */
+function unescHtml(s) {
+  return String(s || '').replace(/<[^>]*>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+}
+
 function formatMarkup(html) {
   var out = String(html || '');
   for (var i = 0; i < 3; i++) {   // 允許粗體與顏色互相包住
@@ -738,6 +841,21 @@ function formatMarkup(html) {
     out = out.replace(new RegExp('\\[(' + HEX_RE + ')\\]((?:(?!\\[#[0-9a-fA-F])[\\s\\S])*?)\\[\\/#\\]', 'g'), function (_, c, t) { return '<span style="color:' + normHex(c) + '">' + t + '</span>'; });
     out = out.replace(new RegExp('\\[hl=(' + HEX_RE + ')\\]([\\s\\S]*?)\\[\\/hl\\]', 'g'), function (_, c, t) { return '<span style="background:' + normHex(c) + ';padding:0 2px;border-radius:3px">' + t + '</span>'; });
   }
+  // 圖片 [img]https://網址[/img]、[img=說明文字]https://網址[/img]：只接受 https，雲端硬碟分享連結會自動轉換
+  out = out.replace(/\[img(?:=([^\]]*))?\]\s*(https:\/\/[^\s"'<>\[\]]+)\s*\[\/img\]/g, function (_, cap, url) {
+    cap = String(cap || '').trim();
+    return '<div style="margin:12px 0;text-align:center"><img src="' + driveImg(url) + '" alt="' + cap + '" style="display:inline-block;max-width:100%;height:auto;border-radius:10px">' +
+      (cap ? '<div style="font-size:13px;color:#6b7280;margin-top:4px">' + cap + '</div>' : '') + '</div>';
+  });
+  // 地點 [map]地址或地點名稱[/map]、[map=Google 地圖分享網址]顯示名稱[/map]：地點卡片＋「在 Google 地圖開啟」
+  out = out.replace(/\[map(?:=(https?:\/\/[^\]\s"'<>]+))?\]([\s\S]*?)\[\/map\]/g, function (_, url, name) {
+    name = name.replace(/<br>/g, ' ').trim();
+    var q = encodeURIComponent(unescHtml(name));
+    if (!q) return '';
+    return '<div data-map="' + q + '" style="margin:12px 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc">' +
+      '<div style="font-weight:700;line-height:1.6">📍 ' + name + '</div>' +
+      '<a href="' + (url || 'https://www.google.com/maps/search/?api=1&amp;query=' + q) + '" style="display:inline-block;margin-top:6px;color:#2f5d62;font-weight:700;text-decoration:underline">在 Google 地圖開啟</a></div>';
+  });
   // 連結與按鈕：只接受 http、https、mailto；網址後可加空白與色號，例如 [button=https://… #c62828]
   out = out.replace(new RegExp('\\[(link|button)=((?:https?:\\/\\/|mailto:)[^\\]\\s"\'<>]+)(?: +(' + HEX_RE + '))?\\]([\\s\\S]*?)\\[\\/\\1\\]', 'g'), function (_, kind, url, color, text) {
     text = text || url;
@@ -765,8 +883,9 @@ function blockBr(html) {
 }
 
 function mailTextToHtml(text) {
-  var html = '', list = null, lastBlock = false;
+  var html = '', list = null, lastBlock = false, table = null;
   function flush() {
+    if (table) { html += mdTable(table); table = null; lastBlock = true; }
     if (!list) return;
     html += '<ul style="margin:6px 0;padding-left:22px">' + list.map(function (it) {
       return '<li style="margin:3px 0' + (it.text === null ? ';list-style:none' : '') + '">' + (it.text || '') +
@@ -776,6 +895,15 @@ function mailTextToHtml(text) {
     lastBlock = true;
   }
   String(text || '').split('\n').forEach(function (ln) {
+    var tr = ln.match(TABLE_ROW_RE);
+    if (tr) {
+      if (table && TABLE_SEP_RE.test(ln)) return;
+      if (!table) flush();
+      table = table || [];
+      table.push(tr[1]);
+      return;
+    }
+    if (table) flush();
     if (/^\s*(?:-{3,}|\[hr\])\s*$/.test(ln)) {
       flush();
       html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:14px 0">';
@@ -854,6 +982,7 @@ function openTemplateEditor(t, opts) {
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
+    '<code>[img]https://圖片網址[/img]</code> 圖片（<code>[img=說明]…[/img]</code> 加說明）　<code>[map]地址[/map]</code> 地點卡片　表格：每行 <code>| 儲存格 | 儲存格 |</code>，第一行是標題列<br>' +
     '連結、按鈕要換顏色：網址後空一格加色號，例如 <code>[button=https://網址 #c62828]按鈕文字[/button]</code><br>' +
     '變數會顯示成<span class="var-chip">方塊</span>，用「插入變數」選單加入，刪除時整塊一起刪；也可以直接打 <code>{{姓名}}</code>，打完會自動變成方塊。' +
     '</div>';
@@ -931,7 +1060,7 @@ function openTemplateEditor(t, opts) {
     var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
     html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml());
+    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund));
     frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], blockBr(html.split('%%CONTACTS%%').join(contacts)), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
