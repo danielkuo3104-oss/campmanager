@@ -352,11 +352,10 @@ App.page('admin', function (root, params) {
   /* ---------- 信件範本 ---------- */
   function editTemplate(t) {
     openTemplateEditor(t, {
-      headerColor: D.mailHeaderColor, headerLabel: '信件標頭顏色（系統預設）', headerHint: '沒自訂顏色的專案都用這個',
-      onSaveHeader: function (hx) { return api('saveMailHeaderColor', hx).then(function () { D.mailHeaderColor = hx; }); },
+      headerColor: D.defaultHeaderColor,
       footer: D.mailFooter, footerWhere: '系統管理 → 信件範本最下方；各專案也可在專案設定改', sigWhere: '各專案可在專案設定 → 信件署名改' }).then(function (v) {
       if (!v) return;
-      withBusy(api('saveTemplate', t.code, v.subject, v.body, { footer: v.footer, signature: v.signature })).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+      withBusy(api('saveTemplate', t.code, v.subject, v.body, { footer: v.footer, signature: v.signature, headerColor: v.headerColor })).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
     });
   }
 
@@ -403,7 +402,7 @@ App.page('admin', function (root, params) {
     var tb = $('tbody', card);
     D.templates.forEach(function (t) {
       var tr = el('<tr><td></td><td></td><td style="text-align:right"><button class="btn sm" type="button">編輯</button></td></tr>');
-      $$('td', tr)[0].textContent = t.name;
+      $$('td', tr)[0].innerHTML = '<span class="tpl-dot" style="background:' + (normHex(t.headerColor) || D.defaultHeaderColor || '#2f5d62') + '"></span>' + esc(t.name);
       $$('td', tr)[1].textContent = t.subject;
       $('button', tr).addEventListener('click', function () { editTemplate(t); });
       tb.appendChild(tr);
