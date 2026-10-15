@@ -229,11 +229,11 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '原因', '原金額', '訊息', '回覆內容'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '原因', '原金額', '訊息', '回覆內容', '聯絡人員'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '0000/00/00 – 0000/00/00', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': '000-000-000000', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
-  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%' };
+  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
 function echoSampleHtml(fields) {
@@ -242,10 +242,24 @@ function echoSampleHtml(fields) {
   }) : [['學員姓名', 'OOO'], ['身分證字號', 'A000000000'], ['出生日期', '0000/00/00'], ['家長電話', '0000-000-000']];
   if (!rows.length) return '';
   return '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">您填寫的報名資料</div>' +
-    '<div style="font-size:13px;color:#6b7280;margin-bottom:8px">請確認以下資料是否正確，如有錯誤請直接回覆此信告知。</div>' +
+    '<div style="font-size:13px;color:#6b7280;margin-bottom:8px">請確認以下資料是否正確，如有錯誤請洽籌辦團隊。</div>' +
     '<table style="width:100%;border-collapse:collapse;font-size:14px;background:#f9faf8">' +
     rows.map(function (r) {
       return '<tr><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#5b665f;white-space:nowrap">' + esc(r[0]) + '</td><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#1f2937">' + r[1] + '</td></tr>';
+    }).join('') + '</table>';
+}
+
+/** 聯絡人員小表格（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
+function contactsSampleHtml(list) {
+  list = (list || [{ title: '總召', name: 'OOO', phone: '0900-000-000', email: 'ooo@gmail.com' }]).filter(function (c) { return c && c.name; });
+  if (!list.length) return '';
+  var td = 'padding:6px 10px;border-bottom:1px solid #eef0ee;vertical-align:top';
+  return '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">聯絡人員</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#f9faf8">' + list.map(function (c) {
+      return '<tr><td style="' + td + ';color:#5b665f;white-space:nowrap">' + esc(c.title || '') + '</td>' +
+        '<td style="' + td + ';color:#1f2937;font-weight:600;white-space:nowrap">' + esc(c.name) + '</td>' +
+        '<td style="' + td + ';white-space:nowrap;color:#1f2937">' + esc(c.phone || '') + '</td>' +
+        '<td style="' + td + ';word-break:break-all;color:#1565c0">' + esc(c.email || '') + '</td></tr>';
     }).join('') + '</table>';
 }
 
@@ -306,6 +320,7 @@ function formatToolbar(ta, opts) {
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
     '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
+    '<span class="fmt-sep"></span><button type="button" class="fmt-btn fmt-note" data-f="note" title="內部備註 [備註]…[/備註]：給之後維護的人看，寄出時自動拿掉">備註</button>' +
     (opts.vars ? '<span class="fmt-sep"></span><select class="fmt-var"><option value="">插入變數…</option>' + MAIL_VARS.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('') + '</select>' : '') +
     '</div><div class="fmt-link hidden">' +
     '<div class="seg sm"><label><input type="radio" name="fmt-kind" value="link" checked><span>文字連結</span></label><label><input type="radio" name="fmt-kind" value="button"><span>按鈕</span></label></div>' +
@@ -337,6 +352,17 @@ function formatToolbar(ta, opts) {
     if (f === 'bold') wrapSelection(ta, '**', '**', '粗體文字');
     if (f === 'hl') wrapSelection(ta, '==', '==', '標記文字');
     if (f === 'center') wrapSelection(ta, '[center]', '[/center]', '置中文字');
+    if (f === 'note') {
+      // 沒選取文字時，備註自成一行，比較好認
+      var v1 = ta.value, a1 = ta.selectionStart, z1 = ta.selectionEnd;
+      if (a1 === z1) {
+        var pre1 = a1 > 0 && v1[a1 - 1] !== '\n' ? '\n' : '', post1 = v1[a1] === '\n' || a1 === v1.length ? '' : '\n', ph = '給之後維護的人看的說明';
+        ta.value = v1.slice(0, a1) + pre1 + '[備註]' + ph + '[/備註]' + post1 + v1.slice(a1);
+        ta.focus();
+        ta.selectionStart = a1 + pre1.length + 4; ta.selectionEnd = ta.selectionStart + ph.length;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      } else wrapSelection(ta, '[備註]', '[/備註]', '');
+    }
     if (f === 'hr') {
       // 分隔線要獨立一行：前後不是換行就補上
       var v0 = ta.value, a0 = ta.selectionStart, z0 = ta.selectionEnd;
@@ -626,14 +652,25 @@ function mailTextToHtml(text) {
 }
 
 /** 編輯時即時預覽：代入範例值後轉成與實際信件相同的 HTML */
+/** 內部備註 [備註]…[/備註]：寄出時拿掉（與後端 stripNotes_ 相同）；預覽可選擇顯示成黃色便條 */
+var NOTE_RE = /\[備註\]([\s\S]*?)\[\/備註\]/g;
+var MAIL_NOTES_SHOWN = (function () { try { return localStorage.getItem('camp-show-notes') === '1'; } catch (e) { return false; } })();
+function stripNotes(text) {
+  return String(text || '').replace(/^[ \t\u3000]*\[備註\][\s\S]*?\[\/備註\][ \t\u3000]*(?:\r?\n|$)/gm, '').replace(NOTE_RE, '');
+}
+
 function markupToHtml(text, vars) {
+  text = MAIL_NOTES_SHOWN ? String(text || '').replace(NOTE_RE, function (m, inner) { return '\u0001' + inner.replace(/\n/g, '\u0002') + '\u0003'; }) : stripNotes(text);
   var filled = esc(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return vars && vars[k] !== undefined ? esc(vars[k]) : m; });
-  return mailTextToHtml(filled);
+  return mailTextToHtml(filled).replace(/\u0001([\s\S]*?)\u0003/g, function (m, inner) {
+    return '<span style="display:inline-block;background:#fff8c5;border:1px dashed #d4a106;color:#7a5b00;border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.6">備註（不會寄出）：' + inner.replace(/\u0002/g, '<br>') + '</span>';
+  });
 }
 
 /** 信件結尾預覽：分隔線＋附註（小字）→ 署名（置中）；與後端 mailClosingHtml_ 相同 */
-function mailClosingPreview(footer, signature, vars) {
-  var html = '';
+function mailClosingPreview(footer, signature, vars, contactsHtml) {
+  if (!MAIL_NOTES_SHOWN) { footer = stripNotes(footer).trim(); signature = stripNotes(signature).trim(); }
+  var html = contactsHtml ? '<div style="margin-top:24px">' + contactsHtml + '</div>' : '';
   if (footer) html += '<div style="margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.7">' + markupToHtml(footer, vars) + '</div>';
   html += '<div style="margin-top:' + (footer ? 20 : 28) + 'px;text-align:center;color:#6b7280;font-size:14px">' + markupToHtml(String(signature || '').trim() || DEFAULT_SIGNATURE, vars) + '</div>';
   return html;
@@ -662,55 +699,110 @@ function openTemplateEditor(t, opts) {
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
     '<code>==螢光==</code>　<code>[center]置中[/center]</code>　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
+    '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
     '連結、按鈕要換顏色：網址後空一格加色號，例如 <code>[button=https://網址 #c62828]按鈕文字[/button]</code><br>' +
     '變數會顯示成<span class="var-chip">方塊</span>，用「插入變數」選單加入，刪除時整塊一起刪；也可以直接打 <code>{{姓名}}</code>，打完會自動變成方塊。' +
     '</div>';
+  var ECHO_CODES = ['REG_SUCCESS', 'WAITLIST', 'PROMOTED'];
+  var footMode = t.footer === '-' ? 'none' : t.footer ? 'custom' : 'default';
+  var sigMode = t.signature ? 'custom' : 'default';
+  var defSig = String(opts.signature || '').trim() || DEFAULT_SIGNATURE;
   var body = el('<div class="tpl-editor"><div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
     (opts.note ? '<div class="banner" style="background:var(--surface-2);margin:0">' + esc(opts.note) + '</div>' : '') +
     '<div class="field"><div class="row" style="gap:8px"><span class="grow">主旨</span><span class="subj-var"></span></div><input class="input" name="subject"></div>' +
-    '<div class="field"><span>內容</span><div class="tpl-bar"></div><textarea class="input" name="body"></textarea></div>' + help +
+    '<div class="field"><span>內容</span><div class="tpl-bar"></div><textarea class="input" name="body"></textarea></div>' +
+    '<div class="tpl-echo hidden"><div class="row" style="gap:8px"><b class="grow small">報名資料表（內容裡的<span class="var-chip">回覆內容</span>方塊）</b></div>' +
+    (opts.questions ?
+      '<div class="small muted" style="margin:4px 0 8px">勾選要在表格裡顯示的題目。這是專案共用的設定，報名成功、候補、遞補錄取三種信都會一起改。</div>' +
+      '<div class="multi-q">' + opts.questions.map(function (q) { return '<label class="check"><input type="checkbox" value="' + esc(q) + '"' + ((opts.echoFields || []).indexOf(q) >= 0 ? ' checked' : '') + (opts.onSaveEcho ? '' : ' disabled') + '><span>' + esc(q) + '</span></label>'; }).join('') + '</div>' +
+      (opts.onSaveEcho ? '<div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn sm" type="button" data-echo-save>儲存勾選的題目</button></div>' : '')
+      : '<div class="small muted" style="margin-top:4px">表格顯示哪些題目由各專案勾選（專案的「信件範本」或「專案設定 → 報名結果信附上的回覆內容」）。把方塊刪掉就不附表格。</div>') +
+    '</div>' +
+    '<div class="tpl-closing"><b class="small">這封信的結尾</b>' +
+    '<div class="field"><div class="row" style="gap:8px"><span class="grow">附註（分隔線下的灰色小字）</span><select class="input sm" name="footMode"><option value="default">跟著預設</option><option value="custom">這封信自訂</option><option value="none">這封信不加</option></select></div>' +
+    '<div class="small muted foot-def"></div><div class="foot-edit"><textarea class="input" name="footer" rows="4"></textarea></div></div>' +
+    '<div class="field"><div class="row" style="gap:8px"><span class="grow">署名（最後置中）</span><select class="input sm" name="sigMode"><option value="default">跟著預設</option><option value="custom">這封信自訂</option></select></div>' +
+    '<div class="small muted sig-def"></div><div class="sig-edit"><input class="input" name="signature"></div></div></div>' +
+    '<details class="fmt-details"><summary class="small">格式寫法</summary>' + help + '</details>' +
     '<div class="small tpl-err" style="color:var(--bad);min-height:16px"></div></div>' +
-    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="small muted">即時預覽（文字以 OOO、數字以 000 代入）</span><div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe>' +
-    (opts.questions ? '<details class="echo-pick"><summary>信中附上的報名資料（' + (opts.echoFields || []).length + ' 題）</summary>' +
-      '<div class="small muted" style="margin:6px 0 8px">勾選的題目會以表格附在報名成功、候補、遞補錄取通知最後；其他範本放 {{回覆內容}} 指定位置。跟「專案設定」裡的同一個設定。</div>' +
-      '<div class="multi-q">' + opts.questions.map(function (q) { return '<label class="check"><input type="checkbox" value="' + esc(q) + '"' + ((opts.echoFields || []).indexOf(q) >= 0 ? ' checked' : '') + '><span>' + esc(q) + '</span></label>'; }).join('') + '</div>' +
-      '<div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn sm primary" type="button" data-echo-save>儲存勾選</button></div></details>' : '') +
-    '</div></div>');
+    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="row wrap" style="gap:8px"><span class="small muted grow">即時預覽（文字以 OOO、數字以 000 代入）</span><label class="check small"><input type="checkbox" class="note-toggle"' + (MAIL_NOTES_SHOWN ? ' checked' : '') + '><span>顯示內部備註</span></label></div>' +
+    '<div class="row wrap tpl-head" style="gap:8px"><span class="small">' + esc(opts.headerLabel || '信件標頭顏色') + '</span>' + hexField('tpl-headhex', normHex(opts.headerColor) || '#2f5d62') +
+    (opts.onSaveHeader ? '<button class="btn sm" type="button" data-head-save>套用顏色</button>' : '') + '<span class="small muted grow">' + esc(opts.headerHint || '') + '</span></div>' +
+    '<div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe></div></div>');
   var subj = $('[name=subject]', body), ta = $('[name=body]', body), frame = $('iframe', body);
   subj.value = t.subject; ta.value = t.body;
+  // 報名成功、候補、遞補錄取沒放 {{回覆內容}} 時，寄出會自動附在最後：編輯框也直接顯示那個方塊，左右才對得起來
+  if (ECHO_CODES.indexOf(t.code) >= 0 && !/\{\{\s*回覆內容\s*\}\}/.test(stripNotes(ta.value))) ta.value = ta.value.replace(/\s+$/, '') + '\n{{回覆內容}}';
   var subjEd = chipEditor(subj), bodyEd = chipEditor(ta);
+  var footTa = $('[name=footer]', body), sigIn = $('[name=signature]', body);
+  footTa.value = footMode === 'custom' ? t.footer : (opts.footer || '');
+  sigIn.value = sigMode === 'custom' ? t.signature : defSig;
+  var footEd = chipEditor(footTa), sigEd = chipEditor(sigIn);
+  footTa.parentNode.insertBefore(formatToolbar(footEd, { vars: true }), footTa);
+  var footSel = $('[name=footMode]', body), sigSel = $('[name=sigMode]', body);
+  footSel.value = footMode; sigSel.value = sigMode;
+  function closingUi() {
+    var fm = footSel.value, sm = sigSel.value;
+    $('.foot-edit', body).classList.toggle('hidden', fm !== 'custom');
+    $('.foot-def', body).textContent = fm === 'default' ? (opts.footer ? '目前預設：' + stripNotes(opts.footer).replace(/\n/g, ' ／ ') : '目前預設不加附註') + (opts.footerWhere ? '（' + opts.footerWhere + '）' : '') : fm === 'none' ? '這封信不加附註（也不加分隔線）' : '';
+    $('.sig-edit', body).classList.toggle('hidden', sm !== 'custom');
+    $('.sig-def', body).textContent = sm === 'default' ? '目前預設：' + defSig.replace(/\{\{\s*營隊名稱\s*\}\}/g, sample['營隊名稱']) + (opts.sigWhere ? '（' + opts.sigWhere + '）' : '') : '';
+    $('.tpl-echo', body).classList.toggle('hidden', !/\{\{\s*回覆內容\s*\}\}/.test(stripNotes(ta.value)));
+  }
+  footSel.addEventListener('change', function () {
+    if (footSel.value === 'custom' && !footTa.value.trim()) { footEd.value = opts.footer || ''; }
+    closingUi(); preview();
+  });
+  sigSel.addEventListener('change', function () { closingUi(); preview(); });
+  function usedFooter() { return footSel.value === 'custom' ? footTa.value : footSel.value === 'none' ? '' : (opts.footer || ''); }
+  function usedSig() { return sigSel.value === 'custom' && sigIn.value.trim() ? sigIn.value : defSig; }
   $('.subj-var', body).appendChild(varPicker(subjEd));
   $('.tpl-bar', body).appendChild(formatToolbar(bodyEd, { vars: true }));
   function preview() {
-    $('[data-subj]', body).textContent = '主旨：' + subj.value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return sample[k] !== undefined ? sample[k] : m; })
+    $('[data-subj]', body).textContent = '主旨：' + stripNotes(subj.value).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return sample[k] !== undefined ? sample[k] : m; })
       .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[\/?(?:特大|大|中|小)\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
     // 報名成功、候補、遞補錄取：專案有勾選回覆內容時會自動附在最後
     var text = ta.value;
-    var auto = ['REG_SUCCESS', 'WAITLIST', 'PROMOTED'].indexOf(t.code) >= 0 && !/\{\{\s*回覆內容\s*\}\}/.test(text);
-    if (auto) text += '\n{{回覆內容}}';
-    var fields = opts.questions ? $$('.echo-pick input:checked', body).map(function (i) { return i.value; }) : undefined;
+    var auto = false;
+    var fields = opts.questions ? $$('.tpl-echo input:checked', body).map(function (i) { return i.value; }) : undefined;
     var echo = echoSampleHtml(fields);
     var html = markupToHtml(text, sample).split('%%ECHO%%').join(echo +
-      (auto && !fields ? '<div style="font-size:12px;color:#9ca3af;margin-top:6px">（預覽示意：專案設定有勾選回覆內容時才會附上）</div>' : '') +
+      (!fields ? '<div style="font-size:12px;color:#9ca3af;margin-top:6px">（預覽示意：實際顯示各專案勾選的題目；沒勾選就不附）</div>' : '') +
       (fields && !fields.length && /%%ECHO%%/.test(markupToHtml(text, sample)) && !auto ? '<div style="font-size:12px;color:#9ca3af">（目前沒有勾選要附上的報名資料）</div>' : ''));
-    html += mailClosingPreview(opts.footer || '', opts.signature, sample) +
+    // 聯絡人員：範本或附註有 {{聯絡人員}} 就放那裡，否則（有勾選時）附在附註上方
+    var contacts = contactsSampleHtml(opts.contacts);
+    var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
+    html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html, opts.headerColor);
+    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html.split('%%CONTACTS%%').join(contacts), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
+  body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
+  bindHexField($('.tpl-headhex', body));
+  $('.tpl-headhex input[type=color]', body).addEventListener('input', function () { preview(); });
+  var headSave = $('[data-head-save]', body);
+  if (headSave) headSave.addEventListener('click', function () {
+    var hx = normHex($('.tpl-headhex .fmt-hexin', body).value);
+    if (!hx) { toast('色號格式是 # 加 6 碼（例如 #2f5d62）或 3 碼', true); return; }
+    Promise.resolve(opts.onSaveHeader(hx)).then(function () { opts.headerColor = hx; toast('已套用信件標頭顏色'); })
+      .catch(function (e) { toast(e.message, true); });
+  });
   var echoSave = $('[data-echo-save]', body);
   if (echoSave) {
-    body.addEventListener('change', function (e) { if (e.target.closest('.echo-pick')) preview(); });
     echoSave.addEventListener('click', function () {
-      var list = $$('.echo-pick input:checked', body).map(function (i) { return i.value; });
-      Promise.resolve(opts.onSaveEcho && opts.onSaveEcho(list)).then(function () {
-        $('.echo-pick summary', body).textContent = '信中附上的報名資料（' + list.length + ' 題）';
-        toast('已更新信中附上的報名資料');
-      }).catch(function (e) { toast(e.message, true); });
+      var list = $$('.tpl-echo input:checked', body).map(function (i) { return i.value; });
+      Promise.resolve(opts.onSaveEcho(list)).then(function () { toast('已更新報名資料表的題目（' + list.length + ' 題）'); })
+        .catch(function (e) { toast(e.message, true); });
     });
   }
+  $('.note-toggle', body).addEventListener('change', function (e) {
+    MAIL_NOTES_SHOWN = e.target.checked;
+    try { localStorage.setItem('camp-show-notes', MAIL_NOTES_SHOWN ? '1' : '0'); } catch (err) {}
+    preview();
+  });
   var timer = null;
-  body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(preview, 150); });
+  body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { closingUi(); preview(); }, 150); });
+  closingUi();
   preview();
   var buttons = [{ label: '取消', value: null }];
   if (opts.resetLabel) buttons.push({ label: opts.resetLabel, cls: 'ghost', value: { reset: true } });
@@ -720,7 +812,12 @@ function openTemplateEditor(t, opts) {
       if (!subj.value.trim() || !ta.value.trim()) { $('.tpl-err', body).textContent = '主旨與內容不可空白'; return false; }
       return true;
     },
-    value: function () { return { subject: subj.value, body: ta.value }; }
+    value: function () {
+      var fm = footSel.value, ft = footTa.value.replace(/\r\n/g, '\n').trim();
+      return { subject: subj.value, body: ta.value,
+        footer: fm === 'default' ? '' : fm === 'none' || !ft ? '-' : ft,
+        signature: sigSel.value === 'custom' ? sigIn.value.trim() : '' };
+    }
   });
   return modal({ title: '編輯範本：' + t.name, cls: 'xwide', body: body, buttons: buttons });
 }
