@@ -450,3 +450,24 @@
   .echo-pick { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
   .echo-pick summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--brand); }
   .echo-pick .multi-q { max-height: 180px; overflow-y: auto; }
+
+/* 專案設定：聯絡人員（每位兩行：職稱／姓名、電話／信箱） */
+.ct-list { display: flex; flex-direction: column; gap: 10px; }
+.ct-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; gap: 6px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.ct-row .input { min-width: 0; }
+.ct-row button { grid-column: 3; grid-row: 1 / span 2; }
+.ct-row [data-k=phone] { grid-column: 1; grid-row: 2; }
+.ct-row [data-k=email] { grid-column: 2; grid-row: 2; }
+@media (max-width: 520px) {
+  .ct-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .ct-row .input { grid-column: 1 !important; grid-row: auto !important; }
+  .ct-row button { grid-column: 2; grid-row: 1 / span 4; }
+}
+.fmt-btn.fmt-note { background: #fff8c5; color: #7a5b00; border-style: dashed; border-color: #d4a106; }
+
+/* 範本編輯：報名資料表、這封信的結尾 */
+.tpl-echo, .tpl-closing { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.tpl-echo .var-chip { margin: 0 2px; }
+.tpl-closing .input.sm { width: auto; flex: none; padding-block: 4px; }
+.fmt-details summary { cursor: pointer; color: var(--text-2); }
+.fmt-details[open] summary { margin-bottom: 6px; }
