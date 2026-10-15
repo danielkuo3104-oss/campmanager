@@ -125,11 +125,18 @@ function openExportDialog(o) {
     var list = v.scope === 'all' ? o.all : o.filtered;
     if (!list.length) { toast('沒有可匯出的學員', true); return; }
     var scopeText = v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel;
+    return confirmDialog({
+      title: '此內容包含學員個資', desc: '匯出的 PDF 含有學員個人資料，僅供營隊用途使用。',
+      lines: ['請勿轉寄、公開或用於營隊以外的目的', '用畢請妥善保管或刪除檔案', '每頁頁尾會標示「含學員個資，僅供營隊用途」，匯出會記錄在操作紀錄'],
+      okLabel: '我了解，匯出'
+    }).then(function (agreed) {
+    if (!agreed) return;
     busy(true);
     return api('logExport', o.prefix, { columns: fields.map(function (f) { return f.label; }), count: list.length, orientation: v.orientation, scope: scopeText })
       .then(function () { return buildStudentsPdf_({ project: p, fields: fields, list: list, orientation: v.orientation, scopeText: scopeText }); })
       .then(function (r) { busy(false); toast('已匯出 ' + list.length + ' 筆，共 ' + r.pages + ' 頁'); })
       .catch(function (e) { busy(false); toast(e.message, true); });
+    });
   });
 }
 
@@ -167,7 +174,7 @@ function buildStudentsPdf_(o) {
         } else {
           $('.pdf-cont', pg).textContent = p.name + '　學員名單（續）';
         }
-        $('.pdf-foot span', pg).textContent = p.prefix + '　' + stamp;
+        $('.pdf-foot span', pg).textContent = p.prefix + '　' + stamp + '　·　含學員個資，僅供營隊用途，請勿外流';
         host.appendChild(pg);
         pages.push(pg);
         return pg;
