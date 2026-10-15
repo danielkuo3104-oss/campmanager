@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <title>學員專區</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <style>
+    /* 學員專區：每個專案自己的入口，學員用姓名＋身分證字號登入，只看得到自己的報名 */
+    .pt-wrap { max-width: 680px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 16px; }
+    .pt-head { padding: 18px 24px; color: #fff; font-weight: 700; font-size: 17px; background: #2f5d62; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .pt-head .grow { flex: 1 1 auto; min-width: 0; }
+    .pt-head small { display: block; font-weight: 400; font-size: 13px; opacity: .85; margin-top: 2px; }
+    .pt-head button { background: rgba(255, 255, 255, .18); color: inherit; border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+    .pt-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .pt-body h1 { margin: 0; font-size: 22px; }
+    .pt-body h2 { margin: 0; font-size: 16px; color: var(--text); }
+    .pt-sec { display: flex; flex-direction: column; gap: 10px; }
+    .pt-status { display: inline-flex; align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; background: var(--accent-soft, #e3eeec); color: var(--accent, #2f5d62); }
+    .pt-status.gone { background: var(--bad-soft); color: var(--bad); }
+    .pt-text { line-height: 1.8; }
+    .pt-steps { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+    .pt-steps li { flex: 1 1 64px; min-width: 0; padding: 9px 4px; border-radius: 10px; background: var(--surface-2, #f4f5f3); color: var(--text-3); font-size: 12.5px; text-align: center; white-space: nowrap; }
+    .pt-steps li.done { background: var(--accent-soft, #e3eeec); color: var(--accent, #2f5d62); font-weight: 500; }
+    .pt-steps li.now { background: var(--accent, #2f5d62); color: #fff; font-weight: 700; }
+    .pt-info { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .pt-info div { display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .pt-info div:last-child { border-bottom: 0; }
+    .pt-info b { color: var(--text-2); font-weight: 500; }
+    .pt-info span { min-width: 0; word-break: break-word; }
+    .pt-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pt-msg { padding: 14px 16px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); line-height: 1.7; }
+    .pt-err { color: var(--bad); min-height: 18px; font-size: 13px; }
+    .pt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .pt-row > * { min-width: 0; }
+    .pt-foot { color: var(--text-3); font-size: 13px; text-align: center; line-height: 1.7; }
+    .pt-rich { line-height: 1.8; min-width: 0; overflow-wrap: anywhere; }
+    .pt-rich table { width: 100%; }
+    .pt-squad { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .pt-squad b { font-size: 22px; color: var(--accent, #2f5d62); }
+    .pt-staff { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .pt-staff div { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .pt-staff div:last-child { border-bottom: 0; }
+    .pt-staff em { font-style: normal; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2, #f4f5f3); color: var(--text-2); }
+    .pt-staff a { color: inherit; }
+    .pt-staff span { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+    .pt-cd { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+    .pt-cd .lbl { font-size: 14px; color: var(--text-2); }
+    .pt-cd .nums { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .pt-cd .nums div { min-width: 64px; padding: 10px 6px; border-radius: 12px; background: var(--surface-2, #f4f5f3); display: flex; flex-direction: column; gap: 2px; }
+    .pt-cd .nums b { font-size: 28px; line-height: 1.1; color: var(--accent, #2f5d62); font-variant-numeric: tabular-nums; }
+    .pt-cd .nums span { font-size: 12px; color: var(--text-3); }
+    .pt-cd .big { font-size: 20px; font-weight: 700; color: var(--accent, #2f5d62); }
+    .pt-check { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .pt-check label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; line-height: 1.6; }
+    .pt-check label:last-child { border-bottom: 0; }
+    .pt-check input { width: 18px; height: 18px; margin-top: 3px; flex: 0 0 auto; accent-color: var(--accent, #2f5d62); }
+    .pt-check input:checked + span { color: var(--text-3); text-decoration: line-through; }
+    .pt-check span { min-width: 0; overflow-wrap: anywhere; }
+    .pt-cnt { font-size: 13px; font-weight: 400; color: var(--text-3); }
+    .pt-log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+    .pt-log div { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pt-log time { color: var(--text-3); white-space: nowrap; }
+    @media (max-width: 520px) { .pt-row { grid-template-columns: 1fr; } .pt-body { padding: 20px 16px; } }
+  </style>
+</head>
+<body>
+  <div class="pt-wrap">
+    <div class="card pt-cd" id="pt-cd" hidden></div>
+    <div class="card">
+      <div class="pt-head" id="pt-head"><div class="grow" id="pt-camp">載入中…</div></div>
+      <div class="pt-body" id="pt-body"><div class="muted">載入中…</div></div>
+    </div>
+    <div class="pt-foot" id="pt-foot"></div>
+  </div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var prefix = q.get('p') || '', key = q.get('k') || '';
+  var body = document.getElementById('pt-body'), head = document.getElementById('pt-head'), camp = document.getElementById('pt-camp');
+  var I = null;
+  var store = 'portal_' + prefix + '_' + key;   // 登入憑證只存在這個分頁，關掉就登出
+
+  function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function getTok() { try { return sessionStorage.getItem(store) || ''; } catch (e) { return ''; } }
+  function setTok(t) { try { if (t) sessionStorage.setItem(store, t); else sessionStorage.removeItem(store); } catch (e) {} }
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    if (!window.CAMP_CONFIG || !CAMP_CONFIG.API_URL) return Promise.reject(new Error('網站尚未設定完成，請洽籌辦團隊'));
+    return fetch(CAMP_CONFIG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }), redirect: 'follow' })
+      .then(function (r) { if (!r.ok) throw new Error('連線失敗，請稍後再試'); return r.json(); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || '發生錯誤'); return j.result; });
+  }
+  function closed(msg) {
+    camp.textContent = '學員專區';
+    body.innerHTML = '<div class="pt-msg"></div>';
+    body.firstChild.textContent = msg;
+  }
+  function logoutBtn(on) {
+    var b = document.getElementById('pt-out');
+    if (on && !b) {
+      b = document.createElement('button'); b.type = 'button'; b.id = 'pt-out'; b.textContent = '登出';
+      b.addEventListener('click', function () { var t = getTok(); setTok(''); call('portalLogout', t).catch(function () {}); login(); });
+      head.appendChild(b);
+    }
+    if (!on && b) b.remove();
+  }
+
+  function login(msg) {
+    logoutBtn(false);
+    body.innerHTML = '<h1>學員專區</h1><div class="pt-text">輸入報名時填的學員姓名與' + esc(I.keyLabel) + '，查看你的報名進度、繳費資訊與營隊資訊。</div>' +
+      (msg ? '<div class="pt-msg"></div>' : '') +
+      '<form class="pt-sec" id="pt-login" autocomplete="on"><div class="pt-row">' +
+      '<label class="field"><span>學員姓名</span><input class="input" name="name" autocomplete="name" required></label>' +
+      '<label class="field"><span>' + esc(I.keyLabel) + '</span><input class="input" name="key" required' + (I.keyLabel === '身分證字號' ? ' autocapitalize="characters" maxlength="10" autocomplete="off"' : ' type="email" autocomplete="email"') + '></label></div>' +
+      '<div class="pt-err"></div><div><button class="btn primary" type="submit">登入</button></div></form>';
+    if (msg) body.querySelector('.pt-msg').textContent = msg;
+    var form = document.getElementById('pt-login');
+    form.elements.name.value = q.get('n') || '';
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = form.querySelector('button'), err = form.querySelector('.pt-err');
+      err.textContent = ''; btn.disabled = true; btn.textContent = '登入中…';
+      call('portalLogin', prefix, key, form.elements.name.value.trim(), form.elements.key.value.trim()).then(function (r) {
+        setTok(r.token); show();
+      }).catch(function (e2) { err.textContent = e2.message; btn.disabled = false; btn.textContent = '登入'; });
+    });
+  }
+
+  function infoTable(rows) {
+    return '<div class="pt-info">' + rows.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
+  }
+
+  function show() {
+    var tok = getTok();
+    if (!tok) { login(); return; }
+    body.innerHTML = '<div class="muted">載入中…</div>';
+    call('portalData', tok, prefix, key).then(function (d) {
+      logoutBtn(true);
+      render(d);
+    }).catch(function (e) {
+      if (/重新登入|過期/.test(e.message)) { setTok(''); login('登入已過期，請重新登入'); return; }
+      body.innerHTML = '<div class="pt-msg"></div><div><button class="btn" type="button">重新整理</button></div>';
+      body.querySelector('.pt-msg').textContent = e.message;
+      body.querySelector('button').onclick = show;
+    });
+  }
+
+  /** 學員看到的主畫面；preview 時按鈕不能點（管理員預覽） */
+  function render(d, preview) {
+      var h = '<h1>' + esc(d.name) + ' 你好</h1>';
+      h += '<div class="pt-sec"><h2>報名進度</h2><span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
+        (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '✓ ' : '') + esc(s.label) + '</li>'; }).join('') + '</ol>' : '') +
+        (d.statusText ? '<div class="pt-text"></div>' : '') +
+        (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a) { return preview ? '<span class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" title="預覽中不能點">' + esc(a.label) + '</span>' : '<a class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" href="' + esc(a.url) + '">' + esc(a.label) + '</a>'; }).join('') + '</div>' : '') + '</div>';
+      if (d.squad) {
+        h += '<div class="pt-sec"><h2>我的小隊</h2><div class="pt-squad"><b>第 ' + esc(d.squad.no) + ' 小隊</b></div>' +
+          (d.squad.staff.length ? '<div class="pt-staff">' + d.squad.staff.map(function (x) {
+            var c = x.contact ? (/^[\d\s()+\-#]{8,}$/.test(x.contact) ? '<a href="tel:' + esc(x.contact.replace(/[^\d+#]/g, '')) + '">' + esc(x.contact) + '</a>' : esc(x.contact)) : '';
+            return '<div><em>' + esc(x.role) + '</em><b>' + esc(x.name) + '</b>' + (c ? '<span>' + c + '</span>' : '') + '</div>';
+          }).join('') + '</div>' : '') + '</div>';
+      }
+      if (d.payHtml) h += '<div class="pt-sec"><h2>繳費資訊</h2><div class="pt-rich">' + d.payHtml + '</div></div>';
+      h += '<div class="pt-sec"><h2>報名資訊</h2>' + infoTable(d.info) + '</div>';
+      (d.sections || []).forEach(function (x, i) {
+        if (x.type === 'checklist') {
+          var done = 0;
+          h += '<div class="pt-sec"><h2>' + esc(x.title) + '<span class="pt-cnt" data-i="' + i + '"></span></h2><div class="pt-check">' + x.items.map(function (it, j) {
+            return '<label><input type="checkbox" data-s="' + i + '" data-j="' + j + '"' + (preview ? ' disabled' : '') + '><span>' + it + '</span></label>';
+          }).join('') + '</div></div>';
+        } else h += '<div class="pt-sec"><h2>' + esc(x.title) + '</h2><div class="pt-rich">' + x.html + '</div></div>';
+      });
+      if (d.dataHtml) h += '<div class="pt-rich">' + d.dataHtml + '</div>';
+      if (d.refundHtml) h += '<div class="pt-rich">' + d.refundHtml + '</div>';
+      if (d.reports.length) h += '<div class="pt-sec"><h2>我送出的表單</h2><div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div></div>';
+      body.innerHTML = h;
+      if (d.statusText) body.querySelector('.pt-text').textContent = d.statusText;
+      // 勾選清單：勾選狀態只存在這支手機（每個區塊依標題記住）
+      (d.sections || []).forEach(function (x, i) {
+        if (x.type !== 'checklist') return;
+        var k = 'portal_chk_' + prefix + '_' + d.name + '_' + x.title, saved = {};
+        try { saved = JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) {}
+        var boxes = body.querySelectorAll('input[data-s="' + i + '"]'), cnt = body.querySelector('.pt-cnt[data-i="' + i + '"]');
+        function count() { var n = 0; boxes.forEach(function (b) { if (b.checked) n++; }); cnt.textContent = '　' + n + ' / ' + boxes.length; }
+        boxes.forEach(function (b) {
+          var key2 = b.parentNode.textContent.trim();
+          b.checked = !!saved[key2];
+          b.addEventListener('change', function () { saved[key2] = b.checked; try { localStorage.setItem(k, JSON.stringify(saved)); } catch (e) {} count(); });
+        });
+        count();
+      });
+  }
+
+  /** 營隊倒數：以伺服器時間校正，每秒更新 */
+  var cdTimer = null;
+  function countdown(info) {
+    var box = document.getElementById('pt-cd');
+    if (cdTimer) clearInterval(cdTimer);
+    if (!info.startMs) { box.hidden = true; return; }
+    var skew = info.now ? info.now - Date.now() : 0;
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    function tick() {
+      var now = Date.now() + skew, left = info.startMs - now;
+      box.hidden = false;
+      if (left > 0) {
+        var s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+        box.innerHTML = '<div class="lbl">距離營隊開始還有</div><div class="nums"><div><b>' + d + '</b><span>天</span></div><div><b>' + pad(h) + '</b><span>時</span></div><div><b>' + pad(m) + '</b><span>分</span></div><div><b>' + pad(sec) + '</b><span>秒</span></div></div>';
+      } else if (info.endMs && now < info.endMs) {
+        box.innerHTML = '<div class="big">營隊進行中</div><div class="lbl">祝大家玩得開心！</div>';
+        clearInterval(cdTimer);
+      } else {
+        box.innerHTML = '<div class="big">營隊已圓滿結束</div><div class="lbl">謝謝你的參與，我們下次見！</div>';
+        clearInterval(cdTimer);
+      }
+    }
+    tick();
+    cdTimer = setInterval(tick, 1000);
+  }
+
+  function applyHead(info) {
+    I = info;
+    countdown(info);
+    camp.innerHTML = esc(info.campName) + (info.period ? '<small>' + esc(info.period) + '</small>' : '');
+    head.style.background = info.headerColor;
+    document.getElementById('pt-foot').innerHTML = (info.contactsHtml ? '<div style="text-align:left;margin-bottom:16px">' + info.contactsHtml + '</div>' : '') + info.signatureHtml;
+  }
+
+  /** 管理員預覽：從學員管理頁打開，用管理員的登入看某位學員的畫面 */
+  function preview(sid) {
+    var adminTok = '';
+    try { adminTok = sessionStorage.getItem('camp_token') || localStorage.getItem('camp_token') || ''; } catch (e) {}
+    if (!adminTok) { closed('預覽需要先登入管理系統，請從「報名與學員管理 → 學員專區 → 預覽」打開'); return; }
+    body.innerHTML = '<div class="muted">載入中…</div>';
+    call('portalPreview', adminTok, prefix, sid || '').then(function (r) {
+      applyHead(r.head);
+      document.title = '預覽學員專區｜' + r.head.campName;
+      render(r.data, true);
+      var bar = document.createElement('div');
+      bar.className = 'pt-msg';
+      bar.innerHTML = '<b>管理員預覽</b>：這是學員「<span></span>」登入後看到的畫面' + (r.open ? '' : '（學員專區目前沒有開放，學員還看不到）') + '。<label style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">換一位學員<select class="input" style="flex:1 1 160px;min-width:0"></select></label>';
+      bar.querySelector('span').textContent = r.data.name;
+      var sel = bar.querySelector('select');
+      r.students.forEach(function (x) { var o = document.createElement('option'); o.value = x.id; o.textContent = x.name + '（' + x.status + '）'; sel.appendChild(o); });
+      sel.value = r.studentId;
+      sel.addEventListener('change', function () { preview(sel.value); });
+      body.insertBefore(bar, body.firstChild);
+    }).catch(function (e) { closed(e.message); });
+  }
+
+  if (prefix && q.get('preview') === '1') { preview(q.get('s') || ''); return; }
+  if (!prefix || !key) { closed('網址不完整，請使用籌辦團隊提供的學員專區網址'); return; }
+  call('portalInfo', prefix, key).then(function (info) {
+    if (info.closed) { closed(info.message); return; }
+    applyHead(info);
+    document.title = '學員專區｜' + info.campName;
+    show();
+  }).catch(function (e) { closed(e.message); });
+})();
+</script>
+</body>
+</html>
