@@ -46,7 +46,7 @@ App.page('admin', function (root, params) {
   function tabAllowed(t) { return (TAB_PERMS[t] || []).some(can); }
 
   function load() {
-    return api('getAdminData').then(function (d) {
+    return apiFast('getAdminData', function (d) {
       D = d;
       var first = null;
       $$('#ad-tabs button', root).forEach(function (b) {
