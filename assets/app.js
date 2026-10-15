@@ -168,9 +168,10 @@ function formDialog(o) {
       if (f.placeholder) input.placeholder = f.placeholder;
       if (f.value !== undefined && f.value !== null) input.value = f.value;
       if (f.type === 'number') input.step = 'any';
-      if (f.format) wrap.appendChild(formatToolbar(input, { vars: true }));
+      var target = input;
       wrap.appendChild(input);
-      if (f.presets && f.presets.length) wrap.appendChild(presetChips(input, f.presets, f.presetJoin));
+      if (f.format) { target = chipEditor(input); wrap.insertBefore(formatToolbar(target, { vars: true }), input); }
+      if (f.presets && f.presets.length) wrap.appendChild(presetChips(target, f.presets, f.presetJoin));
       if (f.hint) { var h = el('<span class="hint"></span>'); h.textContent = f.hint; wrap.appendChild(h); }
     }
     form.appendChild(wrap);
@@ -235,12 +236,18 @@ var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '00
   '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
-var ECHO_SAMPLE_HTML = '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">您填寫的報名資料</div>' +
-  '<div style="font-size:13px;color:#6b7280;margin-bottom:8px">請確認以下資料是否正確，如有錯誤請直接回覆此信告知。</div>' +
-  '<table style="width:100%;border-collapse:collapse;font-size:14px;background:#f9faf8">' +
-  [['學員姓名', 'OOO'], ['身分證字號', 'A000000000'], ['出生日期', '0000/00/00'], ['家長電話', '0000-000-000']].map(function (r) {
-    return '<tr><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#5b665f;white-space:nowrap">' + r[0] + '</td><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#1f2937">' + r[1] + '</td></tr>';
-  }).join('') + '</table>';
+function echoSampleHtml(fields) {
+  var rows = fields ? fields.map(function (q) {
+    return [q, /身分證|身份證|證號/.test(q) ? 'A000000000' : /日期|生日/.test(q) ? '0000/00/00' : /電話|手機/.test(q) ? '0000-000-000' : /mail|信箱/i.test(q) ? 'ooo@gmail.com' : 'OOO'];
+  }) : [['學員姓名', 'OOO'], ['身分證字號', 'A000000000'], ['出生日期', '0000/00/00'], ['家長電話', '0000-000-000']];
+  if (!rows.length) return '';
+  return '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">您填寫的報名資料</div>' +
+    '<div style="font-size:13px;color:#6b7280;margin-bottom:8px">請確認以下資料是否正確，如有錯誤請直接回覆此信告知。</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:14px;background:#f9faf8">' +
+    rows.map(function (r) {
+      return '<tr><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#5b665f;white-space:nowrap">' + esc(r[0]) + '</td><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#1f2937">' + r[1] + '</td></tr>';
+    }).join('') + '</table>';
+}
 
 /** 在游標處插入，或把選取的文字包起來 */
 function wrapSelection(ta, before, after, placeholder) {
@@ -295,7 +302,9 @@ function formatToolbar(ta, opts) {
     '<button type="button" class="fmt-btn" data-f="color" title="[#色號]文字[/#]">文字色</button><button type="button" class="fmt-btn" data-f="bg" title="[hl=#色號]文字[/hl]">底色</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="hl" title="螢光標記 ==文字==" style="background:#fde68a;color:#111">螢光</button>' +
     '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button>' +
-    '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button><span class="fmt-sep"></span>' +
+    '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button>' +
+    '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
+    '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
     (opts.vars ? '<span class="fmt-sep"></span><select class="fmt-var"><option value="">插入變數…</option>' + MAIL_VARS.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('') + '</select>' : '') +
     '</div><div class="fmt-link hidden">' +
@@ -328,6 +337,15 @@ function formatToolbar(ta, opts) {
     if (f === 'bold') wrapSelection(ta, '**', '**', '粗體文字');
     if (f === 'hl') wrapSelection(ta, '==', '==', '標記文字');
     if (f === 'center') wrapSelection(ta, '[center]', '[/center]', '置中文字');
+    if (f === 'hr') {
+      // 分隔線要獨立一行：前後不是換行就補上
+      var v0 = ta.value, a0 = ta.selectionStart, z0 = ta.selectionEnd;
+      var pre = a0 > 0 && v0[a0 - 1] !== '\n' ? '\n' : '', post = v0[z0] === '\n' ? '' : '\n';
+      ta.value = v0.slice(0, a0) + pre + '---' + post + v0.slice(z0);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = a0 + pre.length + 3 + post.length;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     if (f === 'ul' || f === 'sub') prefixLines(ta, f === 'ul' ? '- ' : '  - ');
     if (color) wrapSelection(ta, '[' + color + ']', '[/' + color + ']', '彩色文字');
     if (f === 'color' || f === 'bg') {
@@ -354,13 +372,181 @@ function formatToolbar(ta, opts) {
     }
   });
   $('.fmt-hex-main .fmt-hexin', bar).addEventListener('input', function () { $('.fmt-hex-err', bar).textContent = ''; });
+  var sz = $('.fmt-size', bar);
+  sz.addEventListener('change', function () { if (sz.value) wrapSelection(ta, '[' + sz.value + ']', '[/' + sz.value + ']', sz.value + '字'); sz.value = ''; });
   var vs = $('.fmt-var', bar);
   if (vs) vs.addEventListener('change', function () { if (vs.value) wrapSelection(ta, '{{' + vs.value + '}}', '', ''); vs.value = ''; });
   return bar;
 }
 
+/**
+ * 變數方塊編輯器：{{營隊名稱}} 這類變數顯示成一整塊方塊，不會打錯或只刪掉一半。
+ * 原本的 textarea／input 隱藏起來、值隨時同步（表單照常讀取）。
+ * 回傳的物件跟 textarea 一樣有 value、selectionStart、selectionEnd、focus，工具列與常用清單可以直接使用。
+ */
+var VAR_TOKEN_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+function chipEditor(ta) {
+  var single = ta.tagName === 'INPUT';
+  var ed = el('<div class="chip-editor input' + (single ? ' single' : '') + '" contenteditable="true" spellcheck="false" role="textbox"></div>');
+  if (!single) ed.setAttribute('aria-multiline', 'true');
+  if (ta.placeholder) ed.setAttribute('data-ph', ta.placeholder);
+  if (ta.disabled || ta.readOnly) ed.setAttribute('contenteditable', 'false');
+  ta.parentNode.insertBefore(ed, ta.nextSibling);
+  ta.classList.add('chip-src');
+  var saved = null, composing = false;
+
+  function known(name) { return MAIL_VARS.indexOf(name) >= 0 || MAIL_SAMPLE[name] !== undefined; }
+  function chip(name) {
+    var c = document.createElement('span');
+    c.className = 'var-chip' + (known(name) ? '' : ' unknown');
+    c.setAttribute('contenteditable', 'false');
+    c.setAttribute('data-var', name);
+    c.textContent = name;
+    c.title = known(name) ? '變數：寄信時換成實際的「' + name + '」' : '系統沒有「' + name + '」這個變數，寄出時會照原樣顯示';
+    return c;
+  }
+  function serialize(node) {
+    var out = '';
+    Array.prototype.forEach.call(node.childNodes, function (n) {
+      if (n.nodeType === 3) out += n.nodeValue;
+      else if (n.nodeType !== 1) return;
+      else if (n.hasAttribute('data-var')) out += '{{' + n.getAttribute('data-var') + '}}';
+      else if (n.nodeName === 'BR') out += n.hasAttribute('data-end') ? '' : '\n';
+      else {
+        if (/^(DIV|P)$/.test(n.nodeName) && out && !/\n$/.test(out)) out += '\n';
+        out += serialize(n);
+      }
+    });
+    return single ? out.replace(/\n/g, ' ') : out;
+  }
+  function render(v) {
+    ed.textContent = '';
+    var last = 0, m;
+    VAR_TOKEN_RE.lastIndex = 0;
+    while ((m = VAR_TOKEN_RE.exec(v))) {
+      if (m.index > last) ed.appendChild(document.createTextNode(v.slice(last, m.index)));
+      ed.appendChild(chip(m[1].trim()));
+      last = m.index + m[0].length;
+    }
+    if (last < v.length) ed.appendChild(document.createTextNode(v.slice(last)));
+    if (!single) { var br = document.createElement('br'); br.setAttribute('data-end', ''); ed.appendChild(br); }
+    ed.classList.toggle('is-empty', !v);
+  }
+  function offsetOf(container, offset) {
+    var r = document.createRange();
+    r.setStart(ed, 0);
+    try { r.setEnd(container, offset); } catch (e) { return serialize(ed).length; }
+    var tmp = document.createElement('div');
+    tmp.appendChild(r.cloneContents());
+    return serialize(tmp).length;
+  }
+  function inside() {
+    var sel = window.getSelection();
+    return sel && sel.rangeCount && ed.contains(sel.getRangeAt(0).startContainer) ? sel : null;
+  }
+  function offsets() {
+    var sel = inside();
+    if (!sel) { var n = serialize(ed).length; return saved ? [Math.min(saved[0], n), Math.min(saved[1], n)] : [n, n]; }
+    var r = sel.getRangeAt(0);
+    return [offsetOf(r.startContainer, r.startOffset), offsetOf(r.endContainer, r.endOffset)];
+  }
+  function tokenLen(n) {
+    if (n.nodeType === 3) return n.nodeValue.length;
+    if (n.hasAttribute && n.hasAttribute('data-var')) return n.getAttribute('data-var').length + 4;
+    return 0;
+  }
+  function posAt(off) {
+    var kids = ed.childNodes;
+    for (var i = 0; i < kids.length; i++) {
+      var n = kids[i];
+      if (n.nodeType === 1 && n.hasAttribute('data-end')) return [ed, i];
+      var len = tokenLen(n);
+      if (n.nodeType === 3) { if (off <= len) return [n, off]; off -= len; continue; }
+      if (off <= 0) return [ed, i];
+      if (off < len) return [ed, i + 1];
+      off -= len;
+    }
+    return [ed, kids.length];
+  }
+  function setCaret(a, b) {
+    saved = [a, b === undefined ? a : b];
+    if (document.activeElement !== ed) return;
+    var sel = window.getSelection(), r = document.createRange();
+    var pa = posAt(saved[0]), pb = posAt(saved[1]);
+    r.setStart(pa[0], pa[1]); r.setEnd(pb[0], pb[1]);
+    sel.removeAllRanges(); sel.addRange(r);
+  }
+  function sync() { ta.value = serialize(ed); ed.classList.toggle('is-empty', !ta.value); }
+  function clean() {
+    var ok = Array.prototype.every.call(ed.childNodes, function (n, i) {
+      if (n.nodeType === 3) return !/\{\{\s*[^{}]+?\s*\}\}/.test(n.nodeValue);
+      return n.nodeType === 1 && (n.hasAttribute('data-var') || (n.hasAttribute('data-end') && i === ed.childNodes.length - 1));
+    }) && (single || (ed.lastChild && ed.lastChild.nodeType === 1 && ed.lastChild.hasAttribute('data-end')));
+    if (ok) return;
+    var o = offsets();
+    render(serialize(ed));
+    setCaret(o[0], o[1]);
+  }
+  function insertText(t) {
+    var o = offsets(), v = serialize(ed);
+    render(v.slice(0, o[0]) + t + v.slice(o[1]));
+    setCaret(o[0] + t.length);
+    sync();
+    ed.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  ed.addEventListener('compositionstart', function () { composing = true; });
+  ed.addEventListener('compositionend', function () { composing = false; sync(); clean(); ed.dispatchEvent(new Event('input', { bubbles: true })); });
+  ed.addEventListener('input', function (e) { if (composing || e.isComposing) return; sync(); clean(); });
+  ed.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (!single) insertText('\n'); }
+  });
+  ed.addEventListener('paste', function (e) {
+    e.preventDefault();
+    var t = (e.clipboardData || window.clipboardData).getData('text');
+    insertText(single ? t.replace(/\s*\n\s*/g, ' ') : t.replace(/\r\n?/g, '\n'));
+  });
+  ed.addEventListener('drop', function (e) { e.preventDefault(); });
+  ed.addEventListener('blur', function () { saved = offsets(); });
+  document.addEventListener('selectionchange', function onSel() {
+    if (!ed.isConnected) { document.removeEventListener('selectionchange', onSel); return; }
+    if (inside()) saved = offsets();
+  });
+  // 點方塊時把游標放到方塊後面
+  ed.addEventListener('click', function (e) {
+    var c = e.target.closest && e.target.closest('.var-chip');
+    if (!c) return;
+    var r = document.createRange(); r.setStartAfter(c); r.collapse(true);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  });
+  render(ta.value);
+
+  return {
+    el: ed, source: ta, isChipEditor: true,
+    get value() { return serialize(ed); },
+    set value(v) { render(String(v === undefined || v === null ? '' : v)); sync(); },
+    get selectionStart() { return offsets()[0]; },
+    set selectionStart(v) { var o = offsets(); setCaret(v, Math.max(v, o[1])); },
+    get selectionEnd() { return offsets()[1]; },
+    set selectionEnd(v) { var o = offsets(); setCaret(Math.min(o[0], v), v); },
+    setSelectionRange: function (a, b) { setCaret(a, b); },
+    focus: function () { var s = saved; ed.focus(); if (s) setCaret(s[0], s[1]); },
+    dispatchEvent: function (e) { sync(); return ed.dispatchEvent(e); }
+  };
+}
+
+/** 單獨的「插入變數」選單（例如主旨欄） */
+function varPicker(target) {
+  var s = el('<select class="fmt-var sm" aria-label="插入變數"><option value="">插入變數…</option>' + MAIL_VARS.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('') + '</select>');
+  s.addEventListener('mousedown', function () { /* 保留游標位置 */ });
+  s.addEventListener('change', function () { if (s.value) wrapSelection(target, '{{' + s.value + '}}', '', ''); s.value = ''; });
+  return s;
+}
+
 /** 與後端 formatMarkup_ 相同的轉換，給編輯時即時預覽用 */
 /* 以下兩個函式與後端 Mail.gs 相同（預覽與實際信件一致） */
+var MAIL_SIZES = { '特大': 24, '大': 19, '中': 16, '小': 12 };
+var DEFAULT_SIGNATURE = '{{營隊名稱}} 籌辦團隊 敬上';
 var MAIL_COLOR_CODES = { R: '#d32f2f', O: '#ef6c00', Y: '#d4a106', G: '#2e7d32', B: '#1565c0', P: '#7b1fa2', K: '#111111' };
 var HEX_RE = '#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})';
 
@@ -395,6 +581,9 @@ function formatMarkup(html) {
     if (kind === 'link') return '<a href="' + url + '" style="color:' + color + ';text-decoration:underline">' + text + '</a>';
     return '<a href="' + url + '" style="display:inline-block;margin:6px 0;background:' + color + ';color:' + textOn(color) + ';padding:10px 24px;border-radius:999px;text-decoration:none;font-weight:700">' + text + '</a>';
   });
+  for (var j = 0; j < 3; j++) {
+    out = out.replace(/\[(特大|大|中|小)\]([\s\S]*?)\[\/\1\]/g, function (_, k, t) { return '<span style="font-size:' + MAIL_SIZES[k] + 'px;line-height:1.5">' + t + '</span>'; });
+  }
   out = out.replace(/==([^=\n][\s\S]*?)==/g, '<span style="background:#fde68a;padding:0 2px;border-radius:3px">$1</span>');
   out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
   return out.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
@@ -413,36 +602,12 @@ function mailTextToHtml(text) {
     lastBlock = true;
   }
   String(text || '').split('\n').forEach(function (ln) {
-    var sub = ln.match(/^[ \t\u3000]+(?:[-–]\s+|[•・]\s*)(.*)$/);
-    var top = sub ? null : ln.match(/^(?:[-–]\s+|[•・]\s*)(.*)$/);
-    if (sub) {
-      list = list || [];
-      if (!list.length) list.push({ text: null, subs: [] });
-      list[list.length - 1].subs.push(sub[1]);
+    if (/^\s*(?:-{3,}|\[hr\])\s*$/.test(ln)) {
+      flush();
+      html += '<hr style="border:none;border-top:1px solid #e5e7eb;margin:14px 0">';
+      lastBlock = true;
       return;
     }
-    if (top) { list = list || []; list.push({ text: top[1], subs: [] }); return; }
-    flush();
-    html += (html && !lastBlock ? '<br>' : '') + ln;
-    lastBlock = false;
-  });
-  flush();
-  return formatMarkup(html);
-}
-
-/** 已跳脫的信件文字 → HTML：先處理條列與換行，再套用粗體、顏色等格式 */
-function mailTextToHtml(text) {
-  var html = '', list = null, lastBlock = false;
-  function flush() {
-    if (!list) return;
-    html += '<ul style="margin:6px 0;padding-left:22px">' + list.map(function (it) {
-      return '<li style="margin:3px 0' + (it.text === null ? ';list-style:none' : '') + '">' + (it.text || '') +
-        (it.subs.length ? '<ul style="list-style:none;margin:2px 0;padding-left:2px">' + it.subs.map(function (t) { return '<li style="margin:2px 0">– ' + t + '</li>'; }).join('') + '</ul>' : '') + '</li>';
-    }).join('') + '</ul>';
-    list = null;
-    lastBlock = true;
-  }
-  String(text || '').split('\n').forEach(function (ln) {
     var sub = ln.match(/^[ \t\u3000]+(?:[-–]\s+|[•・]\s*)(.*)$/);
     var top = sub ? null : ln.match(/^(?:[-–]\s+|[•・]\s*)(.*)$/);
     if (sub) {
@@ -466,10 +631,19 @@ function markupToHtml(text, vars) {
   return mailTextToHtml(filled);
 }
 
-function mailPreviewDoc(campName, bodyHtml) {
+/** 信件結尾預覽：分隔線＋附註（小字）→ 署名（置中）；與後端 mailClosingHtml_ 相同 */
+function mailClosingPreview(footer, signature, vars) {
+  var html = '';
+  if (footer) html += '<div style="margin-top:28px;padding-top:12px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.7">' + markupToHtml(footer, vars) + '</div>';
+  html += '<div style="margin-top:' + (footer ? 20 : 28) + 'px;text-align:center;color:#6b7280;font-size:14px">' + markupToHtml(String(signature || '').trim() || DEFAULT_SIGNATURE, vars) + '</div>';
+  return html;
+}
+
+function mailPreviewDoc(campName, bodyHtml, headerColor) {
+  var head = normHex(headerColor) || '#2f5d62';
   return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:16px">' +
     '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
-    '<div style="background:#2f5d62;color:#fff;padding:14px 22px;font-size:15px;font-weight:700">' + esc(campName) + '</div>' +
+    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:14px 22px;font-size:15px;font-weight:700">' + esc(campName) + '</div>' +
     '<div style="padding:20px 22px;font-size:14px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
 }
 
@@ -487,35 +661,53 @@ function openTemplateEditor(t, opts) {
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
     '<code>==螢光==</code>　<code>[center]置中[/center]</code>　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
+    '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
     '連結、按鈕要換顏色：網址後空一格加色號，例如 <code>[button=https://網址 #c62828]按鈕文字[/button]</code><br>' +
-    '變數：' + MAIL_VARS.map(function (v) { return '<code>{{' + esc(v) + '}}</code>'; }).join(' ') +
+    '變數會顯示成<span class="var-chip">方塊</span>，用「插入變數」選單加入，刪除時整塊一起刪；也可以直接打 <code>{{姓名}}</code>，打完會自動變成方塊。' +
     '</div>';
   var body = el('<div class="tpl-editor"><div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
     (opts.note ? '<div class="banner" style="background:var(--surface-2);margin:0">' + esc(opts.note) + '</div>' : '') +
-    '<label class="field"><span>主旨</span><input class="input" name="subject"></label>' +
+    '<div class="field"><div class="row" style="gap:8px"><span class="grow">主旨</span><span class="subj-var"></span></div><input class="input" name="subject"></div>' +
     '<div class="field"><span>內容</span><div class="tpl-bar"></div><textarea class="input" name="body"></textarea></div>' + help +
     '<div class="small tpl-err" style="color:var(--bad);min-height:16px"></div></div>' +
-    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="small muted">即時預覽（文字以 OOO、數字以 000 代入）</span><div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe></div></div>');
+    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="small muted">即時預覽（文字以 OOO、數字以 000 代入）</span><div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe>' +
+    (opts.questions ? '<details class="echo-pick"><summary>信中附上的報名資料（' + (opts.echoFields || []).length + ' 題）</summary>' +
+      '<div class="small muted" style="margin:6px 0 8px">勾選的題目會以表格附在報名成功、候補、遞補錄取通知最後；其他範本放 {{回覆內容}} 指定位置。跟「專案設定」裡的同一個設定。</div>' +
+      '<div class="multi-q">' + opts.questions.map(function (q) { return '<label class="check"><input type="checkbox" value="' + esc(q) + '"' + ((opts.echoFields || []).indexOf(q) >= 0 ? ' checked' : '') + '><span>' + esc(q) + '</span></label>'; }).join('') + '</div>' +
+      '<div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn sm primary" type="button" data-echo-save>儲存勾選</button></div></details>' : '') +
+    '</div></div>');
   var subj = $('[name=subject]', body), ta = $('[name=body]', body), frame = $('iframe', body);
   subj.value = t.subject; ta.value = t.body;
-  $('.tpl-bar', body).appendChild(formatToolbar(ta, { vars: true }));
+  var subjEd = chipEditor(subj), bodyEd = chipEditor(ta);
+  $('.subj-var', body).appendChild(varPicker(subjEd));
+  $('.tpl-bar', body).appendChild(formatToolbar(bodyEd, { vars: true }));
   function preview() {
     $('[data-subj]', body).textContent = '主旨：' + subj.value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return sample[k] !== undefined ? sample[k] : m; })
-      .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
+      .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[\/?(?:特大|大|中|小)\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
     // 報名成功、候補、遞補錄取：專案有勾選回覆內容時會自動附在最後
     var text = ta.value;
     var auto = ['REG_SUCCESS', 'WAITLIST', 'PROMOTED'].indexOf(t.code) >= 0 && !/\{\{\s*回覆內容\s*\}\}/.test(text);
     if (auto) text += '\n{{回覆內容}}';
-    var html = markupToHtml(text, sample).split('%%ECHO%%').join(ECHO_SAMPLE_HTML +
-      (auto ? '<div style="font-size:12px;color:#9ca3af;margin-top:6px">（預覽示意：專案設定有勾選回覆內容時才會附上）</div>' : ''));
-    if (opts.signature !== undefined) {
-      if (opts.signature) html += '<div style="margin-top:28px;text-align:center;color:#6b7280;font-size:14px">' + mailTextToHtml(esc(opts.signature)) + '</div>';
-    } else {
-      html += '<div style="margin-top:28px;text-align:center;color:#6b7280;font-size:14px">' + mailTextToHtml('OOO 籌辦團隊 敬上') +
-        '<div style="font-size:11px;color:#b0b5b2">（署名示意：各專案在「專案設定 → 信件署名」設定）</div></div>';
-    }
-    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html);
+    var fields = opts.questions ? $$('.echo-pick input:checked', body).map(function (i) { return i.value; }) : undefined;
+    var echo = echoSampleHtml(fields);
+    var html = markupToHtml(text, sample).split('%%ECHO%%').join(echo +
+      (auto && !fields ? '<div style="font-size:12px;color:#9ca3af;margin-top:6px">（預覽示意：專案設定有勾選回覆內容時才會附上）</div>' : '') +
+      (fields && !fields.length && /%%ECHO%%/.test(markupToHtml(text, sample)) && !auto ? '<div style="font-size:12px;color:#9ca3af">（目前沒有勾選要附上的報名資料）</div>' : ''));
+    html += mailClosingPreview(opts.footer || '', opts.signature, sample) +
+      (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
+    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html, opts.headerColor);
+  }
+  var echoSave = $('[data-echo-save]', body);
+  if (echoSave) {
+    body.addEventListener('change', function (e) { if (e.target.closest('.echo-pick')) preview(); });
+    echoSave.addEventListener('click', function () {
+      var list = $$('.echo-pick input:checked', body).map(function (i) { return i.value; });
+      Promise.resolve(opts.onSaveEcho && opts.onSaveEcho(list)).then(function () {
+        $('.echo-pick summary', body).textContent = '信中附上的報名資料（' + list.length + ' 題）';
+        toast('已更新信中附上的報名資料');
+      }).catch(function (e) { toast(e.message, true); });
+    });
   }
   var timer = null;
   body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(preview, 150); });
@@ -643,7 +835,8 @@ function renderTopbar(name, params) {
   $('#crumb').innerHTML = name === 'menu' ? '' : '<b>' + esc(PAGE_TITLES[name] || '') + '</b>' + (params.title ? '　/　' + esc(params.title) : '');
   $('#user-name').textContent = App.user.name;
   $('#user-role').textContent = App.user.role;
-  if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
+  if (App.user.isOwner) { $('#user-role').classList.add('owner'); $('#user-avatar').classList.add('root'); $('#user-role').title = App.user.isChief ? '兼任總管' : '總管已交給其他人；你仍保有全部權限'; }
+  else if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
   else if (App.user.perms && App.user.perms.length) { $('#user-role').textContent = '共同管理＋授權'; $('#user-role').title = '總管授予的權限可在系統管理使用'; }
   if (App.user.siteMaint) {
     var mt = el('<a class="maint-pill" href="admin.html?tab=projects">全站維護中</a>');
