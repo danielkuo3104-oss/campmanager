@@ -327,6 +327,8 @@
   .menu-pop button.danger { color: var(--bad); }
   .menu-pop button.danger:hover { background: var(--bad-soft); }
   .menu-pop hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+  .menu-pop .mail-tag { margin-left: auto; flex: none; font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 999px; background: var(--info-soft); color: var(--info); font-weight: 500; }
+  .menu-pop .mail-tag.opt { background: var(--surface-2); color: var(--text-3); }
   .menu-pop .menu-label { font-size: 11px; color: var(--text-3); padding: 6px 12px 2px; }
 
   /* 功能選單卡片 */
