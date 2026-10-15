@@ -56,6 +56,7 @@
   .user-chip .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
   .role-tag { font-size: 11px; padding: 2px 10px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
   .role-tag.root { background: linear-gradient(135deg, #f6d27a, #e0a43c); color: #5a3a00; font-weight: 700; box-shadow: 0 2px 6px rgba(200, 128, 58, .3); }
+  .role-tag.owner { background: linear-gradient(135deg, #3b2f63, #6a4fb3); color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(80, 60, 160, .3); }
   .user-chip .avatar.root { background: linear-gradient(135deg, #fbe3a6, #efc067); color: #6b4300; }
   /* 密碼顯示切換 */
   .pw-wrap { position: relative; display: block; }
@@ -119,7 +120,7 @@
   .fmt-link .fmt-hex { flex: 0 0 auto; height: 34px; }
   .fmt-bar > .fmt-err { color: var(--bad); padding: 0 6px; }
   .fmt-bar > .fmt-err:empty { display: none; }
-  .fmt-var { height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 12px; padding: 0 8px; }
+  .fmt-var, .fmt-size { height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 12px; padding: 0 8px; }
   .fmt-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: 12px; border: 1px dashed var(--line-strong); }
   .fmt-link.hidden { display: none; }
   .fmt-link .input { flex: 1 1 160px; min-width: 0; height: 34px; }
@@ -178,6 +179,10 @@
   .pdf-table td.nw { white-space: nowrap; }
   .pdf-table tbody tr:nth-child(even) td { background: #f7f9f8; }
   .pdf-table tr.gone td { color: #8a948f; }
+  .pdf-table th.tool { text-align: center; }
+  .pdf-table td.tool-check { text-align: center; font-size: 1.35em; line-height: 1.1; color: #4b5650; }
+  .pdf-table tr.tall td { height: 30px; vertical-align: middle; }
+  .pdf-table tbody tr.squad-head td { background: #2f5d62; color: #fff; font-weight: 700; letter-spacing: .04em; border-color: #2f5d62; }
   .pdf-foot { position: absolute; display: flex; justify-content: space-between; font-size: 10px; color: #8a948f; }
   .maint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 14px; }
   .maint-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; background: var(--surface); transition: border-color .15s, background .15s; }
@@ -410,3 +415,38 @@
     .field-row { grid-template-columns: 1fr auto; }
     .field-row .k { grid-column: 1 / -1; }
   }
+
+  /* ---------- 變數方塊編輯器 ---------- */
+  .chip-src { display: none !important; }
+  .chip-editor { height: auto; padding-top: 10px; padding-bottom: 10px; position: relative; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; line-height: 1.95; min-height: 120px; outline: none; }
+  .chip-editor.single { padding-top: 8px; padding-bottom: 8px; min-height: 0; white-space: nowrap; overflow-x: auto; overflow-y: hidden; line-height: 1.7; }
+  .chip-editor.single::-webkit-scrollbar { display: none; }
+  .chip-editor:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .chip-editor.is-empty::before { content: attr(data-ph); color: var(--text-3); pointer-events: none; position: absolute; }
+  .tpl-editor .chip-editor:not(.single) { height: 320px; min-height: 320px; overflow-y: auto; resize: vertical; font-size: 13px; }
+  .var-chip { display: inline-block; padding: 0 7px; margin: 0 2px; border-radius: 6px; background: var(--brand-soft); color: var(--brand); border: 1px solid color-mix(in srgb, var(--brand) 28%, transparent); font-size: .9em; font-weight: 600; line-height: 1.55; vertical-align: baseline; white-space: nowrap; user-select: none; cursor: default; }
+  .var-chip.unknown { background: #fdecea; color: #b3261e; border-color: #f3b8b2; }
+  .fmt-help .var-chip { font-size: .85em; }
+  .fmt-var.sm { font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+
+  /* ---------- 名單：姓名欄、小隊 ---------- */
+  .list .name-strong { font-weight: 700; color: var(--text); }
+  .list th.th-name { min-width: 96px; }
+  .list td.cell-squad { text-align: center; font-weight: 600; color: var(--brand); white-space: nowrap; }
+  .input.squad-filter { width: auto; flex: none; min-width: 150px; }
+  .squad-dlg { display: flex; flex-direction: column; gap: 12px; }
+  .squad-sum { font-size: 13px; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
+  .squad-list { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .squad-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .squad-row:last-child { border-bottom: 0; }
+  .squad-row select { width: 120px; flex: none; }
+
+  /* ---------- 匯出：功能欄 ---------- */
+  .export-tools { display: flex; flex-direction: column; gap: 8px; }
+  .export-tool { display: grid; grid-template-columns: 96px 140px minmax(0, 1fr); align-items: center; gap: 10px; }
+  .export-tool .input.sm { padding: 6px 10px; font-size: 13px; }
+  .export-break { margin-top: 6px; }
+  @media (max-width: 560px) { .export-tool { grid-template-columns: 96px minmax(0, 1fr); } .export-tool > .small { grid-column: 1 / -1; } }
+  .echo-pick { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
+  .echo-pick summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--brand); }
+  .echo-pick .multi-q { max-height: 180px; overflow-y: auto; }
