@@ -78,7 +78,8 @@ function $$(sel, root) { return Array.prototype.slice.call((root || document).qu
 var STATUS_COLORS = {
   '已報名': 'info', '繳款待核覆': 'brand', '匯款逾期': 'bad', '匯款異常': 'bad', '程序完成': 'ok',
   '候補中': 'warn', '招生期外': 'warn', '報名取消': 'mute', '報名失敗': 'mute',
-  '運作中': 'ok', '系統維護': 'warn', '已停止': 'bad', '已封存': 'mute', '已過期': 'mute', '全部停止': 'bad'
+  '運作中': 'ok', '系統維護': 'warn', '已停止': 'bad', '已封存': 'mute', '已過期': 'mute', '全部停止': 'bad',
+  '待核准': 'warn', '未核准': 'bad'
 };
 function pill(status) {
   return '<span class="pill ' + (STATUS_COLORS[status] || 'mute') + '">' + esc(status) + '</span>';
@@ -106,7 +107,7 @@ function withBusy(p) {
 /* ---------- 彈窗 ---------- */
 function modal(opts) {
   return new Promise(function (resolve) {
-    var ov = el('<div class="overlay"><div class="modal' + (opts.wide ? ' wide' : '') + '" role="dialog" aria-modal="true">' +
+    var ov = el('<div class="overlay"><div class="modal' + (opts.wide ? ' wide' : '') + (opts.cls ? ' ' + opts.cls : '') + '" role="dialog" aria-modal="true">' +
       '<div class="modal-head"><h2></h2>' + (opts.desc ? '<p></p>' : '') + '</div>' +
       '<div class="modal-body"></div><div class="modal-foot"></div></div></div>');
     $('h2', ov).textContent = opts.title || '';
@@ -138,7 +139,7 @@ function confirmDialog(o) {
   var body = '<ul class="summary-list">' + (o.lines || []).map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>';
   return modal({
     title: o.title, desc: o.desc, body: o.lines && o.lines.length ? body : '',
-    buttons: [{ label: '取消', value: false }, { label: o.okLabel || '確認', cls: o.danger ? 'danger' : 'primary', value: true }]
+    buttons: (o.cancelLabel === null ? [] : [{ label: o.cancelLabel || '取消', value: false }]).concat([{ label: o.okLabel || '確認', cls: o.danger ? 'danger' : 'primary', value: true }])
   }).then(function (v) { return !!v; });
 }
 
@@ -152,7 +153,7 @@ function formDialog(o) {
       wrap = el('<label class="check"><input type="checkbox" name="' + f.name + '"' + (f.value ? ' checked' : '') + '><span></span></label>');
       $('span', wrap).textContent = f.label;
     } else {
-      wrap = el('<label class="field"><span></span></label>');
+      wrap = el(f.format || (f.presets && f.presets.length) ? '<div class="field"><span></span></div>' : '<label class="field"><span></span></label>');
       $('span', wrap).innerHTML = esc(f.label) + (f.required ? '<em>*</em>' : '');
       var input;
       if (f.type === 'textarea') input = el('<textarea class="input"></textarea>');
@@ -167,7 +168,9 @@ function formDialog(o) {
       if (f.placeholder) input.placeholder = f.placeholder;
       if (f.value !== undefined && f.value !== null) input.value = f.value;
       if (f.type === 'number') input.step = 'any';
+      if (f.format) wrap.appendChild(formatToolbar(input, { vars: true }));
       wrap.appendChild(input);
+      if (f.presets && f.presets.length) wrap.appendChild(presetChips(input, f.presets, f.presetJoin));
       if (f.hint) { var h = el('<span class="hint"></span>'); h.textContent = f.hint; wrap.appendChild(h); }
     }
     form.appendChild(wrap);
@@ -192,6 +195,359 @@ function formDialog(o) {
       }
     }]
   });
+}
+
+/* ---------- 日期防呆：開始招生 ≤ 早鳥期限 ≤ 結束招生 ≤ 營期開始 ≤ 營期結束 ---------- */
+var DATE_ORDER = [['regStart', '開始招生日期'], ['earlyDeadline', '早鳥期限'], ['regEnd', '預計結束招生日期'], ['start', '營期開始'], ['end', '營期結束']];
+
+/** 檢查一組日期（{regStart:'2027-04-01',...}），有錯回傳說明文字 */
+function dateOrderError(d) {
+  var list = DATE_ORDER.filter(function (x) { return d[x[0]]; });
+  for (var i = 0; i < list.length; i++) for (var j = i + 1; j < list.length; j++) {
+    if (String(d[list[j][0]]).slice(0, 10) < String(d[list[i][0]]).slice(0, 10)) return '「' + list[j][1] + '」不可早於「' + list[i][1] + '」';
+  }
+  return '';
+}
+
+/** 依前後日期自動設定日期選擇器可選範圍，選不到會時光倒流的日子 */
+function guardDates(form) {
+  function apply() {
+    DATE_ORDER.forEach(function (x, i) {
+      var inp = form.elements[x[0]];
+      if (!inp) return;
+      var min = '', max = '';
+      DATE_ORDER.slice(0, i).forEach(function (y) { var v = form.elements[y[0]] && form.elements[y[0]].value; if (v && v > min) min = v; });
+      DATE_ORDER.slice(i + 1).forEach(function (y) { var v = form.elements[y[0]] && form.elements[y[0]].value; if (v && (!max || v < max)) max = v; });
+      inp.min = min; inp.max = max;
+    });
+  }
+  DATE_ORDER.forEach(function (x) { var inp = form.elements[x[0]]; if (inp) inp.addEventListener('change', apply); });
+  apply();
+}
+
+/* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
+/** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
+var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '原因', '原金額', '訊息', '回覆內容'];
+/** 預覽用的代入值：文字用 OOO、數字用 000 */
+var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '0000/00/00 – 0000/00/00', '應繳金額': '0,000', '價格類型': 'OOO',
+  '匯款帳號': '000-000-000000', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
+  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%' };
+
+/** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
+var ECHO_SAMPLE_HTML = '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">您填寫的報名資料</div>' +
+  '<div style="font-size:13px;color:#6b7280;margin-bottom:8px">請確認以下資料是否正確，如有錯誤請直接回覆此信告知。</div>' +
+  '<table style="width:100%;border-collapse:collapse;font-size:14px;background:#f9faf8">' +
+  [['學員姓名', 'OOO'], ['身分證字號', 'A000000000'], ['出生日期', '0000/00/00'], ['家長電話', '0000-000-000']].map(function (r) {
+    return '<tr><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#5b665f;white-space:nowrap">' + r[0] + '</td><td style="padding:8px 12px;border-bottom:1px solid #eef0ee;color:#1f2937">' + r[1] + '</td></tr>';
+  }).join('') + '</table>';
+
+/** 在游標處插入，或把選取的文字包起來 */
+function wrapSelection(ta, before, after, placeholder) {
+  var a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
+  var mid = v.slice(a, b) || placeholder || '';
+  ta.value = v.slice(0, a) + before + mid + after + v.slice(b);
+  ta.focus();
+  ta.selectionStart = a + before.length;
+  ta.selectionEnd = a + before.length + mid.length;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** 把選取範圍內的每一行加上條列符號（沒選取就是游標所在行） */
+function prefixLines(ta, mark) {
+  var v = ta.value, a = v.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+  var z = v.indexOf('\n', Math.max(ta.selectionEnd - (ta.selectionEnd > ta.selectionStart ? 1 : 0), ta.selectionStart));
+  if (z < 0) z = v.length;
+  var block = v.slice(a, z).split('\n').map(function (ln) { return mark + ln.replace(/^[ \t\u3000]*(?:[-–]\s+|[•・]\s*)/, ''); }).join('\n');
+  ta.value = v.slice(0, a) + block + v.slice(z);
+  ta.focus();
+  ta.selectionStart = a; ta.selectionEnd = a + block.length;
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function safeMailUrl(u) {
+  u = String(u || '').trim();
+  return /^(https?:\/\/|mailto:)[^\s"'<>\]]+$/i.test(u) ? u : '';
+}
+
+/** 色號欄位：調色盤＋可直接輸入 #RRGGBB，兩邊同步 */
+function hexField(cls, val) {
+  return '<span class="fmt-hex ' + cls + '" title="色號，例如 #1a73e8"><input type="color" value="' + (normHex(val) || '#2f5d62') + '" aria-label="選顏色">' +
+    '<input class="fmt-hexin" value="' + esc(val) + '" placeholder="' + (val ? '#000000' : '色號（可不填）') + '" maxlength="7" spellcheck="false" aria-label="色號"></span>';
+}
+function bindHexField(w) {
+  var pick = $('input[type=color]', w), txt = $('.fmt-hexin', w);
+  pick.addEventListener('input', function () { txt.value = pick.value; txt.classList.remove('bad'); });
+  txt.addEventListener('input', function () {
+    var c = normHex(txt.value);
+    txt.classList.toggle('bad', !!txt.value.trim() && !c);
+    if (c) pick.value = c;
+  });
+}
+
+/** 信件內容上方的工具列（opts.vars=true 時多一個插入變數選單） */
+function formatToolbar(ta, opts) {
+  opts = opts || {};
+  var bar = el('<div class="fmt-bar"><div class="fmt-row">' +
+    '<button type="button" class="fmt-btn" data-f="bold" title="粗體"><b>B</b></button><span class="fmt-sep"></span>' +
+    FORMAT_COLORS.map(function (c) { return '<button type="button" class="fmt-swatch" data-color="' + c[0] + '" title="' + c[2] + '（[' + c[0] + ']文字[/' + c[0] + ']）" style="background:' + c[1] + '">' + c[0] + '</button>'; }).join('') +
+    '<span class="fmt-sep"></span>' + hexField('fmt-hex-main', '#c62828') +
+    '<button type="button" class="fmt-btn" data-f="color" title="[#色號]文字[/#]">文字色</button><button type="button" class="fmt-btn" data-f="bg" title="[hl=#色號]文字[/hl]">底色</button><span class="fmt-sep"></span>' +
+    '<button type="button" class="fmt-btn" data-f="hl" title="螢光標記 ==文字==" style="background:#fde68a;color:#111">螢光</button>' +
+    '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button>' +
+    '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button><span class="fmt-sep"></span>' +
+    '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
+    (opts.vars ? '<span class="fmt-sep"></span><select class="fmt-var"><option value="">插入變數…</option>' + MAIL_VARS.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('') + '</select>' : '') +
+    '</div><div class="fmt-link hidden">' +
+    '<div class="seg sm"><label><input type="radio" name="fmt-kind" value="link" checked><span>文字連結</span></label><label><input type="radio" name="fmt-kind" value="button"><span>按鈕</span></label></div>' +
+    '<input class="input" data-k="text" placeholder="顯示文字，例如：前往繳費"><input class="input" data-k="url" placeholder="網址 https://…">' + hexField('fmt-hex-link', '') +
+    '<button type="button" class="btn sm primary" data-f="insert">插入</button><button type="button" class="btn sm ghost" data-f="close">取消</button>' +
+    '<div class="small fmt-err"></div></div><div class="small fmt-err fmt-hex-err"></div></div>');
+  var panel = $('.fmt-link', bar);
+  bindHexField($('.fmt-hex-main', bar)); bindHexField($('.fmt-hex-link', bar));
+  function mainHex() {
+    var c = normHex($('.fmt-hex-main .fmt-hexin', bar).value);
+    $('.fmt-hex-err', bar).textContent = c ? '' : '色號格式是 # 加 6 碼（例如 #1a73e8）或 3 碼（例如 #f00）';
+    return c;
+  }
+  function openLink(kind) {
+    panel.classList.remove('hidden');
+    $('input[value=' + kind + ']', panel).checked = true;
+    var sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    $('[data-k=text]', panel).value = sel;
+    $('[data-k=url]', panel).value = '';
+    $('.fmt-hex-link .fmt-hexin', panel).value = '';
+    $('.fmt-err', panel).textContent = '';
+    $(sel ? '[data-k=url]' : '[data-k=text]', panel).focus();
+  }
+  bar.addEventListener('mousedown', function (e) { if (e.target.closest('button')) e.preventDefault(); });   // 不讓按鈕搶走選取範圍
+  bar.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var f = b.getAttribute('data-f'), color = b.getAttribute('data-color');
+    if (f === 'bold') wrapSelection(ta, '**', '**', '粗體文字');
+    if (f === 'hl') wrapSelection(ta, '==', '==', '標記文字');
+    if (f === 'center') wrapSelection(ta, '[center]', '[/center]', '置中文字');
+    if (f === 'ul' || f === 'sub') prefixLines(ta, f === 'ul' ? '- ' : '  - ');
+    if (color) wrapSelection(ta, '[' + color + ']', '[/' + color + ']', '彩色文字');
+    if (f === 'color' || f === 'bg') {
+      var hx = mainHex();
+      if (hx && f === 'color') wrapSelection(ta, '[' + hx + ']', '[/#]', '彩色文字');
+      if (hx && f === 'bg') wrapSelection(ta, '[hl=' + hx + ']', '[/hl]', '標記文字');
+    }
+    if (f === 'link' || f === 'button') openLink(f);
+    if (f === 'close') panel.classList.add('hidden');
+    if (f === 'insert') {
+      var kind = $('input[name=fmt-kind]:checked', panel).value;
+      var text = $('[data-k=text]', panel).value.trim();
+      var url = safeMailUrl($('[data-k=url]', panel).value);
+      if (!url) { $('.fmt-err', panel).textContent = '網址需以 https://、http:// 或 mailto: 開頭，且不能有空白'; return; }
+      var rawHex = $('.fmt-hex-link .fmt-hexin', panel).value.trim(), lc = normHex(rawHex);
+      if (rawHex && !lc) { $('.fmt-err', panel).textContent = '色號格式是 # 加 6 碼（例如 #1a73e8）或 3 碼；不填就用預設顏色'; return; }
+      var a = ta.selectionStart, z = ta.selectionEnd, v = ta.value;
+      var code = '[' + kind + '=' + url + (lc ? ' ' + lc : '') + ']' + (text || (kind === 'button' ? '前往' : url)) + '[/' + kind + ']';
+      ta.value = v.slice(0, a) + code + v.slice(z);
+      ta.selectionStart = ta.selectionEnd = a + code.length;
+      ta.focus();
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      panel.classList.add('hidden');
+    }
+  });
+  $('.fmt-hex-main .fmt-hexin', bar).addEventListener('input', function () { $('.fmt-hex-err', bar).textContent = ''; });
+  var vs = $('.fmt-var', bar);
+  if (vs) vs.addEventListener('change', function () { if (vs.value) wrapSelection(ta, '{{' + vs.value + '}}', '', ''); vs.value = ''; });
+  return bar;
+}
+
+/** 與後端 formatMarkup_ 相同的轉換，給編輯時即時預覽用 */
+/* 以下兩個函式與後端 Mail.gs 相同（預覽與實際信件一致） */
+var MAIL_COLOR_CODES = { R: '#d32f2f', O: '#ef6c00', Y: '#d4a106', G: '#2e7d32', B: '#1565c0', P: '#7b1fa2', K: '#111111' };
+var HEX_RE = '#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})';
+
+/** 色號 #RGB 或 #RRGGBB → 小寫 #rrggbb；不合法回傳空字串 */
+function normHex(v) {
+  v = String(v || '').trim().replace(/^#?/, '#');
+  if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) return '';
+  if (v.length === 4) v = '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+  return v.toLowerCase();
+}
+
+/** 按鈕底色夠淺就用黑字，否則用白字 */
+function textOn(hex) {
+  hex = normHex(hex);
+  var r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 160 ? '#111111' : '#ffffff';
+}
+
+function formatMarkup(html) {
+  var out = String(html || '');
+  for (var i = 0; i < 3; i++) {   // 允許粗體與顏色互相包住
+    out = out.replace(/\[([ROYGBPK])\]([\s\S]*?)\[\/\1\]/g, function (_, k, t) { return '<span style="color:' + MAIL_COLOR_CODES[k] + '">' + t + '</span>'; });
+    out = out.replace(new RegExp('\\[color=(' + HEX_RE + ')\\]([\\s\\S]*?)\\[\\/color\\]', 'g'), function (_, c, t) { return '<span style="color:' + normHex(c) + '">' + t + '</span>'; });
+    // 色號簡寫 [#1a73e8]文字[/#]，由內往外處理
+    out = out.replace(new RegExp('\\[(' + HEX_RE + ')\\]((?:(?!\\[#[0-9a-fA-F])[\\s\\S])*?)\\[\\/#\\]', 'g'), function (_, c, t) { return '<span style="color:' + normHex(c) + '">' + t + '</span>'; });
+    out = out.replace(new RegExp('\\[hl=(' + HEX_RE + ')\\]([\\s\\S]*?)\\[\\/hl\\]', 'g'), function (_, c, t) { return '<span style="background:' + normHex(c) + ';padding:0 2px;border-radius:3px">' + t + '</span>'; });
+  }
+  // 連結與按鈕：只接受 http、https、mailto；網址後可加空白與色號，例如 [button=https://… #c62828]
+  out = out.replace(new RegExp('\\[(link|button)=((?:https?:\\/\\/|mailto:)[^\\]\\s"\'<>]+)(?: +(' + HEX_RE + '))?\\]([\\s\\S]*?)\\[\\/\\1\\]', 'g'), function (_, kind, url, color, text) {
+    text = text || url;
+    color = normHex(color) || '#2f5d62';
+    if (kind === 'link') return '<a href="' + url + '" style="color:' + color + ';text-decoration:underline">' + text + '</a>';
+    return '<a href="' + url + '" style="display:inline-block;margin:6px 0;background:' + color + ';color:' + textOn(color) + ';padding:10px 24px;border-radius:999px;text-decoration:none;font-weight:700">' + text + '</a>';
+  });
+  out = out.replace(/==([^=\n][\s\S]*?)==/g, '<span style="background:#fde68a;padding:0 2px;border-radius:3px">$1</span>');
+  out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
+  return out.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
+}
+
+/** 已跳脫的信件文字 → HTML：先處理條列與換行，再套用粗體、顏色等格式 */
+function mailTextToHtml(text) {
+  var html = '', list = null, lastBlock = false;
+  function flush() {
+    if (!list) return;
+    html += '<ul style="margin:6px 0;padding-left:22px">' + list.map(function (it) {
+      return '<li style="margin:3px 0' + (it.text === null ? ';list-style:none' : '') + '">' + (it.text || '') +
+        (it.subs.length ? '<ul style="list-style:none;margin:2px 0;padding-left:2px">' + it.subs.map(function (t) { return '<li style="margin:2px 0">– ' + t + '</li>'; }).join('') + '</ul>' : '') + '</li>';
+    }).join('') + '</ul>';
+    list = null;
+    lastBlock = true;
+  }
+  String(text || '').split('\n').forEach(function (ln) {
+    var sub = ln.match(/^[ \t\u3000]+(?:[-–]\s+|[•・]\s*)(.*)$/);
+    var top = sub ? null : ln.match(/^(?:[-–]\s+|[•・]\s*)(.*)$/);
+    if (sub) {
+      list = list || [];
+      if (!list.length) list.push({ text: null, subs: [] });
+      list[list.length - 1].subs.push(sub[1]);
+      return;
+    }
+    if (top) { list = list || []; list.push({ text: top[1], subs: [] }); return; }
+    flush();
+    html += (html && !lastBlock ? '<br>' : '') + ln;
+    lastBlock = false;
+  });
+  flush();
+  return formatMarkup(html);
+}
+
+/** 已跳脫的信件文字 → HTML：先處理條列與換行，再套用粗體、顏色等格式 */
+function mailTextToHtml(text) {
+  var html = '', list = null, lastBlock = false;
+  function flush() {
+    if (!list) return;
+    html += '<ul style="margin:6px 0;padding-left:22px">' + list.map(function (it) {
+      return '<li style="margin:3px 0' + (it.text === null ? ';list-style:none' : '') + '">' + (it.text || '') +
+        (it.subs.length ? '<ul style="list-style:none;margin:2px 0;padding-left:2px">' + it.subs.map(function (t) { return '<li style="margin:2px 0">– ' + t + '</li>'; }).join('') + '</ul>' : '') + '</li>';
+    }).join('') + '</ul>';
+    list = null;
+    lastBlock = true;
+  }
+  String(text || '').split('\n').forEach(function (ln) {
+    var sub = ln.match(/^[ \t\u3000]+(?:[-–]\s+|[•・]\s*)(.*)$/);
+    var top = sub ? null : ln.match(/^(?:[-–]\s+|[•・]\s*)(.*)$/);
+    if (sub) {
+      list = list || [];
+      if (!list.length) list.push({ text: null, subs: [] });
+      list[list.length - 1].subs.push(sub[1]);
+      return;
+    }
+    if (top) { list = list || []; list.push({ text: top[1], subs: [] }); return; }
+    flush();
+    html += (html && !lastBlock ? '<br>' : '') + ln;
+    lastBlock = false;
+  });
+  flush();
+  return formatMarkup(html);
+}
+
+/** 編輯時即時預覽：代入範例值後轉成與實際信件相同的 HTML */
+function markupToHtml(text, vars) {
+  var filled = esc(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return vars && vars[k] !== undefined ? esc(vars[k]) : m; });
+  return mailTextToHtml(filled);
+}
+
+function mailPreviewDoc(campName, bodyHtml) {
+  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:16px">' +
+    '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
+    '<div style="background:#2f5d62;color:#fff;padding:14px 22px;font-size:15px;font-weight:700">' + esc(campName) + '</div>' +
+    '<div style="padding:20px 22px;font-size:14px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
+}
+
+/**
+ * 範本編輯視窗（系統預設與專案自訂共用）：工具列、格式說明、即時預覽。
+ * opts: {signature 專案署名, campName, note 上方說明, resetLabel 有值時多一個「恢復系統預設」按鈕}
+ * 回傳 {subject, body}、{reset:true} 或 null（取消）
+ */
+function openTemplateEditor(t, opts) {
+  opts = opts || {};
+  var sample = {};
+  Object.keys(MAIL_SAMPLE).forEach(function (k) { sample[k] = MAIL_SAMPLE[k]; });
+  if (opts.campName) sample['營隊名稱'] = opts.campName;
+  var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
+    '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
+    '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
+    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
+    '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
+    '連結、按鈕要換顏色：網址後空一格加色號，例如 <code>[button=https://網址 #c62828]按鈕文字[/button]</code><br>' +
+    '變數：' + MAIL_VARS.map(function (v) { return '<code>{{' + esc(v) + '}}</code>'; }).join(' ') +
+    '</div>';
+  var body = el('<div class="tpl-editor"><div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
+    (opts.note ? '<div class="banner" style="background:var(--surface-2);margin:0">' + esc(opts.note) + '</div>' : '') +
+    '<label class="field"><span>主旨</span><input class="input" name="subject"></label>' +
+    '<div class="field"><span>內容</span><div class="tpl-bar"></div><textarea class="input" name="body"></textarea></div>' + help +
+    '<div class="small tpl-err" style="color:var(--bad);min-height:16px"></div></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="small muted">即時預覽（文字以 OOO、數字以 000 代入）</span><div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe></div></div>');
+  var subj = $('[name=subject]', body), ta = $('[name=body]', body), frame = $('iframe', body);
+  subj.value = t.subject; ta.value = t.body;
+  $('.tpl-bar', body).appendChild(formatToolbar(ta, { vars: true }));
+  function preview() {
+    $('[data-subj]', body).textContent = '主旨：' + subj.value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return sample[k] !== undefined ? sample[k] : m; })
+      .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
+    // 報名成功、候補、遞補錄取：專案有勾選回覆內容時會自動附在最後
+    var text = ta.value;
+    var auto = ['REG_SUCCESS', 'WAITLIST', 'PROMOTED'].indexOf(t.code) >= 0 && !/\{\{\s*回覆內容\s*\}\}/.test(text);
+    if (auto) text += '\n{{回覆內容}}';
+    var html = markupToHtml(text, sample).split('%%ECHO%%').join(ECHO_SAMPLE_HTML +
+      (auto ? '<div style="font-size:12px;color:#9ca3af;margin-top:6px">（預覽示意：專案設定有勾選回覆內容時才會附上）</div>' : ''));
+    if (opts.signature !== undefined) {
+      if (opts.signature) html += '<div style="margin-top:28px;text-align:center;color:#6b7280;font-size:14px">' + mailTextToHtml(esc(opts.signature)) + '</div>';
+    } else {
+      html += '<div style="margin-top:28px;text-align:center;color:#6b7280;font-size:14px">' + mailTextToHtml('OOO 籌辦團隊 敬上') +
+        '<div style="font-size:11px;color:#b0b5b2">（署名示意：各專案在「專案設定 → 信件署名」設定）</div></div>';
+    }
+    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html);
+  }
+  var timer = null;
+  body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(preview, 150); });
+  preview();
+  var buttons = [{ label: '取消', value: null }];
+  if (opts.resetLabel) buttons.push({ label: opts.resetLabel, cls: 'ghost', value: { reset: true } });
+  buttons.push({
+    label: '儲存', cls: 'primary',
+    validate: function () {
+      if (!subj.value.trim() || !ta.value.trim()) { $('.tpl-err', body).textContent = '主旨與內容不可空白'; return false; }
+      return true;
+    },
+    value: function () { return { subject: subj.value, body: ta.value }; }
+  });
+  return modal({ title: '編輯範本：' + t.name, cls: 'xwide', body: body, buttons: buttons });
+}
+
+/** 常用清單：點一下填入（reason 類欄位用「；」接在後面，訊息類換行接上） */
+function presetChips(target, items, joiner) {
+  var box = el('<div class="preset-chips"><span class="small muted">常用：</span></div>');
+  (items || []).forEach(function (t) {
+    var c = el('<button type="button" class="preset-chip"></button>');
+    c.textContent = t; c.title = t;
+    c.addEventListener('click', function () {
+      var v = target.value.trim();
+      target.value = v ? v + (joiner || '；') + t : t;
+      target.focus();
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    box.appendChild(c);
+  });
+  return box;
 }
 
 /** 對外通知的確認視窗：收件人、改寄說明、主旨、信件預覽、剩餘額度 */
@@ -280,6 +636,7 @@ function renderTopbar(name, params) {
   var bar = el('<header class="topbar">' +
     '<div class="brand" id="brand"><div class="brand-mark">營</div><span>營隊報名管理</span></div>' +
     '<div class="crumb" id="crumb"></div><div class="spacer"></div>' +
+    '<button class="bell" id="bell" type="button" aria-label="通知"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z" fill="currentColor"/></svg><span class="bell-badge hidden" id="bell-badge"></span></button>' +
     '<div class="user-chip" id="user-chip"><span id="user-name"></span><span class="role-tag" id="user-role"></span><div class="avatar" id="user-avatar"></div></div>' +
     '</header>');
   document.body.insertBefore(bar, document.body.firstChild);
@@ -287,6 +644,7 @@ function renderTopbar(name, params) {
   $('#user-name').textContent = App.user.name;
   $('#user-role').textContent = App.user.role;
   if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
+  else if (App.user.perms && App.user.perms.length) { $('#user-role').textContent = '共同管理＋授權'; $('#user-role').title = '總管授予的權限可在系統管理使用'; }
   if (App.user.siteMaint) {
     var mt = el('<a class="maint-pill" href="admin.html?tab=projects">全站維護中</a>');
     mt.title = '暫停：' + (App.user.siteMaintLabels || []).join('、') + '（到系統管理調整）';
@@ -305,7 +663,146 @@ function renderTopbar(name, params) {
     ]);
   });
   if (PAGE_TITLES[name]) document.title = PAGE_TITLES[name] + '｜營隊報名管理';
+  Bell.init();
 }
+
+/* ---------- 通知鈴鐺（站內通知，不寄信） ---------- */
+var Bell = {
+  timer: null, count: 0, data: null, view: 'all',
+  init: function () {
+    var self = this;
+    $('#bell').addEventListener('click', function (e) { e.stopPropagation(); self.toggle(); });
+    this.poll();
+    this.timer = setInterval(function () { if (!document.hidden) self.poll(); }, 60000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) self.poll(); });
+  },
+  setCount: function (n) {
+    this.count = n;
+    var b = $('#bell-badge');
+    if (!b) return;
+    b.textContent = n > 99 ? '99+' : String(n);
+    b.classList.toggle('hidden', !n);
+    $('#bell').setAttribute('aria-label', n ? '通知，' + n + ' 則未讀' : '通知');
+  },
+  poll: function () {
+    var self = this;
+    api('notifyCount').then(function (r) { self.setCount(r.unread); }).catch(function () { /* 背景更新失敗就略過 */ });
+  },
+  close: function () {
+    var p = $('#bell-pop'); if (p) p.remove();
+    document.removeEventListener('click', Bell.outside);
+  },
+  outside: function (e) { if (!e.target.closest('#bell-pop') && !e.target.closest('.overlay')) Bell.close(); },
+  toggle: function () {
+    if ($('#bell-pop')) { this.close(); return; }
+    closePopMenu();
+    var pop = el('<div class="bell-pop" id="bell-pop" role="dialog" aria-label="通知"><div class="bell-head"><b>通知</b><span class="spacer"></span>' +
+      '<button type="button" class="btn sm ghost" data-act="all">全部已讀</button><button type="button" class="btn sm ghost icon" data-act="settings" aria-label="通知設定" title="通知設定">⚙</button></div>' +
+      '<div class="bell-tabs"><button type="button" data-v="all" class="on">全部</button><button type="button" data-v="unread">未讀</button></div>' +
+      '<div class="bell-body"><div class="loading"><div class="spinner"></div>載入中</div></div></div>');
+    document.body.appendChild(pop);
+    this.place();
+    var self = this;
+    setTimeout(function () { document.addEventListener('click', Bell.outside); }, 0);
+    $('[data-act=all]', pop).addEventListener('click', function () {
+      api('markNotifications', 'all').then(function (r) { self.setCount(r.unread); self.load(); });
+    });
+    $('[data-act=settings]', pop).addEventListener('click', function () { self.settings(); });
+    $$('.bell-tabs button', pop).forEach(function (b) {
+      b.addEventListener('click', function () {
+        self.view = b.getAttribute('data-v');
+        $$('.bell-tabs button', pop).forEach(function (x) { x.classList.toggle('on', x === b); });
+        self.render();
+      });
+    });
+    this.view = 'all';
+    this.load();
+  },
+  place: function () {
+    var pop = $('#bell-pop'), bell = $('#bell');
+    if (!pop || !bell) return;
+    var r = bell.getBoundingClientRect();
+    pop.style.top = (r.bottom + 8) + 'px';
+    var w = pop.offsetWidth, left = Math.min(r.right + 60 - w, window.innerWidth - w - 8);
+    pop.style.left = Math.max(8, left) + 'px';
+  },
+  load: function () {
+    var self = this;
+    return api('getNotifications').then(function (d) { self.data = d; self.setCount(d.unread); self.render(); })
+      .catch(function (e) { var b = $('#bell-pop .bell-body'); if (b) b.innerHTML = '<div class="empty small"></div>', $('.empty', b).textContent = e.message; });
+  },
+  ago: function (iso) {
+    var s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return '剛剛';
+    if (s < 3600) return Math.floor(s / 60) + ' 分鐘前';
+    if (s < 86400) return Math.floor(s / 3600) + ' 小時前';
+    if (s < 86400 * 7) return Math.floor(s / 86400) + ' 天前';
+    return fmtTime(iso);
+  },
+  render: function () {
+    var body = $('#bell-pop .bell-body');
+    if (!body || !this.data) return;
+    var self = this, items = this.data.items.filter(function (n) { return self.view === 'all' || !n.read; });
+    body.innerHTML = '';
+    if (!items.length) {
+      body.innerHTML = '<div class="bell-empty">' + (this.view === 'unread' ? '沒有未讀通知' : '最近 30 天沒有通知') + '</div>';
+    }
+    items.forEach(function (n) {
+      var it = el('<button type="button" class="bell-item' + (n.read ? '' : ' unread') + '"><span class="bell-dot" aria-hidden="true"></span><span class="bell-main">' +
+        '<span class="bell-top"><span class="pill ' + esc(n.tone || 'mute') + '"></span><span class="bell-proj"></span><span class="bell-time"></span></span>' +
+        '<span class="bell-title"></span><span class="bell-text"></span></span></button>');
+      $('.pill', it).textContent = n.label;
+      $('.bell-proj', it).textContent = n.project ? n.project + (n.projectName ? ' ' + n.projectName : '') : '';
+      $('.bell-time', it).textContent = self.ago(n.time);
+      $('.bell-time', it).title = fmtTime(n.time);
+      $('.bell-title', it).textContent = n.title;
+      $('.bell-text', it).textContent = n.body;
+      if (!n.body) $('.bell-text', it).remove();
+      it.addEventListener('click', function () { self.open(n); });
+      body.appendChild(it);
+    });
+    body.appendChild(el('<div class="bell-foot">未讀超過 ' + this.data.autoReadDays + ' 天自動標為已讀，通知保留 30 天</div>'));
+  },
+  open: function (n) {
+    var self = this;
+    var go2 = function () {
+      self.close();
+      if (n.admin) { go('admin', { tab: n.project ? 'projects' : 'staff' }); return; }
+      if (n.project) go('students', n.studentId ? { prefix: n.project, title: n.projectName, student: n.studentId } : { prefix: n.project, title: n.projectName });
+    };
+    if (n.read) { go2(); return; }
+    api('markNotifications', [n.id]).then(function (r) { self.setCount(r.unread); }).catch(function () {}).then(go2);
+  },
+  settings: function () {
+    var self = this, d = this.data;
+    if (!d) return;
+    this.close();
+    var form = el('<div class="notify-settings"></div>');
+    var groups = [];
+    d.types.forEach(function (t) { if (groups.indexOf(t.group) < 0) groups.push(t.group); });
+    groups.forEach(function (g) {
+      var sec = el('<div class="notify-group"><div class="small muted"></div><div class="notify-grid"></div></div>');
+      $('.small', sec).textContent = g;
+      d.types.filter(function (t) { return t.group === g; }).forEach(function (t) {
+        var it = el('<label class="check"><input type="checkbox"><span></span></label>');
+        $('input', it).value = t.key; $('input', it).checked = d.off.indexOf(t.key) < 0;
+        $('span', it).textContent = t.label;
+        $('.notify-grid', sec).appendChild(it);
+      });
+      form.appendChild(sec);
+    });
+    modal({
+      title: '通知設定', desc: '勾選要在鈴鐺顯示的通知。這裡只影響你自己，不會寄信；自己做的操作不會通知自己。', body: form,
+      buttons: [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: function () {
+        return $$('input', form).filter(function (i) { return !i.checked; }).map(function (i) { return i.value; });
+      } }]
+    }).then(function (off) {
+      if (!off) return;
+      withBusy(api('saveNotifySettings', off)).then(function () { toast('通知設定已儲存'); self.poll(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+};
+window.addEventListener('resize', function () { Bell.place(); });
 
 /** 每個功能頁呼叫：確認登入 → 畫頂部列 → 執行頁面程式 */
 App.page = function (name, init) {
@@ -319,8 +816,8 @@ App.page = function (name, init) {
       var root = $('#app').firstElementChild;
       root.classList.remove('hidden');
     var ld = $('#page-loading'); if (ld) ld.remove();
-      if (u.mustChange) forceNewPassword().then(function () { init(root, params); });
-      else init(root, params);
+      var gate = u.mustChange ? forceNewPassword() : Promise.resolve();
+      gate.then(function () { return u.termsNeeded ? requireTerms() : null; }).then(function () { init(root, params); });
     }).catch(function (e) {
       $('#app').innerHTML = '<div class="card card-pad empty"></div>';
       $('#app .empty').textContent = e.message;
@@ -385,16 +882,52 @@ function forceNewPassword() {
   });
 }
 
-/** 註冊頁：送出申請，等總管核准 */
+/* ---------- 聲明同意書 ---------- */
+function termsHtml(t) {
+  return '<div class="terms-title">' + esc(t.title) + '<span class="terms-ver">第 ' + t.version + ' 版</span></div><div class="terms-text">' + esc(t.text) + '</div>';
+}
+
+/** 已登入但還沒同意目前版本：必須同意才能繼續，不同意就登出 */
+function requireTerms() {
+  return api('getTerms').then(function (t) {
+    var body = el('<div><div class="terms-box">' + termsHtml(t) + '</div>' +
+      '<label class="check" style="margin-top:14px"><input type="checkbox" name="agree"><span>我已閱讀並同意遵守以上聲明</span></label>' +
+      '<div class="small terms-err" style="color:var(--bad);min-height:16px;margin-top:6px"></div></div>');
+    return modal({
+      title: '請閱讀並同意使用聲明', desc: '系統內有學員個人資料，使用前請先確認以下事項。',
+      body: body, wide: true,
+      buttons: [{ label: '不同意並登出', value: false }, {
+        label: '同意並繼續', cls: 'primary',
+        validate: function () { if ($('input[name=agree]', body).checked) return true; $('.terms-err', body).textContent = '請先勾選「我已閱讀並同意」'; return false; },
+        value: true
+      }]
+    }).then(function (ok) {
+      if (!ok) return api('logout').finally(function () { store('camp_token', null); location.href = 'index.html'; }).then(function () { return new Promise(function () {}); });
+      return withBusy(api('agreeTerms', t.version)).then(function () { if (App.user) App.user.termsNeeded = false; toast('已同意，感謝配合'); },
+        function (e) { toast(e.message, true); return requireTerms(); });
+    });
+  });
+}
+
+/** 註冊頁：閱讀並勾選同意書後送出申請，等總管核准 */
 App.registerPage = function () {
   function start() {
+    var terms = null;
+    api('getTerms').then(function (t) { terms = t; $('#reg-terms').innerHTML = termsHtml(t); })
+      .catch(function (e) { $('#reg-terms').textContent = '同意書載入失敗：' + e.message; });
     $('#reg-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var f = e.target;
       var err = $('#reg-error');
       err.textContent = '';
       if (f.password.value !== f.password2.value) { err.textContent = '兩次輸入的密碼不一致'; return; }
-      withBusy(api('register', f.name.value, f.email.value, f.password.value, f.note.value)).then(function () {
+      if (!terms) { err.textContent = '同意書還沒載入，請稍候或重新整理'; return; }
+      if (!f.agree.checked) { err.textContent = '請閱讀並勾選同意「' + terms.title + '」'; return; }
+      withBusy(api('register', f.name.value, f.email.value, f.password.value, f.note.value, terms.version)).then(function (r) {
+        if (r === 'approved') {
+          $('#reg-done h1').textContent = '帳號已建立';
+          $('#reg-done p').textContent = '現在就可以用剛才的信箱與密碼登入；需要管理的營隊請聯絡總管或專案負責人把你加入。';
+        }
         $('#reg-form').classList.add('hidden');
         $('#reg-done').classList.remove('hidden');
       }).catch(function (x) { err.textContent = x.message; });
@@ -402,6 +935,40 @@ App.registerPage = function () {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 };
+
+/* ---------- 密碼欄位：顯示／隱藏 ---------- */
+var EYE_ON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9.27 3.11-11 7 1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7Zm0 11.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm0-7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>';
+var EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M2.1 3.51 3.5 2.1l18.4 18.4-1.41 1.41-3.2-3.2A12.4 12.4 0 0 1 12 19c-5 0-9.27-3.11-11-7a12.6 12.6 0 0 1 4.05-5.06L2.1 3.51ZM12 7.5c2.49 0 4.5 2.01 4.5 4.5 0 .74-.18 1.43-.5 2.05l3.32 3.32A12.5 12.5 0 0 0 23 12c-1.73-3.89-6-7-11-7-1.4 0-2.75.24-4 .69l1.95 1.95c.62-.32 1.31-.5 2.05-.5ZM7.55 9.45A4.48 4.48 0 0 0 12 16.5c.74 0 1.43-.18 2.05-.5l-1.6-1.6A2.5 2.5 0 0 1 9.6 11.55l-2.05-2.1Z"/></svg>';
+function addPasswordToggle(input) {
+  if (input.getAttribute('data-pwt')) return;
+  input.setAttribute('data-pwt', '1');
+  var wrap = document.createElement('span');
+  wrap.className = 'pw-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  var b = el('<button type="button" class="pw-eye" aria-label="顯示密碼" title="顯示密碼">' + EYE_ON + '</button>');
+  b.addEventListener('mousedown', function (e) { e.preventDefault(); });   // 不搶走輸入框焦點
+  b.addEventListener('click', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    var show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.innerHTML = show ? EYE_OFF : EYE_ON;
+    b.setAttribute('aria-label', show ? '隱藏密碼' : '顯示密碼');
+    b.title = show ? '隱藏密碼' : '顯示密碼';
+    b.classList.toggle('on', show);
+  });
+  wrap.appendChild(b);
+}
+function scanPasswordFields(root) { $$('input[type=password]', root || document).forEach(addPasswordToggle); }
+(function () {
+  function boot() {
+    scanPasswordFields();
+    new MutationObserver(function (list) {
+      list.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.nodeType === 1) { if (n.matches && n.matches('input[type=password]')) addPasswordToggle(n); else scanPasswordFields(n); } }); });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
 
 /* ---------- 安裝成桌面應用程式（PWA） ---------- */
 var installPrompt = null;
