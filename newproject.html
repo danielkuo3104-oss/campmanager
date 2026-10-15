@@ -79,6 +79,8 @@
         <label class="field"><span>團報預留名額保留時數</span><input class="input" name="holdHours" type="number" min="0" value="72"></label>
         <label class="field"><span>候補遞補模式</span><select class="input" name="promoteMode"><option>手動</option><option>自動</option></select></label>
         <label class="field"><span>候補順序</span><select class="input" name="waitOrder"><option>報名時間</option><option>人工</option></select></label>
+        <label class="field"><span>預設小隊數</span><input class="input" name="squads" type="number" min="0" max="40" value="0"><span class="hint">0 = 不分隊；之後可在「分小隊」編輯每位學員的小隊</span></label>
+        <label class="field"><span>限定報名信箱網域</span><input class="input" name="emailDomains" placeholder="例如 gmail.com（可留空）"><span class="hint">不是這個網域的信箱會列入警示；留空只檢查格式與常見打錯</span></label>
       </div>
     </section>
 
@@ -209,6 +211,7 @@ App.page('newproject', function (root) {
       start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
       groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
       account: e.account.value.trim(), payDays: e.payDays.value, holdHours: e.holdHours.value,
+      squads: e.squads.value, emailDomains: e.emailDomains.value.trim(),
       promoteMode: e.promoteMode.value, waitOrder: e.waitOrder.value, mapping: mapping,
       display: $$('input[name=disp]:checked', root).map(function (i) { return i.value; }),
       coAdmins: admins, notifyExisting: e.notifyExisting.checked
