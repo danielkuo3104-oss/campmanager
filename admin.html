@@ -408,8 +408,41 @@ App.page('admin', function (root, params) {
       tb.appendChild(tr);
     });
     body.appendChild(card);
+    renderForms(body);
     renderFooter(body);
     renderPresets(body);
+  }
+
+  /** 預製表單的系統預設：各專案沒改的就用這裡的內容 */
+  function renderForms(body) {
+    var card = el('<div class="card" style="margin-top:16px"><div class="toolbar"><div class="grow"><h3 style="margin:0">預製表單（系統預設）</h3>' +
+      '<div class="small muted">學員不用登入，輸入姓名與身分證字號就能填的表單。信件放 <code>{{匯款回報按鈕}}</code> 等變數會出現置中的按鈕。各專案可在專案設定改成自己的內容或關閉。</div>' +
+      '<div class="small" style="margin-top:6px"></div></div></div>' +
+      '<table class="simple"><thead><tr><th>表單</th><th>標題</th><th>信裡的按鈕</th><th></th></tr></thead><tbody></tbody></table></div>');
+    $('.toolbar .small:last-child', card).innerHTML = D.siteUrl ? '按鈕連到：<code>' + esc(D.siteUrl) + 'form.html</code>'
+      : '<span style="color:var(--warn)">還沒記錄網站網址：總管登入一次前端網站就會自動記下，之後信裡才會出現表單按鈕。</span>';
+    var tb = $('tbody', card);
+    (D.forms || []).forEach(function (f) {
+      var changed = ['title', 'intro', 'done', 'button'].some(function (k) { return f[k] !== f.factory[k]; });
+      var tr = el('<tr><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><button class="btn sm ghost" type="button" data-a="reset">恢復原廠</button> <button class="btn sm" type="button" data-a="edit">編輯</button></td></tr>');
+      $$('td', tr)[0].textContent = f.name;
+      $$('td', tr)[1].textContent = f.title;
+      $$('td', tr)[2].textContent = f.button;
+      if (!changed) $('[data-a=reset]', tr).remove();
+      $('[data-a=edit]', tr).addEventListener('click', function () {
+        openFormEditor(f, '所有專案共用；專案自己改過的內容不受影響。').then(function (v) {
+          if (!v) return;
+          withBusy(api('saveFormDefaults', f.kind, v)).then(function () { toast('已儲存「' + f.name + '」'); load(); }).catch(function (e) { toast(e.message, true); });
+        });
+      });
+      if (changed) $('[data-a=reset]', tr).addEventListener('click', function () {
+        confirmDialog({ title: '恢復「' + f.name + '」的原廠內容？', lines: ['標題、說明、送出後訊息、按鈕文字都改回系統一開始的內容'], okLabel: '恢復' }).then(function (ok) {
+          if (ok) withBusy(api('saveFormDefaults', f.kind, null)).then(function () { toast('已恢復原廠內容'); load(); }).catch(function (e) { toast(e.message, true); });
+        });
+      });
+      tb.appendChild(tr);
+    });
+    body.appendChild(card);
   }
 
   /* ---------- 權限與移交（總管與系統總管） ---------- */
