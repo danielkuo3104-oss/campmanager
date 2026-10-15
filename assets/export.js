@@ -51,7 +51,7 @@ var STROKE_CMP = (window.Intl && Intl.Collator) ? new Intl.Collator('zh-Hant-TW'
 
 /** 功能欄：簽到、繳費確認、簽名、備註等空白欄位（印出來手寫用） */
 var EXPORT_TOOLS = [
-  { kind: 'check', label: '勾選欄', dflt: '報到', hint: '每格一個方框；多個欄位用、分開，例如：報到、保險、繳費' },
+  { kind: 'check', label: '勾選欄', dflt: '報到', hint: '每格一個方框；按「＋ 新增勾選欄」可加好幾欄，例如報到、保險、繳費' },
   { kind: 'sign', label: '簽名欄', dflt: '簽名', hint: '加寬的空白欄，列高也會加高' },
   { kind: 'note', label: '備註欄', dflt: '備註', hint: '最寬的空白欄' }
 ];
@@ -73,7 +73,11 @@ function openExportDialog(o) {
   var body = el('<div class="export-dlg">' +
     '<div class="export-row"><span class="export-label">匯出範圍</span><div class="seg">' +
       '<label><input type="radio" name="scope" value="filtered" checked><span>目前畫面（' + esc(o.filterLabel) + '，' + o.filtered.length + ' 筆）</span></label>' +
-      '<label><input type="radio" name="scope" value="all"><span>全部學員（' + o.all.length + ' 筆）</span></label></div></div>' +
+      '<label><input type="radio" name="scope" value="all"><span>全部學員（' + o.all.length + ' 筆）</span></label></div>' +
+      '<div class="row" style="gap:16px;margin-top:8px;flex-wrap:wrap">' +
+      '<label class="check"><input type="checkbox" name="noGone" checked><span>不含取消／失敗</span></label>' +
+      '<label class="check"><input type="checkbox" name="noWait" checked><span>不含候補</span></label>' +
+      '<span class="small muted export-count"></span></div></div>' +
     (o.squads > 0 ? '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
       '<label><input type="radio" name="order" value="screen" checked><span>與畫面相同</span></label>' +
       '<label><input type="radio" name="order" value="squad"><span>依小隊（隊內依姓名筆畫）</span></label>' +
@@ -92,6 +96,8 @@ function openExportDialog(o) {
         '<div class="export-cols" data-g="q">' + (questions.length ? questions.map(function (q) { return checkHtml('q:' + q, q, display.indexOf(q) >= 0); }).join('') : '<span class="muted small">尚未讀取表單題目</span>') + '</div></div>' +
       '<div class="export-group"><div class="export-group-head"><b>功能欄</b><span class="small muted">　空白欄位，印出來手寫或打勾；標題可以改</span></div>' +
         '<div class="export-tools">' + EXPORT_TOOLS.map(function (t) {
+          if (t.kind === 'check') return '<div class="export-tool"><label class="check"><input type="checkbox" name="tool" value="check"><span>' + esc(t.label) + '</span></label>' +
+            '<div class="export-checks-wrap"><div class="export-checks"></div><button type="button" class="btn sm ghost" data-add-check>＋ 新增勾選欄</button></div><span class="small muted">' + esc(t.hint) + '</span></div>';
           return '<div class="export-tool"><label class="check"><input type="checkbox" name="tool" value="' + t.kind + '"><span>' + esc(t.label) + '</span></label>' +
             '<input class="input sm" name="tool_' + t.kind + '" value="' + esc(t.dflt) + '" aria-label="' + esc(t.label) + '標題"><span class="small muted">' + esc(t.hint) + '</span></div>';
         }).join('') + '</div></div>' +
@@ -103,21 +109,46 @@ function openExportDialog(o) {
   function tools() {
     var out = [];
     $$('input[name=tool]:checked', body).forEach(function (i) {
-      var title = $('input[name=tool_' + i.value + ']', body).value.trim();
-      var names = i.value === 'check' ? title.split(/[、,，\s]+/).filter(String) : [title || EXPORT_TOOLS.filter(function (t) { return t.kind === i.value; })[0].dflt];
+      var names = i.value === 'check'
+        ? $$('input[name=checkcol]', body).map(function (x) { return x.value.trim(); }).filter(String)
+        : [$('input[name=tool_' + i.value + ']', body).value.trim() || EXPORT_TOOLS.filter(function (t) { return t.kind === i.value; })[0].dflt];
       if (!names.length) names = ['報到'];
       names.forEach(function (n) { out.push({ kind: i.value, label: n }); });
     });
     return out;
   }
-  // 改功能欄標題時自動勾選
-  $$('.export-tool .input', body).forEach(function (inp) {
-    inp.addEventListener('input', function () {
-      var cb = $('input[name=tool]', inp.parentNode), on = !!inp.value.trim();
-      if (cb.checked !== on) { cb.checked = on; cb.dispatchEvent(new Event('change', { bubbles: true })); }
-      hint();
+  // 勾選欄可以一欄一欄加（每欄一個標題），改標題時自動勾選功能欄
+  var checksBox = $('.export-checks', body);
+  function addCheck(val, focus) {
+    var r = el('<div class="export-check-row"><input class="input sm" name="checkcol" aria-label="勾選欄標題" placeholder="例如：保險"><button type="button" class="btn sm ghost icon" aria-label="刪除這欄">✕</button></div>');
+    $('input', r).value = val || '';
+    $('button', r).addEventListener('click', function () {
+      r.remove();
+      if (!$$('input[name=checkcol]', body).length) addCheck('', false);
+      syncTool($('input[name=tool][value=check]', body), $$('input[name=checkcol]', body).some(function (x) { return x.value.trim(); }));
     });
+    checksBox.appendChild(r);
+    if (focus) $('input', r).focus();
+  }
+  addCheck('報到', false);
+  $('[data-add-check]', body).addEventListener('click', function () { addCheck('', true); });
+  function syncTool(cb, on) {
+    if (cb.checked !== on) { cb.checked = on; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    hint();
+  }
+  body.addEventListener('input', function (e) {
+    if (e.target.name === 'checkcol') syncTool($('input[name=tool][value=check]', body), $$('input[name=checkcol]', body).some(function (x) { return x.value.trim(); }));
+    else if (/^tool_/.test(e.target.name || '')) syncTool($('input[name=tool]', e.target.parentNode), !!e.target.value.trim());
   });
+  function pick(scope) {
+    var noGone = $('input[name=noGone]', body).checked, noWait = $('input[name=noWait]', body).checked;
+    return (scope === 'all' ? o.all : o.filtered).filter(function (s) {
+      if (noGone && ['報名取消', '報名失敗'].indexOf(s.status) >= 0) return false;
+      if (noWait && s.status === '候補中') return false;
+      return true;
+    });
+  }
+  function count() { $('.export-count', body).textContent = '將匯出 ' + pick($('input[name=scope]:checked', body).value).length + ' 筆'; }
   function hint() {
     var n = selected().length + tools().length;
     $('.export-hint', body).textContent = '已選 ' + n + ' 欄。欄位多於 7 欄時建議用橫式；PDF 的欄位順序與上面相同，功能欄放在最後。';
@@ -137,7 +168,9 @@ function openExportDialog(o) {
       hint();
     }
     if (e.target.name === 'orient') body.dataset.touched = '1';
+    if (['scope', 'noGone', 'noWait'].indexOf(e.target.name) >= 0) count();
   });
+  count();
   // 預設勾選的欄位多於 7 欄就先選橫式
   if (selected().length > 7) $('input[name=orient][value=landscape]', body).checked = true;
   hint();
@@ -153,6 +186,8 @@ function openExportDialog(o) {
       value: function () {
         return {
           scope: $('input[name=scope]:checked', body).value,
+          list: pick($('input[name=scope]:checked', body).value),
+          exclude: [$('input[name=noGone]', body).checked ? '不含取消' : '', $('input[name=noWait]', body).checked ? '不含候補' : ''].filter(String).join('、'),
           orientation: $('input[name=orient]:checked', body).value,
           keys: selected(), tools: tools(),
           order: $('input[name=order]:checked', body).value,
@@ -170,13 +205,13 @@ function openExportDialog(o) {
     v.tools.forEach(function (t, i) {
       fields.push({ key: 'tool:' + i, label: t.label, tool: t.kind, get: function () { return t.kind === 'check' ? '☐' : ''; } });
     });
-    var list = (v.scope === 'all' ? o.all : o.filtered).slice();
+    var list = v.list.slice();
     if (v.order === 'stroke') list.sort(function (a, b) { return STROKE_CMP(a.name, b.name); });
     if (v.order === 'squad') list.sort(function (a, b) {
       return (a.squad === '' || a.squad === undefined ? 999 : a.squad) - (b.squad === '' || b.squad === undefined ? 999 : b.squad) || STROKE_CMP(a.name, b.name);
     });
     if (!list.length) { toast('沒有可匯出的學員', true); return; }
-    var scopeText = (v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel) + (v.order === 'squad' ? '　·　依小隊' : v.order === 'stroke' ? '　·　依筆畫' : '');
+    var scopeText = (v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel) + (v.order === 'squad' ? '　·　依小隊' : v.order === 'stroke' ? '　·　依筆畫' : '') + (v.exclude ? '　·　' + v.exclude : '');
     return confirmDialog({
       title: '此內容包含學員個資', desc: '匯出的 PDF 含有學員個人資料，僅供營隊用途使用。',
       lines: ['請勿轉寄、公開或用於營隊以外的目的', '用畢請妥善保管或刪除檔案', '每頁頁尾會標示「含學員個資，僅供營隊用途」，匯出會記錄在操作紀錄'],
