@@ -52,7 +52,9 @@ App.page('menu', function (root) {
   sysTile('操作紀錄', '查詢所有操作與寄信紀錄', function () { go('logs'); });
   if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' + (App.user.isOwner && !App.user.isChief ? '（總管已交給其他人）' : '') : '使用總管授予你的管理功能', function () { go('admin'); });
 
-  api('listProjects').then(function (r) {
+  apiFast('listProjects', function (r, fresh) {
+    $$('.menu-approval', root).forEach(function (x) { x.remove(); });
+    $('#menu-global', root).className = 'hidden'; $('#menu-global', root).textContent = '';
     if (r.globalStop) {
       var g = $('#menu-global', root);
       g.className = 'banner bad';
@@ -64,7 +66,7 @@ App.page('menu', function (root) {
       var parts = [];
       if (ap.projects) parts.push(ap.projects + ' 個新專案');
       if (ap.staff) parts.push(ap.staff + ' 位人員');
-      var bn = el('<div class="banner warn" style="cursor:pointer"></div>');
+      var bn = el('<div class="banner warn menu-approval" style="cursor:pointer"></div>');
       bn.textContent = '有 ' + parts.join('、') + '等待核准，點這裡前往系統管理';
       bn.addEventListener('click', function () { go('admin', { tab: ap.projects ? 'projects' : 'staff' }); });
       g2.parentNode.insertBefore(bn, g2.nextSibling);
@@ -73,12 +75,13 @@ App.page('menu', function (root) {
     box.innerHTML = '';
     r.projects.forEach(function (p) {
       var pct = p.capacity ? Math.min(100, Math.round(p.active / p.capacity * 100)) : 0;
+      var rpct = p.capacity && p.reserved ? Math.min(100 - pct, Math.round(p.reserved / p.capacity * 100)) : 0;
       var t = el('<div class="tile' + (p.status === '已封存' ? ' archived' : '') + '">' +
         '<div class="tile-top"><span class="tile-meta"></span>' + pill(p.effective) + '</div>' +
         '<div class="tile-name"></div>' +
         '<div class="tile-meta"></div>' +
-        '<div><div class="row small"><span>已錄取 ' + p.active + ' / ' + p.capacity + '</span><span class="spacer"></span><span class="muted">候補 ' + p.waitlist + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%"></i></div></div></div>');
+        '<div><div class="row small"><span>已錄取 ' + p.active + (p.reserved ? '<span class="plus-rsv">+' + p.reserved + '</span>' : '') + ' / ' + p.capacity + '</span><span class="spacer"></span><span class="muted">候補 ' + p.waitlist + '</span></div>' +
+        '<div class="bar' + (rpct ? ' split' : '') + '"><i style="width:' + pct + '%"></i>' + (rpct ? '<i class="rsv" style="width:' + rpct + '%"></i>' : '') + '</div></div></div>');
       $$('.tile-meta', t)[0].textContent = p.prefix;
       $('.tile-name', t).textContent = p.name;
       $$('.tile-meta', t)[1].textContent = '營期 ' + fmtDate(p.start) + ' – ' + fmtDate(p.end) + (p.reviewNote ? '　·　' + p.reviewNote : p.readOnly ? '　·　僅可瀏覽' : '');
@@ -93,6 +96,9 @@ App.page('menu', function (root) {
     if (!r.projects.length && !r.canCreate) {
       box.innerHTML = '<div class="card card-pad empty" style="grid-column:1/-1">目前沒有你可以管理的專案</div>';
     }
+    // 預先載入前幾個進行中專案的名單，點進去就不用等
+    if (fresh) prefetch(r.projects.filter(function (p) { return !p.readOnly && p.status !== '已封存'; }).slice(0, 4)
+      .map(function (p) { return ['getProjectData', p.prefix]; }).concat(App.user.adminAccess ? [['getAdminData']] : []));
   }).catch(function (e) { toast(e.message, true); });
 });
 </script>
