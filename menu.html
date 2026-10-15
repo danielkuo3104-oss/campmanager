@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="營隊管理">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <title>功能選單｜營隊報名管理</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -50,13 +50,24 @@ App.page('menu', function (root) {
     sys.appendChild(t);
   }
   sysTile('操作紀錄', '查詢所有操作與寄信紀錄', function () { go('logs'); });
-  if (App.user.isRoot) sysTile('系統管理', '管理人員、專案狀態、信件範本與全部停止', function () { go('admin'); });
+  if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' : '使用總管授予你的管理功能', function () { go('admin'); });
 
   api('listProjects').then(function (r) {
     if (r.globalStop) {
       var g = $('#menu-global', root);
       g.className = 'banner bad';
       g.textContent = '總管已停止全部專案：目前所有專案只能瀏覽，不會寄信或寫回。';
+    }
+    var ap = r.approvals || {};
+    if (ap.projects || ap.staff) {
+      var g2 = $('#menu-global', root);
+      var parts = [];
+      if (ap.projects) parts.push(ap.projects + ' 個新專案');
+      if (ap.staff) parts.push(ap.staff + ' 位人員');
+      var bn = el('<div class="banner warn" style="cursor:pointer"></div>');
+      bn.textContent = '有 ' + parts.join('、') + '等待核准，點這裡前往系統管理';
+      bn.addEventListener('click', function () { go('admin', { tab: ap.projects ? 'projects' : 'staff' }); });
+      g2.parentNode.insertBefore(bn, g2.nextSibling);
     }
     var box = $('#menu-projects', root);
     box.innerHTML = '';
@@ -70,12 +81,12 @@ App.page('menu', function (root) {
         '<div class="bar"><i style="width:' + pct + '%"></i></div></div></div>');
       $$('.tile-meta', t)[0].textContent = p.prefix;
       $('.tile-name', t).textContent = p.name;
-      $$('.tile-meta', t)[1].textContent = '營期 ' + fmtDate(p.start) + ' – ' + fmtDate(p.end) + (p.readOnly ? '　·　僅可瀏覽' : '');
+      $$('.tile-meta', t)[1].textContent = '營期 ' + fmtDate(p.start) + ' – ' + fmtDate(p.end) + (p.reviewNote ? '　·　' + p.reviewNote : p.readOnly ? '　·　僅可瀏覽' : '');
       t.addEventListener('click', function () { go('students', { prefix: p.prefix, title: p.name }); });
       box.appendChild(t);
     });
     if (r.canCreate) {
-      var add = el('<div class="tile add"><div class="plus">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單</div></div>');
+      var add = el('<div class="tile add"><div class="plus">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單' + (r.needsApproval ? '（需總管核准）' : '') + '</div></div>');
       add.addEventListener('click', function () { go('newproject'); });
       box.appendChild(add);
     }
