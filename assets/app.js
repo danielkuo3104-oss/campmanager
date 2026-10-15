@@ -318,7 +318,7 @@ function lineLink(v) {
 
 /** 聯絡人員（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
 function contactsSampleHtml(list) {
-  list = (list || [{ title: '總召', name: 'OOO', phone: '0900-000-000', email: 'ooo@gmail.com', ig: '@ooo_camp', line: 'ooo' }]).filter(function (c) { return c && c.name; });
+  list = (list || [{ title: '總召', name: 'OOO', phone: '0900-000-000', email: 'ooo@gmail.com', ig: '@ooo_camp', line: 'ooo' }]).filter(function (c) { return c && (c.name || c.title); });
   if (!list.length) return '';
   var a = 'color:#1565c0;text-decoration:none';
   return '<div style="margin:16px 0 4px;font-weight:700;color:#2f5d62">聯絡人員</div>' +
@@ -330,8 +330,8 @@ function contactsSampleHtml(list) {
       if (ig) ways.push('<span style="' + a + '">' + esc(ig.label) + '</span>');
       if (ln) ways.push('<span style="' + a + '">' + esc(ln.label) + '</span>');
       if (c.link && /^https?:\/\//i.test(c.link)) ways.push('<span style="' + a + '">' + esc(String(c.link).replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '')) + '</span>');
-      return '<div style="padding:8px 12px;border-bottom:1px solid #eef0ee">' + (c.title ? '<span style="color:#5b665f;margin-right:8px">' + esc(c.title) + '</span>' : '') +
-        '<b style="color:#1f2937">' + esc(c.name) + '</b>' + (ways.length ? '<div style="margin-top:2px;word-break:break-all">' + ways.join('<span style="color:#c4c9c5">　｜　</span>') + '</div>' : '') + '</div>';
+      return '<div style="padding:8px 12px;border-bottom:1px solid #eef0ee">' + (c.title && c.name ? '<span style="color:#5b665f;margin-right:8px">' + esc(c.title) + '</span>' : '') +
+        '<b style="color:#1f2937">' + esc(c.name || c.title) + '</b>' + (ways.length ? '<div style="margin-top:2px;word-break:break-all">' + ways.join('<span style="color:#c4c9c5">　｜　</span>') + '</div>' : '') + '</div>';
     }).join('') + '</div>';
 }
 
@@ -814,6 +814,7 @@ function openTemplateEditor(t, opts) {
   sigIn.value = sigMode === 'custom' ? t.signature : defSig;
   var footEd = chipEditor(footTa), sigEd = chipEditor(sigIn);
   footTa.parentNode.insertBefore(formatToolbar(footEd, { vars: true }), footTa);
+  sigIn.parentNode.insertBefore(formatToolbar(sigEd, { vars: true }), sigIn);
   var footSel = $('[name=footMode]', body), sigSel = $('[name=sigMode]', body);
   footSel.value = footMode; sigSel.value = sigMode;
   function closingUi() {
@@ -956,6 +957,8 @@ function popMenu(anchor, items) {
     if (it.header) { var h = el('<div class="menu-label"></div>'); h.textContent = it.header; m.appendChild(h); return; }
     var b = el('<button type="button"' + (it.danger ? ' class="danger"' : '') + '></button>');
     b.textContent = it.label;
+    // mail：'yes' 會寄信給學員、'opt' 可選擇是否寄信（確認前都能預覽）
+    if (it.mail) { var tg = el('<span class="mail-tag' + (it.mail === 'opt' ? ' opt' : '') + '"></span>'); tg.textContent = it.mail === 'opt' ? '可選寄信' : '寄信'; tg.title = it.mail === 'opt' ? '下一步可以選擇要不要寄信' : '會寄信給學員（確認前可預覽）'; b.appendChild(tg); }
     if (it.disabled) { b.disabled = true; b.style.opacity = .4; }
     b.addEventListener('click', function (e) { e.stopPropagation(); closePopMenu(); it.onClick(); });
     m.appendChild(b);
@@ -1013,7 +1016,7 @@ function renderTopbar(name, params) {
   $('#crumb').innerHTML = name === 'menu' ? '' : '<b>' + esc(PAGE_TITLES[name] || '') + '</b>' + (params.title ? '　/　' + esc(params.title) : '');
   $('#user-name').textContent = App.user.name;
   $('#user-role').textContent = App.user.role;
-  if (App.user.isOwner) { $('#user-role').classList.add('owner'); $('#user-avatar').classList.add('root'); $('#user-role').title = App.user.isChief ? '兼任總管' : '總管已交給其他人；你仍保有全部權限'; }
+  if (App.user.isOwner) { $('#user-role').classList.add('owner'); $('#user-avatar').classList.add('root'); $('#user-role').title = App.user.isChief ? '兼任協同總管' : '協同總管已交給其他人；你仍保有全部權限'; }
   else if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
   else if (App.user.perms && App.user.perms.length) { $('#user-role').textContent = '共同管理＋授權'; $('#user-role').title = '總管授予的權限可在系統管理使用'; }
   if (App.user.siteMaint) {
