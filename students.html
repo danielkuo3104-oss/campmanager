@@ -31,6 +31,7 @@
       <button class="btn" type="button" id="st-bulk">群發通知</button>
       <button class="btn" type="button" id="st-export">匯出 PDF</button>
       <button class="btn" type="button" id="st-tpl">信件範本</button>
+      <button class="btn" type="button" id="st-squad">分小隊</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
       <span class="sync-note" id="st-synced"></span>
     </div>
@@ -41,7 +42,9 @@
     <div class="toolbar">
       <input class="input" id="st-search" placeholder="搜尋姓名、電話、身分證…" style="max-width:260px">
       <div class="chips" id="st-chips"></div>
+      <select class="input squad-filter hidden" id="st-squad-filter" aria-label="依小隊篩選"></select>
       <span class="spacer"></span>
+      <button class="btn sm ghost" type="button" id="st-cols">顯示欄位</button>
       <span class="muted small" id="st-count"></span>
     </div>
     <div class="table-wrap">
@@ -59,6 +62,10 @@ App.page('students', function (root, params) {
   var D = null;               // 伺服器回傳的專案資料
   var filter = 'all';
   var search = '';
+  var squadFilter = '';       // '' 全部、'0' 未分隊、'1'… 第幾隊
+  var ISSUE_TAG = { id: '身分證有誤', email: '信箱有誤', phone: '電話有誤' };
+  var STROKE = (window.Intl && Intl.Collator) ? new Intl.Collator('zh-Hant-TW').compare : function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+  function hasIssue(s) { return !!(s.issues && s.issues.length) && tier(s) < 4; }
 
   var FILTERS = [
     { key: 'all', label: '全部' },
@@ -114,7 +121,8 @@ App.page('students', function (root, params) {
 
   function matches(s) {
     var t = tier(s);
-    if (filter === 'warn' && t !== 0 && !(s.idInvalid && t < 4)) return false;
+    if (filter === 'warn' && t !== 0 && !hasIssue(s)) return false;
+    if (squadFilter !== '' && D.project.squads > 0 && String(s.squad === '' ? 0 : s.squad) !== squadFilter) return false;
     if (filter === 'todo' && t !== 1 && t !== 0) return false;
     if (filter === 'done' && t !== 2) return false;
     if (filter === 'wait' && t !== 3) return false;
@@ -156,7 +164,7 @@ App.page('students', function (root, params) {
       stat('完成度', st.completion + '<small>%</small>', '程序完成 ' + st.done + ' 人', st.completion) +
       stat('預計收入', money(st.expectedIncome) + '<small>元</small>', '已錄取者應繳合計') +
       stat('已確認繳款', money(st.confirmedIncome) + '<small>元</small>', st.refunded || st.retained ? '含取消後保留 ' + money(st.retained) + '（已退 ' + money(st.refunded) + '）' : '程序完成者合計') +
-      stat('警示', st.warnings + '<small>人</small>', (st.outside ? '含招生期外 ' + st.outside + ' 人待決定' : '招生期外、匯款逾期、匯款異常') + (st.idInvalid ? '；身分證有誤 ' + st.idInvalid + ' 人' : '')) +
+      stat('警示', st.warnings + '<small>人</small>', warnFoot(st)) +
       stat('候補中', st.waitlist + '<small>人</small>', '取消 ' + st.cancelled + '　失敗 ' + st.failed);
 
     var chips = $('#st-chips', root);
@@ -167,7 +175,27 @@ App.page('students', function (root, params) {
       c.addEventListener('click', function () { filter = f.key; render(); });
       chips.appendChild(c);
     });
+    var sf = $('#st-squad-filter', root);
+    sf.classList.toggle('hidden', !(p.squads > 0));
+    if (p.squads > 0) {
+      if (Number(squadFilter) > p.squads) squadFilter = '';
+      var opts = '<option value="">全部小隊</option>';
+      for (var q = 1; q <= p.squads; q++) opts += '<option value="' + q + '">第 ' + q + ' 隊（' + D.students.filter(function (x) { return x.squad === q && tier(x) < 4; }).length + '）</option>';
+      opts += '<option value="0">未分隊（' + D.students.filter(function (x) { return x.squad === '' && tier(x) < 4; }).length + '）</option>';
+      sf.innerHTML = opts; sf.value = squadFilter;
+    } else squadFilter = '';
     renderTable();
+  }
+
+  function warnFoot(st) {
+    var parts = [];
+    if (st.outside) parts.push('招生期外 ' + st.outside);
+    var pay = (st.statusWarnings || 0) - (st.outside || 0);
+    if (pay) parts.push('匯款逾期／異常 ' + pay);
+    if (st.idInvalid) parts.push('身分證有誤 ' + st.idInvalid);
+    if (st.emailInvalid) parts.push('信箱有誤 ' + st.emailInvalid);
+    if (st.phoneInvalid) parts.push('電話有誤 ' + st.phoneInvalid);
+    return parts.length ? parts.join('、') + (st.warnings < parts.length ? '（同一人可能有多項）' : '') : '招生期外、匯款逾期異常、資料有誤';
   }
 
   function stat(label, value, foot, bar) {
@@ -176,11 +204,13 @@ App.page('students', function (root, params) {
       '<div class="foot">' + esc(foot) + '</div></div>';
   }
 
+  /** 名單欄位：學員姓名一律放第一欄（就算沒勾選顯示），其他依專案設定 */
   function columns() {
-    var cols = (D.project.display || []).filter(function (t) { return t; });
-    if (!cols.length && D.project.mapping.name) cols = [D.project.mapping.name];
-    return cols;
+    var nameCol = D.project.mapping.name;
+    var cols = (D.project.display || []).filter(function (t) { return t && t !== nameCol; });
+    return nameCol ? [nameCol].concat(cols) : cols;
   }
+  function squadText(s) { return s.squad === '' || s.squad === undefined ? '未分隊' : '第 ' + s.squad + ' 隊'; }
 
   function valueHtml(v) {
     var s = String(v === undefined || v === null ? '' : v);
@@ -198,13 +228,14 @@ App.page('students', function (root, params) {
 
   function renderTable() {
     var cols = columns();
-    $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c) { return '<th class="th-clip" title="' + esc(c) + '">' + esc(c) + '</th>'; }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
+    var sq = D.project.squads > 0;
+    $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c, i) { return '<th class="' + (i === 0 ? 'th-name' : 'th-clip') + '" title="' + esc(c) + '">' + esc(c) + '</th>' + (i === 0 && sq ? '<th>小隊</th>' : ''); }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
     var list = sorted(D.students).filter(matches);
     $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 筆';
     var body = $('#st-body', root);
     body.innerHTML = '';
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="' + (cols.length + 3) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
+      body.innerHTML = '<tr><td colspan="' + (cols.length + 3 + (sq ? 1 : 0)) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
       return;
     }
     var prevGroup = null;
@@ -220,10 +251,11 @@ App.page('students', function (root, params) {
 
       var tags = '';
       if (grouped) {
-        tags += '<span class="tag group">團報</span>';
-        if (s.groupIncomplete) tags += '<span class="tag group">未齊</span>';
+        tags += s.groupIncomplete ? '<span class="tag group" title="團員還沒全部報名，名額先預留">團報未齊</span>' : '<span class="tag group">團報</span>';
       }
-      if (s.idInvalid) tags += '<span class="tag bad" title="身分證字號檢查碼不正確，報名成功信已提醒更正">身分證有誤</span>';
+      (s.issues || []).forEach(function (x) {
+        tags += '<span class="tag bad" title="' + esc(x.field + '「' + x.value + '」' + x.msg + '；報名信已提醒更正') + '">' + ISSUE_TAG[x.key] + '</span>';
+      });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
       var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
@@ -232,7 +264,10 @@ App.page('students', function (root, params) {
         // 欄寬固定、過長以「…」截斷；完整內容滑過看提示，或點該列看詳細資料
         var raw = String(s.data[c] === undefined || s.data[c] === null ? '' : s.data[c]);
         var tip = /^https?:\/\//i.test(raw) ? '' : ' title="' + esc(raw) + '"';
-        if (i === 0) html += '<td class="cell-name"><div class="clip-1"' + tip + '>' + valueHtml(s.data[c]) + '</div>' + (tags ? '<div>' + tags + '</div>' : '') + '</td>';
+        if (i === 0) {
+          html += '<td class="cell-name"><div class="clip-1 name-strong"' + tip + '>' + valueHtml(s.data[c] || s.name) + '</div>' + (tags ? '<div>' + tags + '</div>' : '') + '</td>';
+          if (sq) html += '<td class="cell-squad">' + (s.squad === '' ? '<span class="muted">—</span>' : esc(s.squad)) + '</td>';
+        }
         else html += '<td class="cell-clip"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
       });
       var last = s.history && s.history.length ? s.history[s.history.length - 1] : null;
@@ -285,6 +320,14 @@ App.page('students', function (root, params) {
       ask('調整候補順位', [{ name: 'rank', label: '新的順位', type: 'number', required: true, value: s.rank }], function (v) { run(s, 'setRank', v); });
     });
     add('調整團報歸屬…', tierOk(s), function () { askGroup(s); });
+    if (D.project.squads > 0) add('調整小隊…', tierOk(s), function () {
+      var opts = [{ value: '', label: '未分隊' }];
+      for (var q = 1; q <= D.project.squads; q++) opts.push({ value: String(q), label: '第 ' + q + ' 隊' });
+      ask('調整小隊', [{ name: 'squad', label: s.name + '　目前：' + squadText(s), type: 'select', options: opts, value: s.squad === '' ? '' : String(s.squad) }], function (v) {
+        var a = {}; a[s.id] = v.squad;
+        withBusy(api('setSquads', prefix, a)).then(function () { toast('已調整小隊'); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
+      });
+    });
     add('手動變更狀態…', true, function () {
       var opts = Object.keys(D.statuses).map(function (k) { return D.statuses[k]; }).filter(function (x) { return x !== s.status; });
       ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }], function (v) { run(s, 'setStatus', v); });
@@ -353,6 +396,7 @@ App.page('students', function (root, params) {
       ['已繳金額', s.paid === '' ? '—' : money(s.paid) + ' 元'],
       ['退款金額', s.status === '報名取消' ? (s.refund !== '' && s.refund !== undefined ? money(s.refund) + ' 元' : (s.paid !== '' && Number(s.paid) > 0 ? '全額（舊資料未記錄）' : '未繳費，不需退款')) : '—'],
       ['候補順位', s.rank === '' ? '—' : s.rank],
+      ['小隊', p.squads > 0 ? squadText(s) : '未設定小隊數'],
       ['團報', g ? g.names.join('、') + '（預期 ' + g.expected + ' 人' + (s.groupIncomplete ? '，未齊' : '') + (g.reserved ? '，預留 ' + g.reserved + ' 名額至 ' + fmtTime(g.holdUntil) : '') + '）' : (s.partners && s.partners.length ? '填寫同伴：' + s.partners.join('、') : '個人報名')],
       ['結果通知', /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出（' + fmtTime(s.notified.split(' ')[0]) + '）' : (s.notified || '—')]
     ];
@@ -410,12 +454,17 @@ App.page('students', function (root, params) {
         $('.pill', r).textContent = t.custom ? '本專案自訂' : '系統預設';
         $('button', r).addEventListener('click', function () {
           openTemplateEditor(t, {
-            signature: D.project.signature || '', campName: D.project.name,
+            signature: D.project.signature || '', footer: D.project.footerEffective || '', campName: D.project.name,
+            footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
+            headerColor: D.project.headerColor, headerHint: '這個專案的所有信都用這個顏色',
+            onSaveHeader: ro ? null : function (hx) { return api('updateProjectSettings', prefix, { headerColor: hx }).then(function () { D.project.headerColor = hx; }); },
+            contacts: D.project.contacts || [], contactsInMail: D.project.contactsInMail, questions: D.project.questions || [], echoFields: D.project.echo || [],
+            onSaveEcho: ro ? null : function (list) { return api('updateProjectSettings', prefix, { echo: list }).then(function () { D.project.echo = list; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
             resetLabel: t.custom && !ro ? '恢復系統預設' : null
           }).then(function (v) {
             if (!v || ro) return;
-            var call = v.reset ? api('saveProjectTemplate', prefix, t.code, null) : api('saveProjectTemplate', prefix, t.code, v.subject, v.body);
+            var call = v.reset ? api('saveProjectTemplate', prefix, t.code, null) : api('saveProjectTemplate', prefix, t.code, v.subject, v.body, { footer: v.footer, signature: v.signature });
             withBusy(call).then(function () {
               toast(v.reset ? '已恢復系統預設' : '已儲存本專案範本'); d.close(); openProjectTemplates();
             }).catch(function (e) { toast(e.message, true); });
@@ -450,9 +499,21 @@ App.page('students', function (root, params) {
       f('account', '匯款帳號', 'text', p.account) + f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
       '</div><div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
-      f('name', '營隊名稱', 'text', p.name) + f('signature', '信件署名（每封信最後置中顯示）', 'text', p.signature, '例如：清大==醫工營==籌辦團隊 敬上；可用粗體、顏色、螢光') + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
+      f('name', '營隊名稱', 'text', p.name) + f('signature', '信件署名（每封信最後置中顯示）', 'text', p.signature, '留空時用「' + (p.name || '營隊名稱') + ' 籌辦團隊 敬上」；可用粗體、顏色、螢光、字級') + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
+      '<div class="field"><span>信件標頭顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">每封信最上方營隊名稱那條的底色；字的黑白會依底色自動調整</span></div>' +
       '</div></div>' +
+      '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
+      '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。姓名必填，電話、信箱至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
+      '<div class="ct-list"></div>' +
+      '<label class="check" style="margin-top:10px"><input type="checkbox" name="contactsInMail"' + (p.contactsInMail !== false ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>每封信結尾自動附上聯絡人員（附註上方）</span></label></div>' +
+      '<div class="drawer-section"><div class="row"><h3 class="grow">信件附註</h3>' + (ro ? '' : '<button class="btn sm ghost" type="button" id="set-foot-reset">恢復系統預設</button>') + '</div>' +
+      '<p class="hint" style="margin-top:0">每封信內容之後、署名之前，以分隔線隔開的灰色小字。<span id="set-foot-state"></span>清空表示這個專案不加附註。</p>' +
+      '<div class="field"><textarea class="input" name="footer" rows="5"' + (ro ? ' disabled' : '') + '></textarea></div></div>' +
+      '<div class="drawer-section"><h3>小隊與資料檢查</h3><div class="grid-2">' +
+      f('squads', '預設小隊數', 'number', p.squads || 0, '0 = 不分隊；設定後可用「分小隊」安排，匯出時可依小隊排序') +
+      f('emailDomains', '限定報名信箱網域', 'text', p.emailDomains || '', '例如 gmail.com，多個用逗號分開；留空只檢查格式與常見打錯（gmial.com 等）') +
+      '</div><div class="hint" style="margin-top:8px">電話一律檢查是否為 0 開頭的 10 碼；身分證檢查檢查碼。有誤的人會標示並列入警示。</div></div>' +
       '<div class="drawer-section"><h3>表單欄位對應</h3><p class="hint" style="margin-top:0">系統用關鍵字找欄位，找錯或找不到時請手動指定。</p><div class="grid-2">' +
       fk.map(function (k) {
         if (k.multi) {
@@ -504,6 +565,35 @@ App.page('students', function (root, params) {
       }).catch(function (e) { toast(e.message, true); });
     });
 
+    bindHexField($('.set-head', d.body));
+    var ctList = $('.ct-list', d.body);
+    function ctRow(c) {
+      c = c || {};
+      var dis = ro ? ' disabled' : '';
+      var r = el('<div class="ct-row">' +
+        '<input class="input" data-k="title" placeholder="職稱" maxlength="40"' + dis + '>' +
+        '<input class="input" data-k="name" placeholder="姓名" maxlength="40"' + dis + '>' +
+        '<input class="input" data-k="phone" placeholder="電話" maxlength="40" inputmode="tel"' + dis + '>' +
+        '<input class="input" data-k="email" placeholder="信箱" maxlength="120" type="email"' + dis + '>' +
+        (ro ? '' : '<button class="btn sm ghost" type="button" title="移除" aria-label="移除">✕</button>') + '</div>');
+      $$('input', r).forEach(function (i) { i.value = c[i.dataset.k] || ''; });
+      if (!ro) $('button', r).addEventListener('click', function () { r.remove(); if (!ctList.children.length) ctList.appendChild(ctEmpty()); });
+      return r;
+    }
+    function ctEmpty() { return el('<div class="small muted ct-empty">尚未設定聯絡人員</div>'); }
+    (p.contacts || []).forEach(function (c) { ctList.appendChild(ctRow(c)); });
+    if (!ctList.children.length) ctList.appendChild(ctEmpty());
+    if ($('#ct-add', d.body)) $('#ct-add', d.body).addEventListener('click', function () {
+      if ($$('.ct-row', ctList).length >= 20) { toast('聯絡人員最多 20 位', true); return; }
+      var e0 = $('.ct-empty', ctList); if (e0) e0.remove();
+      var r = ctRow(); ctList.appendChild(r); $('input', r).focus();
+    });
+    var footTa = $('[name=footer]', d.body);
+    footTa.value = p.footerEffective || '';
+    var footEd = chipEditor(footTa);
+    footTa.parentNode.insertBefore(formatToolbar(footEd, { vars: true }), footTa);
+    $('#set-foot-state', d.body).textContent = p.footer === '' ? '目前使用系統預設。' : p.footer === '-' ? '目前這個專案不加附註。' : '目前是這個專案自訂的內容。';
+    if ($('#set-foot-reset', d.body)) $('#set-foot-reset', d.body).addEventListener('click', function () { footEd.value = p.footerSystem || ''; footTa.dispatchEvent(new Event('input', { bubbles: true })); toast('已填入系統預設，按「儲存設定」生效'); });
     guardDates($('#set-form', d.body));
     $('#set-form', d.body).addEventListener('submit', function (e) {
       e.preventDefault();
@@ -511,7 +601,7 @@ App.page('students', function (root, params) {
       var dateErr = dateOrderError({ regStart: form.elements.regStart.value, earlyDeadline: form.elements.earlyDeadline.value, regEnd: form.elements.regEnd.value, start: form.elements.start.value, end: form.elements.end.value });
       if (dateErr) { toast(dateErr, true); return; }
       var patch = {};
-      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'account', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end'].forEach(function (k) {
+      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyDeadline', 'account', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains'].forEach(function (k) {
         var v = form.elements[k].value;
         if (String(v) !== String(p[k] === undefined ? '' : p[k])) patch[k] = v;
       });
@@ -523,6 +613,26 @@ App.page('students', function (root, params) {
       if (JSON.stringify(mapping) !== JSON.stringify(p.mapping)) patch.mapping = mapping;
       var echo = $$('input[name=echo]:checked', form).map(function (i) { return i.value; });
       if (JSON.stringify(echo) !== JSON.stringify(p.echo || [])) patch.echo = echo;
+      var hc = normHex($('.set-head .fmt-hexin', form).value);
+      if (!hc) { toast('信件標頭顏色格式不正確，請用 # 加 6 碼（例如 #2f5d62）', true); return; }
+      if (hc !== normHex(p.headerColor || '#2f5d62')) patch.headerColor = hc;
+      var foot = form.elements.footer.value.replace(/\r\n/g, '\n').trim();
+      if (foot !== String(p.footerEffective || '').trim()) patch.footer = foot;
+      var contacts = $$('.ct-row', form).map(function (r) {
+        var c = {}; $$('input', r).forEach(function (i) { c[i.dataset.k] = i.value.trim(); }); return c;
+      }).filter(function (c) { return c.title || c.name || c.phone || c.email; });
+      var ctErr = '';
+      contacts.forEach(function (c, i) {
+        if (ctErr) return;
+        if (!c.name) ctErr = '第 ' + (i + 1) + ' 位聯絡人員請填姓名';
+        else if (!c.phone && !c.email) ctErr = '聯絡人員「' + c.name + '」請至少填電話或信箱';
+        else if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) ctErr = '聯絡人員「' + c.name + '」的信箱格式不正確';
+      });
+      if (ctErr) { toast(ctErr, true); return; }
+      contacts.forEach(function (c) { c.email = c.email.toLowerCase(); });
+      if (JSON.stringify(contacts) !== JSON.stringify(p.contacts || [])) patch.contacts = contacts;
+      var cim = form.elements.contactsInMail.checked;
+      if (cim !== (p.contactsInMail !== false)) patch.contactsInMail = cim;
       var mask = form.elements.echoMask.checked;
       if (mask !== !!p.echoMask) patch.echoMask = mask;
       var disp = $$('input[name=disp]:checked', form).map(function (i) { return i.value; });
@@ -549,10 +659,11 @@ App.page('students', function (root, params) {
       '<div class="field hidden" data-for="CUSTOM"><span>內容</span><textarea class="input" name="body"></textarea><span class="hint">可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數</span></div>' +
       '</form>');
     var msgTa = body.elements.message, bodyTa = body.elements.body;
-    msgTa.parentNode.insertBefore(formatToolbar(msgTa, { vars: true }), msgTa);
-    msgTa.parentNode.appendChild(presetChips(msgTa, P('message'), '\n'));
-    bodyTa.parentNode.insertBefore(formatToolbar(bodyTa, { vars: true }), bodyTa);
-    bodyTa.parentNode.insertBefore(presetChips(bodyTa, P('message'), '\n'), bodyTa.nextSibling);
+    var msgEd = chipEditor(msgTa), bodyEd = chipEditor(bodyTa);
+    msgTa.parentNode.insertBefore(formatToolbar(msgEd, { vars: true }), msgTa);
+    msgTa.parentNode.appendChild(presetChips(msgEd, P('message'), '\n'));
+    bodyTa.parentNode.insertBefore(formatToolbar(bodyEd, { vars: true }), bodyTa);
+    bodyEd.el.parentNode.insertBefore(presetChips(bodyEd, P('message'), '\n'), bodyEd.el.nextSibling);
     body.elements.code.addEventListener('change', function () {
       $$('[data-for]', body).forEach(function (x) { x.classList.toggle('hidden', x.getAttribute('data-for') !== body.elements.code.value); });
     });
@@ -584,11 +695,105 @@ App.page('students', function (root, params) {
     });
   }
 
+  /* ---------- 名單顯示欄位 ---------- */
+  function openColumns() {
+    var p = D.project, nameCol = p.mapping.name;
+    var body = el('<div><div class="small muted" style="margin-bottom:10px">勾選要在名單顯示的表單題目。學員姓名一定顯示在第一欄。信件附上的報名資料在「信件範本」或「專案設定」設定。</div>' +
+      '<div class="multi-q">' + (p.questions || []).map(function (q) {
+        var isName = q === nameCol;
+        return '<label class="check"><input type="checkbox" value="' + esc(q) + '"' + (isName || p.display.indexOf(q) >= 0 ? ' checked' : '') + (isName || D.readOnly ? ' disabled' : '') + '><span>' + esc(q) + (isName ? '（姓名，固定顯示）' : '') + '</span></label>';
+      }).join('') + '</div></div>');
+    modal({ title: '名單顯示欄位', body: body, wide: true, buttons: D.readOnly ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
+      if (!ok) return;
+      var disp = $$('input:checked', body).map(function (i) { return i.value; });
+      if (JSON.stringify(disp) === JSON.stringify(p.display)) { toast('沒有變更'); return; }
+      withBusy(api('updateProjectSettings', prefix, { display: disp })).then(function () { toast('已更新顯示欄位'); return load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  /* ---------- 分小隊 ---------- */
+  function genderOf(s) {
+    var q = (D.project.questions || []).filter(function (t) { return /性別/.test(t); })[0];
+    var v = q ? String(s.data[q] || '') : '';
+    return /女/.test(v) ? '女' : /男/.test(v) ? '男' : '';
+  }
+  function openSquads() {
+    var n = D.project.squads || 0;
+    if (!(n > 0)) {
+      if (D.readOnly) { toast('這個專案沒有設定小隊數', true); return; }
+      formDialog({ title: '設定小隊數', desc: '要分幾個小隊？之後可在專案設定修改。', okLabel: '下一步',
+        fields: [{ name: 'squads', label: '小隊數', type: 'number', required: true, value: 4 }] }).then(function (v) {
+        if (!v) return;
+        withBusy(api('updateProjectSettings', prefix, { squads: v.squads })).then(function () { return load(); }).then(openSquads).catch(function (e) { toast(e.message, true); });
+      });
+      return;
+    }
+    var list = D.students.filter(function (s) { return tierOk(s); }).sort(function (a, b) {
+      return (a.squad === '' ? 99 : a.squad) - (b.squad === '' ? 99 : b.squad) || STROKE(a.name, b.name);
+    });
+    var cur = {};
+    list.forEach(function (s) { cur[s.id] = s.squad === '' ? '' : String(s.squad); });
+    var opts = '<option value="">未分隊</option>';
+    for (var q = 1; q <= n; q++) opts += '<option value="' + q + '">第 ' + q + ' 隊</option>';
+    var body = el('<div class="squad-dlg"><div class="squad-sum"></div>' +
+      '<div class="row wrap" style="gap:8px"><button class="btn sm" type="button" data-a="auto">自動分配未分隊的人</button><button class="btn sm ghost" type="button" data-a="clear">全部改為未分隊</button>' +
+      '<span class="small muted">自動分配會平均人數' + (list.some(genderOf) ? '並平衡男女' : '') + '，同團報的人盡量同隊</span></div>' +
+      '<div class="squad-list">' + list.map(function (s) {
+        return '<div class="squad-row" data-id="' + esc(s.id) + '"><div class="grow"><b>' + esc(s.name) + '</b> <span class="small muted">' + esc(s.status) + (genderOf(s) ? '・' + genderOf(s) : '') + (s.groupId ? '・團報' : '') + '</span></div>' +
+          '<select class="input"' + (D.readOnly ? ' disabled' : '') + '>' + opts + '</select></div>';
+      }).join('') + '</div></div>');
+    function sync() {
+      $$('.squad-row', body).forEach(function (r) { $('select', r).value = cur[r.getAttribute('data-id')]; });
+      var cnt = [];
+      for (var i = 1; i <= n; i++) cnt.push('第 ' + i + ' 隊 ' + list.filter(function (s) { return cur[s.id] === String(i); }).length + ' 人');
+      var un = list.filter(function (s) { return cur[s.id] === ''; }).length;
+      $('.squad-sum', body).textContent = cnt.join('　') + (un ? '　未分隊 ' + un + ' 人' : '');
+    }
+    body.addEventListener('change', function (e) { var r = e.target.closest('.squad-row'); if (r) { cur[r.getAttribute('data-id')] = e.target.value; sync(); } });
+    $('[data-a=clear]', body).addEventListener('click', function () { list.forEach(function (s) { cur[s.id] = ''; }); sync(); });
+    $('[data-a=auto]', body).addEventListener('click', function () {
+      var size = [], sex = [];
+      for (var i = 0; i <= n; i++) { size.push(0); sex.push({ '男': 0, '女': 0, '': 0 }); }
+      list.forEach(function (s) { var q = Number(cur[s.id]); if (q) { size[q]++; sex[q][genderOf(s)]++; } });
+      var todo = list.filter(function (s) { return cur[s.id] === ''; });
+      // 團報的人先排在一起，再依性別、筆畫
+      var groupSquad = {};
+      list.forEach(function (s) { if (s.groupId && cur[s.id]) groupSquad[s.groupId] = cur[s.id]; });
+      todo.sort(function (a, b) { return (a.groupId ? 0 : 1) - (b.groupId ? 0 : 1) || String(a.groupId).localeCompare(String(b.groupId)) || genderOf(a).localeCompare(genderOf(b)) || STROKE(a.name, b.name); });
+      var cap = Math.ceil(list.length / n);
+      todo.forEach(function (s) {
+        var g = genderOf(s), best = 0;
+        var pref = s.groupId && groupSquad[s.groupId] ? Number(groupSquad[s.groupId]) : 0;
+        if (pref && size[pref] < cap) best = pref;
+        if (!best) {
+          for (var k = 1; k <= n; k++) {
+            if (!best || sex[k][g] < sex[best][g] || (sex[k][g] === sex[best][g] && size[k] < size[best])) best = k;
+          }
+        }
+        cur[s.id] = String(best); size[best]++; sex[best][g]++;
+        if (s.groupId && !groupSquad[s.groupId]) groupSquad[s.groupId] = String(best);
+      });
+      sync();
+    });
+    sync();
+    modal({ title: '分小隊', desc: '共 ' + n + ' 隊，' + list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回。', body: body, wide: true,
+      buttons: D.readOnly ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
+      if (!ok) return;
+      var diff = {};
+      list.forEach(function (s) { var before = s.squad === '' ? '' : String(s.squad); if (cur[s.id] !== before) diff[s.id] = cur[s.id]; });
+      if (!Object.keys(diff).length) { toast('沒有變更'); return; }
+      withBusy(api('setSquads', prefix, diff)).then(function (r) { toast('已更新 ' + r.changed + ' 人的小隊'); return load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
   /* ---------- 事件 ---------- */
   $('#st-search', root).addEventListener('input', function (e) { search = e.target.value.trim().toLowerCase(); if (D) renderTable(); });
   $('#st-settings', root).addEventListener('click', function () { if (D) openSettings(); });
   $('#st-bulk', root).addEventListener('click', function () { if (D) openBulk(); });
   $('#st-tpl', root).addEventListener('click', function () { if (D) openProjectTemplates(); });
+  $('#st-squad', root).addEventListener('click', function () { if (D) openSquads(); });
+  $('#st-cols', root).addEventListener('click', function () { if (D) openColumns(); });
+  $('#st-squad-filter', root).addEventListener('change', function (e) { squadFilter = e.target.value; renderTable(); });
   $('#st-export', root).addEventListener('click', function () {
     if (!D) return;
     var f = FILTERS.filter(function (x) { return x.key === filter; })[0];
@@ -596,7 +801,7 @@ App.page('students', function (root, params) {
       prefix: prefix, project: D.project, groups: D.groups || {},
       filtered: sorted(D.students).filter(matches), all: sorted(D.students),
       filterLabel: (f ? f.label : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
-      displayCols: columns()
+      displayCols: columns(), squads: D.project.squads || 0
     });
   });
   $('#st-sync', root).addEventListener('click', function () {
