@@ -74,7 +74,13 @@
         <label class="field"><span>團報價（元）</span><input class="input" name="groupPrice" type="number" min="0"></label>
         <label class="field"><span>早鳥價（元）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
         <label class="field"><span>早鳥期限</span><input class="input" name="earlyDeadline" type="date"></label>
-        <label class="field" style="grid-column:span 2"><span>匯款帳號<em>*</em></span><input class="input" name="account" placeholder="銀行代碼、帳號、戶名"></label>
+        <div class="field bank-fields" style="grid-column:1/-1"><span>匯款帳號<em>*</em></span><div class="bank-grid">
+          <input class="input" name="bank_bank" placeholder="銀行（例如 台灣銀行）" aria-label="銀行">
+          <input class="input" name="bank_code" placeholder="銀行代碼（例如 004）" aria-label="銀行代碼" inputmode="numeric">
+          <input class="input" name="bank_branch" placeholder="分行（例如 新竹分行）" aria-label="分行">
+          <input class="input" name="bank_name" placeholder="戶名" aria-label="戶名">
+          <input class="input" name="bank_no" placeholder="帳號" aria-label="帳號" inputmode="numeric">
+        </div><span class="hint">銀行、分行、戶名、帳號必填；銀行代碼方便學員用 ATM 轉帳</span></div>
         <label class="field"><span>匯款期限（報名後幾天）</span><input class="input" name="payDays" type="number" min="0" value="1"><span class="hint">預設 1 = 報名隔天 23:59</span></label>
         <label class="field"><span>團報預留名額保留時數</span><input class="input" name="holdHours" type="number" min="0" value="72"></label>
         <label class="field"><span>候補遞補模式</span><select class="input" name="promoteMode"><option>手動</option><option>自動</option></select></label>
@@ -210,7 +216,8 @@ App.page('newproject', function (root) {
       formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(), signature: e.signature.value.trim(),
       start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
       groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
-      account: e.account.value.trim(), payDays: e.payDays.value, holdHours: e.holdHours.value,
+      bank: { bank: e.bank_bank.value.trim(), code: e.bank_code.value.trim(), branch: e.bank_branch.value.trim(), name: e.bank_name.value.trim(), no: e.bank_no.value.trim() },
+      payDays: e.payDays.value, holdHours: e.holdHours.value,
       squads: e.squads.value, emailDomains: e.emailDomains.value.trim(),
       promoteMode: e.promoteMode.value, waitOrder: e.waitOrder.value, mapping: mapping,
       display: $$('input[name=disp]:checked', root).map(function (i) { return i.value; }),
@@ -220,8 +227,10 @@ App.page('newproject', function (root) {
 
   function check(d) {
     if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
-    var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價'], ['account', '匯款帳號']];
+    var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價']];
     for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
+    var bankErr = bankError(d.bank);
+    if (bankErr) return bankErr;
     var dateErr = dateOrderError(d);
     if (dateErr) return dateErr;
     if (!d.mapping.name) return '請指定「學員姓名」對應的題目';
