@@ -63,6 +63,7 @@
       <div class="grid-3">
         <label class="field"><span>專案代碼（活頁前綴）<em>*</em></span><input class="input" name="prefix" placeholder="例如 2027S"><span class="hint">2–12 個英文或數字，同一屆所有活頁都用這個前綴</span></label>
         <label class="field" style="grid-column:span 2"><span>營隊名稱<em>*</em></span><input class="input" name="name"></label>
+        <label class="field" style="grid-column:1 / -1"><span>信件署名</span><input class="input" name="signature" placeholder="例如：清大醫工營籌辦團隊 敬上"><span class="hint">每封信最後置中顯示；可留空、之後在專案設定修改</span></label>
         <label class="field"><span>開始招生日期<em>*</em></span><input class="input" name="regStart" type="date"><span class="hint">這天 00:00 起系統開始受理報名</span></label>
         <label class="field"><span>預計結束招生日期</span><input class="input" name="regEnd" type="date"><span class="hint">這天 23:59 後的報名先記為「招生期外」，由管理員決定；可留空、之後可改</span></label>
         <span></span>
@@ -106,6 +107,7 @@
 <script>
 App.page('newproject', function (root) {
   var form = $('#np-form', root);
+  guardDates(form);
   var info = null;
 
   function showStep(n) {
@@ -139,6 +141,20 @@ App.page('newproject', function (root) {
     var box = $('#np-mapping', root);
     box.innerHTML = '';
     info.fieldKeys.forEach(function (k) {
+      if (k.multi) {
+        // 共同團報人可能分成好幾題（共同報名人 1、2、3…），全部勾起來
+        var cur = [].concat(info.mapping[k.key] || []);
+        var box = el('<div class="field multi-map"><span></span><div class="multi-q"></div><span class="hint">可複選：表單把每位同伴分成不同題目時，全部勾起來。</span></div>');
+        $('span', box).textContent = k.label + '（可複選）';
+        info.questions.forEach(function (q) {
+          var c = el('<label class="check"><input type="checkbox"><span></span></label>');
+          $('input', c).name = 'map_' + k.key; $('input', c).value = q; $('input', c).checked = cur.indexOf(q) >= 0;
+          $('span', c).textContent = q;
+          $('.multi-q', box).appendChild(c);
+        });
+        $('#np-mapping', root).appendChild(box);
+        return;
+      }
       var lab = el('<label class="field"><span></span><select class="input"></select></label>');
       $('span', lab).innerHTML = esc(k.label) + (k.key === 'name' || k.key === 'email' ? '<em>*</em>' : '');
       var sel = $('select', lab);
@@ -179,14 +195,17 @@ App.page('newproject', function (root) {
   function collect() {
     var e = form.elements;
     var mapping = {};
-    info.fieldKeys.forEach(function (k) { var v = e['map_' + k.key].value; if (v) mapping[k.key] = v; });
+    info.fieldKeys.forEach(function (k) {
+      if (k.multi) { var arr = $$('input[name=map_' + k.key + ']:checked', root).map(function (i) { return i.value; }); if (arr.length) mapping[k.key] = arr; return; }
+      var v = e['map_' + k.key].value; if (v) mapping[k.key] = v;
+    });
     var admins = $$('#np-admins > div', root).map(function (r) {
       var o = {};
       $$('[data-k]', r).forEach(function (i) { o[i.getAttribute('data-k')] = i.value.trim(); });
       return o;
     }).filter(function (a) { return a.email || a.name || a.password; });
     return {
-      formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(),
+      formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(), signature: e.signature.value.trim(),
       start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
       groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
       account: e.account.value.trim(), payDays: e.payDays.value, holdHours: e.holdHours.value,
@@ -200,8 +219,8 @@ App.page('newproject', function (root) {
     if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
     var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價'], ['account', '匯款帳號']];
     for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
-    if (d.end < d.start) return '營期結束不可早於開始';
-    if (d.regEnd && d.regEnd < d.regStart) return '結束招生日期不可早於開始招生日期';
+    var dateErr = dateOrderError(d);
+    if (dateErr) return dateErr;
     if (!d.mapping.name) return '請指定「學員姓名」對應的題目';
     if (!d.mapping.email && info.questions.indexOf('電子郵件地址') < 0) return '請指定「Email」對應的題目';
     for (var j = 0; j < d.coAdmins.length; j++) {
@@ -225,13 +244,18 @@ App.page('newproject', function (root) {
         '營期：' + d.start + ' – ' + d.end + '，上限 ' + d.capacity + ' 人',
         '原價 ' + d.price + (d.groupPrice ? '／團報 ' + d.groupPrice : '') + (d.earlyPrice ? '／早鳥 ' + d.earlyPrice + '（至 ' + (d.earlyDeadline || '未設定') + '）' : ''),
         '共同管理員：' + (d.coAdmins.map(function (a) { return a.name + ' ' + a.email; }).join('、') || '無'),
-        '表單既有 ' + info.responses + ' 筆回覆將匯入' + (d.notifyExisting ? '並寄出通知' : '，不寄通知'),
-        '之後每筆新回覆會即時判斷並自動寄出報名結果'
-      ],
-      okLabel: '建立專案'
+        '表單既有 ' + info.responses + ' 筆回覆將匯入' + (d.notifyExisting ? '並寄出通知' : '，不寄通知') + (info.needsApproval ? '（核准後才匯入）' : ''),
+        info.needsApproval ? '需要總管核准：核准前不收報名、不寄信，核准後才開始運作' : '之後每筆新回覆會即時判斷並自動寄出報名結果'
+      ].concat(info.staffNeedsApproval && d.coAdmins.length ? ['新加入的共同管理員需要核准後才能登入（已經有帳號的人不受影響）'] : []),
+      okLabel: info.needsApproval ? '送出核准' : '建立專案'
     }).then(function (ok) {
       if (!ok) return;
       withBusy(api('createProject', d)).then(function (r) {
+        if (r.pending) {
+          if (r.admins && r.admins.length) toast(r.admins.join('；'));
+          return confirmDialog({ title: '已送出核准', lines: ['專案「' + d.name + '」已建立，目前為「待核准」', '總管（或有核准權限的人）會收到通知；核准後開始收報名，並會寄信通知你'], okLabel: '回到選單', cancelLabel: null })
+            .then(function () { go('menu'); });
+        }
         toast('專案已建立，匯入 ' + r.imported + ' 筆回覆');
         if (r.admins && r.admins.length) toast(r.admins.join('；'));
         go('students', { prefix: r.prefix, title: d.name });
