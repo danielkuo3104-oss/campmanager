@@ -206,6 +206,23 @@ function formDialog(o) {
     if (f.type === 'checkbox') {
       wrap = el('<label class="check"><input type="checkbox" name="' + f.name + '"' + (f.value ? ' checked' : '') + '><span></span></label>');
       $('span', wrap).textContent = f.label;
+    } else if (f.type === 'checklist') {
+      // 多選清單（附搜尋）：options [{value, label, sub}]，回傳勾選的 value 陣列
+      wrap = el('<div class="field"><span></span><input class="input sm" type="search" placeholder="搜尋姓名"><div class="check-list"></div></div>');
+      $('span', wrap).innerHTML = esc(f.label) + (f.required ? '<em>*</em>' : '');
+      var cl = $('.check-list', wrap);
+      (f.options || []).forEach(function (op) {
+        var it = el('<label class="check"><input type="checkbox" data-cl="' + f.name + '"><span><span></span> <small class="muted"></small></span></label>');
+        $('input', it).value = op.value;
+        $('span span', it).textContent = op.label;
+        $('small', it).textContent = op.sub || '';
+        cl.appendChild(it);
+      });
+      $('input[type=search]', wrap).addEventListener('input', function (e) {
+        var q = e.target.value.trim().toLowerCase();
+        $$('label', cl).forEach(function (l) { l.classList.toggle('hidden', !!q && l.textContent.toLowerCase().indexOf(q) < 0); });
+      });
+      if (f.hint) { var h0 = el('<span class="hint"></span>'); h0.textContent = f.hint; wrap.appendChild(h0); }
     } else {
       wrap = el(f.format || (f.presets && f.presets.length) ? '<div class="field"><span></span></div>' : '<label class="field"><span></span></label>');
       $('span', wrap).innerHTML = esc(f.label) + (f.required ? '<em>*</em>' : '');
@@ -239,16 +256,36 @@ function formDialog(o) {
       validate: function () {
         for (var i = 0; i < o.fields.length; i++) {
           var f = o.fields[i];
+          if (f.type === 'checklist') { if (f.required && !$$('input[data-cl="' + f.name + '"]:checked', form).length) { err.textContent = '請至少勾選一位'; return false; } continue; }
           if (f.required && f.type !== 'checkbox' && !String(form.elements[f.name].value).trim()) { err.textContent = '請填寫「' + f.label + '」'; return false; }
         }
         return true;
       },
       value: function () {
         var out = {};
-        o.fields.forEach(function (f) { var i = form.elements[f.name]; out[f.name] = f.type === 'checkbox' ? i.checked : i.value; });
+        o.fields.forEach(function (f) {
+          if (f.type === 'checklist') { out[f.name] = $$('input[data-cl="' + f.name + '"]:checked', form).map(function (i) { return i.value; }); return; }
+          var i = form.elements[f.name]; out[f.name] = f.type === 'checkbox' ? i.checked : i.value;
+        });
         return out;
       }
     }]
+  });
+}
+
+/* ---------- 預製表單（匯款回報、取消候補、取消報名）的內容編輯 ---------- */
+var FORM_VAR_NAMES = { pay: '匯款回報', unwait: '取消候補', cancel: '取消報名' };
+
+/** 編輯一張表單的標題、按鈕文字、說明、送出後訊息；回傳 {title, button, intro, done} 或 null */
+function openFormEditor(f, desc) {
+  return formDialog({
+    title: '編輯「' + f.name + '」', desc: desc, wide: true, okLabel: '儲存',
+    fields: [
+      { name: 'title', label: '表單標題', required: true, value: f.title },
+      { name: 'button', label: '信裡按鈕的文字', required: true, value: f.button, hint: '信件可放 {{' + FORM_VAR_NAMES[f.kind] + '按鈕}}（置中的按鈕）或 {{' + FORM_VAR_NAMES[f.kind] + '連結}}（網址）' },
+      { name: 'intro', label: '表單說明（顯示在最上方）', type: 'textarea', format: true, value: f.intro, hint: '可用粗體、顏色、卡片等格式。學員先輸入姓名與身分證字號查到自己的報名，最後一欄固定是「任何想說的話」' },
+      { name: 'done', label: '送出後顯示的訊息', type: 'textarea', format: true, value: f.done }
+    ]
   });
 }
 
@@ -283,11 +320,14 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
-var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '0000/00/00 – 0000/00/00', '應繳金額': '0,000', '價格類型': 'OOO',
+var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
-  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%' };
+  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%',
+  '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
+  '取消候補按鈕': '[center][button=https://example.com/form.html]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
+  '取消報名按鈕': '[center][button=https://example.com/form.html]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
 function echoSampleHtml(fields) {
@@ -314,6 +354,17 @@ function lineLink(v) {
   if (/^https?:\/\/[^\s"'<>]+$/i.test(v)) return { href: v, label: 'LINE' };
   var m = v.match(/^@?([A-Za-z0-9._-]{2,40})$/);
   return m ? { href: 'https://line.me/ti/p/' + (v.charAt(0) === '@' ? '@' : '~') + m[1], label: 'LINE ID：' + v } : null;
+}
+
+/** {{匯款資訊}} 的預覽（與後端 payInfoHtml_ 相同的卡片列表） */
+function payInfoSampleHtml() {
+  var rows = [['應繳金額', '0,000 元（OOO）', 'amount'], ['匯款期限', '0000/00/00 00:00', 'deadline'], ['銀行', 'OOO銀行（000）'], ['分行', 'OOO分行'], ['戶名', 'OOO'], ['帳號', '000-000-000000', 'no']];
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:12px 0;border-collapse:separate;border-spacing:0;background:#f6f8f7;border:1px solid #e3e8e5;border-radius:12px">' +
+    rows.map(function (r, i) {
+      var style = r[2] === 'amount' ? 'font-size:18px;font-weight:700;color:#1f2937' : r[2] === 'deadline' ? 'font-weight:700;color:#b3261e' : r[2] === 'no' ? 'font-weight:700;color:#1f2937;letter-spacing:.5px' : 'color:#1f2937';
+      return '<tr><td style="padding:10px 16px;width:84px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top' + (i ? ';border-top:1px solid #e3e8e5' : '') + '">' + esc(r[0]) + '</td>' +
+        '<td style="padding:10px 16px 10px 0;' + style + (i ? ';border-top:1px solid #e3e8e5' : '') + '">' + esc(r[1]) + '</td></tr>';
+    }).join('') + '</table>';
 }
 
 /** 聯絡人員（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
@@ -389,6 +440,7 @@ function formatToolbar(ta, opts) {
     '<button type="button" class="fmt-btn" data-f="hl" title="螢光標記 ==文字==" style="background:#fde68a;color:#111">螢光</button>' +
     '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button>' +
     '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button>' +
+    '<button type="button" class="fmt-btn fmt-card" data-f="card" title="卡片：[card]文字[/card]，淡色底、粗體色字的提醒方塊；用左邊的色號或顏色代號換顏色">卡片</button>' +
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
     '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
@@ -424,6 +476,11 @@ function formatToolbar(ta, opts) {
     if (f === 'bold') wrapSelection(ta, '**', '**', '粗體文字');
     if (f === 'hl') wrapSelection(ta, '==', '==', '標記文字');
     if (f === 'center') wrapSelection(ta, '[center]', '[/center]', '置中文字');
+    if (f === 'card') {
+      // 卡片用目前選的色號；預設紅色時直接寫 [card]
+      var cc = mainHex(); if (!cc) return;
+      wrapSelection(ta, cc === '#c62828' ? '[card]' : '[card=' + cc + ']', '[/card]', '請務必於期限前完成匯款');
+    }
     if (f === 'note') {
       // 沒選取文字時，備註自成一行，比較好認
       var v1 = ta.value, a1 = ta.selectionStart, z1 = ta.selectionEnd;
@@ -663,6 +720,15 @@ function textOn(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 160 ? '#111111' : '#ffffff';
 }
 
+var CARD_COLOR = '#b3261e';
+/** 卡片底色：顏色和白色混合 */
+function tint(hex, ratio) {
+  hex = normHex(hex) || CARD_COLOR;
+  var out = '#';
+  for (var i = 1; i < 7; i += 2) { var v = Math.round(parseInt(hex.substr(i, 2), 16) * ratio + 255 * (1 - ratio)); out += ('0' + v.toString(16)).slice(-2); }
+  return out;
+}
+
 function formatMarkup(html) {
   var out = String(html || '');
   for (var i = 0; i < 3; i++) {   // 允許粗體與顏色互相包住
@@ -683,11 +749,21 @@ function formatMarkup(html) {
     out = out.replace(/\[(特大|大|中|小)\]([\s\S]*?)\[\/\1\]/g, function (_, k, t) { return '<span style="font-size:' + MAIL_SIZES[k] + 'px;line-height:1.5">' + t + '</span>'; });
   }
   out = out.replace(/==([^=\n][\s\S]*?)==/g, '<span style="background:#fde68a;padding:0 2px;border-radius:3px">$1</span>');
+  out = out.replace(new RegExp('(?:<br>)?\\[card(?:=([ROYGBPK]|' + HEX_RE + '))?\\]([\\s\\S]*?)\\[\\/card\\](?:<br>)?', 'g'), function (_, c, t) {
+    var col = c ? (MAIL_COLOR_CODES[c] || normHex(c)) : CARD_COLOR;
+    return '<div style="margin:14px 0;padding:16px 20px;border-radius:12px;background:' + tint(col, 0.1) + ';color:' + col + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
+  });
   out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
+  out = out.replace(/\[nowrap\]([\s\S]*?)\[\/nowrap\]/g, '<span style="white-space:nowrap">$1</span>');
   return out.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
 }
 
 /** 已跳脫的信件文字 → HTML：先處理條列與換行，再套用粗體、顏色等格式 */
+/** 區塊（卡片、置中、表格、分隔線、條列）前後多出來的 <br> 會變成一整行空白，拿掉 */
+function blockBr(html) {
+  return String(html || '').replace(/(?:<br>)+(?=<(?:div|table|hr|ul)\b)/g, '').replace(/(<\/(?:div|table|ul)>|<hr[^>]*>)(?:<br>)+/g, '$1');
+}
+
 function mailTextToHtml(text) {
   var html = '', list = null, lastBlock = false;
   function flush() {
@@ -716,11 +792,16 @@ function mailTextToHtml(text) {
     }
     if (top) { list = list || []; list.push({ text: top[1], subs: [] }); return; }
     flush();
+    if (!ln.trim()) {   // 空行＝段落間距：固定 12px，不用整行高的 <br>（手機信箱會放大成一大段空白）
+      if (html) html += '<div style="height:12px;line-height:12px;font-size:1px">&nbsp;</div>';
+      lastBlock = true;
+      return;
+    }
     html += (html && !lastBlock ? '<br>' : '') + ln;
     lastBlock = false;
   });
   flush();
-  return formatMarkup(html);
+  return blockBr(formatMarkup(html));
 }
 
 /** 編輯時即時預覽：代入範例值後轉成與實際信件相同的 HTML */
@@ -750,10 +831,10 @@ function mailClosingPreview(footer, signature, vars, contactsHtml) {
 
 function mailPreviewDoc(campName, bodyHtml, headerColor) {
   var head = normHex(headerColor) || '#2f5d62';
-  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:16px">' +
+  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:24px">' +
     '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
-    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:14px 22px;font-size:15px;font-weight:700">' + esc(campName) + '</div>' +
-    '<div style="padding:20px 22px;font-size:14px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
+    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:16px 24px;font-size:16px;font-weight:700">' + esc(campName) + '</div>' +
+    '<div style="padding:24px;font-size:15px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
 }
 
 /**
@@ -769,7 +850,7 @@ function openTemplateEditor(t, opts) {
   var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
-    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
+    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
@@ -836,7 +917,7 @@ function openTemplateEditor(t, opts) {
   $('.tpl-bar', body).appendChild(formatToolbar(bodyEd, { vars: true }));
   function preview() {
     $('[data-subj]', body).textContent = '主旨：' + stripNotes(subj.value).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, k) { return sample[k] !== undefined ? sample[k] : m; })
-      .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[\/?(?:特大|大|中|小)\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
+      .replace(/\*\*|==|\[\/?[ROYGBPK]\]|\[\/?center\]|\[\/?nowrap\]|\[\/?(?:特大|大|中|小)\]|\[color=#[0-9a-fA-F]{3,6}\]|\[\/color\]/g, '');
     // 報名成功、候補、遞補錄取：專案有勾選回覆內容時會自動附在最後
     var text = ta.value;
     var auto = false;
@@ -850,7 +931,8 @@ function openTemplateEditor(t, opts) {
     var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
     html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], html.split('%%CONTACTS%%').join(contacts), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
+    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml());
+    frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], blockBr(html.split('%%CONTACTS%%').join(contacts)), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
   bindHexField($('.tpl-headhex', body));
@@ -1204,7 +1286,7 @@ App.page = function (name, init) {
     // 上次確認過的登入資料先用，畫面不用等；背景再向後端確認一次（失效會自動跳回登入頁）
     var known = cacheGet(cacheKey('whoami'));
     var quick = !!(known && !known.mustChange && !known.termsNeeded);
-    var check = api('whoami').then(function (u) {
+    var check = api('whoami', location.href).then(function (u) {
       cacheSet(cacheKey('whoami'), u);
       if (quick) { if (u.mustChange || u.termsNeeded) location.reload(); else App.user = u; }   // 需要改密碼或重新同意條款：重新走一次檢查
       return u;
