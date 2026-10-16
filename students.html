@@ -148,6 +148,7 @@ App.page('students', function (root, params) {
     var t = tier(s);
     if (filter === 'warn' && t !== 0 && !hasIssue(s)) return false;
     if (filter === 'refund' && !refundReq(s)) return false;
+    if (filter === 'consent' && !consentWait(s)) return false;
     if (squadFilter !== '' && D.project.squads > 0 && String(s.squad === '' ? 0 : s.squad) !== squadFilter) return false;
     if (filter === 'todo' && t !== 1 && t !== 0) return false;
     if (filter === 'done' && t !== 2) return false;
@@ -206,8 +207,10 @@ App.page('students', function (root, params) {
     var chips = $('#st-chips', root);
     chips.innerHTML = '';
     var nRefund = D.students.filter(refundReq).length;
+    var nConsent = D.students.filter(consentWait).length;
     if (filter === 'refund' && !nRefund) filter = 'all';
-    FILTERS.concat(nRefund ? [{ key: 'refund', label: '待退款 ' + nRefund, bad: true }] : []).forEach(function (f) {
+    if (filter === 'consent' && !nConsent) filter = 'all';
+    FILTERS.concat(nRefund ? [{ key: 'refund', label: '待退款 ' + nRefund, bad: true }] : [], nConsent ? [{ key: 'consent', label: '同意書待審 ' + nConsent }] : []).forEach(function (f) {
       var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + '' + (filter === f.key ? ' on' : '') + '" type="button"></button>');
       c.textContent = f.label;
       c.addEventListener('click', function () { filter = f.key; render(); });
@@ -412,6 +415,7 @@ App.page('students', function (root, params) {
       issueOrder.forEach(function (k) { tags += '<span class="tag bad" title="' + esc(issueTip[k].join('\n') + '\n報名信已提醒更正') + '">' + k + (issueTip[k].length > 1 ? ' ×' + issueTip[k].length : '') + '</span>'; });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
       if (refundReq(s)) tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
+      if (consentWait(s)) tags += '<span class="tag warn" title="學員已簽同意書，點開直接看簽名並審核">同意書待審</span>';
       if (s.room && tierOk(s)) tags += '<span class="tag" title="房間">房 ' + esc(s.room) + '</span>';
       var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted deadline-note" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
@@ -553,7 +557,7 @@ App.page('students', function (root, params) {
       var out = {};
       list.forEach(function (f) {
         var o = {};
-        if (f.kind === 'consent') { if (f.open) o.on = true; if (f.mode && f.mode !== 'online') o.mode = f.mode; }
+        if (f.kind === 'consent') { if (f.open) o.on = true; if (f.mode && f.mode !== 'online') o.mode = f.mode; if (f.keepMonths !== undefined && f.keepMonths !== 12) o.keepMonths = f.keepMonths; }
         else if (!f.open) o.off = true;
         (f.fields || ['title', 'intro', 'done', 'button']).forEach(function (k) { if (f[k + 'Own']) o[k] = f[k]; });
         out[f.kind] = o;
@@ -594,6 +598,17 @@ App.page('students', function (root, params) {
           saveForms(function (out) { if (m === 'online') delete out.consent.mode; else out.consent.mode = m; }, '已更新同意書的簽署方式');
         });
         row.appendChild(ms);
+        // 保存期限：營隊結束後 N 個月自動把簽名與上傳的檔案移到雲端硬碟垃圾桶
+        var ks = el('<div class="pf-mode"><span class="small muted">檔案保存</span><select class="input sm"' + (ro ? ' disabled' : '') + '>' +
+          [1, 3, 6, 12, 24, 36].map(function (n) { return '<option value="' + n + '">營隊結束後 ' + n + ' 個月刪除</option>'; }).join('') + '<option value="0">不自動刪除</option></select>' +
+          '<span class="small muted"></span></div>');
+        $('select', ks).value = String(f.keepMonths === undefined ? 12 : f.keepMonths);
+        $$('span', ks)[1].textContent = f.purged ? '檔案已於 ' + fmtTime(f.purged) + ' 依保存期限刪除' : f.keepUntil ? '到 ' + f.keepUntil + ' 自動刪除（先移到雲端硬碟垃圾桶，30 天內可救回）；個資同意書的 {{同意書保存期限}} 會跟著改' : '不會自動刪除，需要時請到雲端硬碟手動刪除';
+        $('select', ks).addEventListener('change', function (e) {
+          var k = Number(e.target.value);
+          saveForms(function (out) { if (k === 12) delete out.consent.keepMonths; else out.consent.keepMonths = k; }, '已更新同意書的保存期限');
+        });
+        row.appendChild(ks);
       }
       if ($('[data-a=edit]', row)) $('[data-a=edit]', row).addEventListener('click', function () {
         openFormEditor(f, '只影響這個專案；跟系統預設一樣的部分會繼續跟著預設。').then(function (v) {
@@ -601,7 +616,7 @@ App.page('students', function (root, params) {
         });
       });
       if ($('[data-a=reset]', row)) $('[data-a=reset]', row).addEventListener('click', function () {
-        saveForms(function (out) { var keep = {}; ['on', 'off', 'mode'].forEach(function (k) { if (out[f.kind][k] !== undefined) keep[k] = out[f.kind][k]; }); out[f.kind] = keep; }, '「' + f.name + '」改回跟著系統預設');
+        saveForms(function (out) { var keep = {}; ['on', 'off', 'mode', 'keepMonths'].forEach(function (k) { if (out[f.kind][k] !== undefined) keep[k] = out[f.kind][k]; }); out[f.kind] = keep; }, '「' + f.name + '」改回跟著系統預設');
       });
       box.appendChild(row);
     });
@@ -959,6 +974,50 @@ App.page('students', function (root, params) {
     }).catch(function (e) { toast(e.message, true); });
   }
 
+  function consentWait(s) { return !!(s.consent && !s.consent.review); }
+
+  /** 待審核的同意書直接攤開：簽名圖片與上傳的照片直接顯示，PDF 與簽署紀錄點按鈕看 */
+  function showConsentInline(s, box) {
+    (s.consent.files || []).forEach(function (f, i) {
+      var item = el('<figure class="consent-fig"><figcaption></figcaption><div class="consent-ph small muted">載入中…</div></figure>');
+      $('figcaption', item).textContent = f.label || f.name;
+      box.appendChild(item);
+      if (!/^image\//.test(f.mime)) {
+        var b = el('<button class="btn sm ghost" type="button">' + (f.mime === 'application/pdf' ? '打開 PDF' : '看簽署紀錄（同意書全文）') + '</button>');
+        b.addEventListener('click', function () { showConsentFile(s, f); });
+        $('.consent-ph', item).replaceWith(b);
+        item.removeChild($('figcaption', item));
+        return;
+      }
+      api('getConsentFile', prefix, s.id, f.id).then(function (r) {
+        var im = new Image();
+        im.className = 'consent-img'; im.alt = f.label || f.name;
+        im.onerror = function () { $('.consent-ph', item) && ($('.consent-ph', item).textContent = '圖片無法顯示，請按下方「查看」下載檢查'); };
+        im.onload = function () { var ph = $('.consent-ph', item); if (ph) ph.replaceWith(im); };
+        im.addEventListener('click', function () { showConsentFile(s, f); });
+        im.src = 'data:' + r.mime + ';base64,' + r.data;
+      }).catch(function (e) { var ph = $('.consent-ph', item); if (ph) ph.textContent = e.message; });
+    });
+  }
+
+  /** 審核通過：一鍵完成，不寄信，區塊收起來 */
+  function consentPass(s) {
+    withBusy(api('runAction', prefix, s.id, 'consentPass', {})).then(function () {
+      toast('同意書審核通過');
+      var rv = { ok: true, t: new Date().toISOString(), by: '你', reason: '' };
+      s.consent.review = rv; openDetail(s);   // 先在畫面上收起來，再背景更新名單
+      return load().then(function () {
+        var n = D.students.filter(function (x) { return x.id === s.id; })[0];
+        if (n && n.consent && !n.consent.review) n.consent.review = rv;
+        if (detail && n) openDetail(n);
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+  /** 不通過：填原因 → 預覽「同意書重簽通知」→ 寄出 */
+  function consentRedo(s) {
+    ask('同意書不通過：' + s.name, [{ name: 'reason', label: '要重簽的原因（會寫在信裡）', type: 'textarea', required: true, presets: P('consentRedo') }], function (v) { run(s, 'consentRedo', v); });
+  }
+
   function openDetail(s) {
     closeDetail();
     var p = D.project;
@@ -1000,15 +1059,25 @@ App.page('students', function (root, params) {
     html += '<div class="drawer-section"><h3>報名資訊</h3><dl class="kv">' +
       sys.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl></div>';
 
-    // 同意書：專案有開放或學員簽過時顯示
+    // 同意書：專案有開放或學員簽過時顯示。待審核時直接攤開簽名與檔案，按「審核通過」收起來，「不通過」寄重簽通知
     var cf = (p.forms || []).filter(function (x) { return x.kind === 'consent'; })[0], cs = s.consent;
     if (cs || (cf && cf.open && tierOk(s))) {
-      html += '<div class="drawer-section"><h3>同意書</h3>' + (cs
-        ? '<div class="consent-box"><div><span class="pill ok">已簽署</span>　' + esc(fmtTime(cs.t)) + '・' + (cs.mode === 'upload' ? '下載後上傳' : '線上簽署') + '</div>' +
+      var rv = cs && cs.review, csHtml;
+      if (!cs) csHtml = '<div class="consent-box"><span class="pill mute">尚未簽署</span>　<span class="small muted">信件可放 {{簽署同意書按鈕}}，學員專區也會出現「' + esc(cf.button) + '」按鈕</span></div>';
+      else {
+        var st = !rv ? '<span class="pill warn">待審核</span>' : rv.ok ? '<span class="pill ok">審核通過</span>' : '<span class="pill bad">已請重簽</span>';
+        var files = (cs.files || []).map(function (f, i) { return '<button class="btn sm ghost" type="button" data-cf="' + i + '">' + esc(f.label || f.name) + '</button>'; }).join('');
+        csHtml = '<div class="consent-box"><div>' + st + '　' + esc(fmtTime(cs.t)) + ' 簽署・' + (cs.mode === 'upload' ? '下載後上傳' : '線上簽署') + '</div>' +
           '<div class="small muted">' + esc((cs.docs || []).map(function (d) { return d.title; }).join('、')) + '</div>' +
           '<div class="small">' + esc((cs.signers || []).join('；')) + (cs.age !== null && cs.age !== undefined ? '　（營期開始時 ' + cs.age + ' 歲）' : '　（沒有出生日期，依未成年辦理）') + '</div>' +
-          '<div class="consent-files">' + (cs.files || []).map(function (f, i) { return '<button class="btn sm ghost" type="button" data-cf="' + i + '">' + esc(f.label || f.name) + '</button>'; }).join('') + '</div></div>'
-        : '<div class="consent-box"><span class="pill mute">尚未簽署</span>　<span class="small muted">信件可放 {{簽署同意書按鈕}}，學員專區也會出現「' + esc(cf.button) + '」按鈕</span></div>') + '</div>';
+          (!rv && !(cf && cf.purged) ? '<div class="consent-inline" id="cs-inline"></div>' +
+            (D.readOnly ? '' : '<div class="row wrap" style="gap:8px"><button class="btn primary sm" type="button" data-cr="pass">審核通過</button><button class="btn sm" type="button" data-cr="redo">不通過，寄重簽通知</button></div>')
+          : cf && cf.purged ? '<div class="small muted">簽名與檔案已於 ' + esc(fmtTime(cf.purged)) + ' 依保存期限刪除</div>'
+          : rv.ok ? '<div class="small muted">' + esc(fmtTime(rv.t)) + '・' + esc(rv.by) + ' 審核通過</div><details class="consent-more"><summary>查看簽名與檔案</summary><div class="consent-files">' + files + '</div></details>'
+          : '<div class="small">不通過原因：' + esc(rv.reason) + '</div><div class="small muted">' + esc(fmtTime(rv.t)) + '・' + esc(rv.by) + ' 已寄重簽通知，等學員重新簽署</div><div class="consent-files">' + files + '</div>') +
+          '</div>';
+      }
+      html += '<div class="drawer-section"><h3>同意書</h3>' + csHtml + '</div>';
     }
 
     var titles = (p.questions || []).slice();
@@ -1032,6 +1101,11 @@ App.page('students', function (root, params) {
       if (go) go.addEventListener('click', function () { cancelDialog(s); });
     }
 
+    var inl = $('#cs-inline', detail.body);
+    if (inl) showConsentInline(s, inl);
+    $$('[data-cr]', detail.body).forEach(function (b) {
+      b.addEventListener('click', function () { if (b.getAttribute('data-cr') === 'pass') consentPass(s); else consentRedo(s); });
+    });
     $$('[data-cf]', detail.body).forEach(function (b) {
       b.addEventListener('click', function () { showConsentFile(s, s.consent.files[Number(b.getAttribute('data-cf'))]); });
     });
