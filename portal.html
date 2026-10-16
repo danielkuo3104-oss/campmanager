@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -45,8 +46,9 @@
     .pt-status { display: inline-flex; align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; background: var(--accent-soft, #e5edfb); color: var(--accent, #2b5fb4); }
     .pt-status.gone { background: var(--bad-soft); color: var(--bad); }
     .pt-text { line-height: 1.8; }
-    .pt-steps { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
-    .pt-steps li { flex: 1 1 64px; min-width: 0; padding: 9px 4px; border-radius: 10px; background: var(--surface-2, #f4f5f3); color: var(--text-3); font-size: 12.5px; text-align: center; white-space: nowrap; }
+    .pt-steps { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; list-style: none; margin: 0; padding: 0; }
+    .pt-steps li { min-width: 0; padding: 9px 3px; border-radius: 10px; background: var(--surface-2, #f4f5f3); color: var(--text-3); font-size: 12.5px; line-height: 1.35; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; word-break: keep-all; overflow-wrap: anywhere; }
+    .pt-steps li i { font-style: normal; font-size: 11px; line-height: 1; }
     .pt-steps li.done { background: var(--accent-soft, #e5edfb); color: var(--accent, #2b5fb4); font-weight: 500; }
     .pt-steps li.now { background: var(--accent, #2b5fb4); color: #fff; font-weight: 700; }
     .pt-info { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -55,6 +57,16 @@
     .pt-info b { color: var(--text-2); font-weight: 500; }
     .pt-info span { min-width: 0; word-break: break-word; }
     .pt-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pt-acts .btn.done { background: var(--surface-2, #f4f5f3); color: var(--text-3); border-color: var(--line); box-shadow: none; }
+    .pt-fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+    .pt-fold > summary::-webkit-details-marker { display: none; }
+    .pt-fold > summary::after { content: ''; width: 8px; height: 8px; border-right: 2px solid var(--text-3); border-bottom: 2px solid var(--text-3); transform: rotate(45deg); margin-left: auto; transition: transform .15s; }
+    .pt-fold[open] > summary::after { transform: rotate(-135deg); }
+    .pt-fold-hint { font-size: 12px; color: var(--text-3); }
+    .pt-fold[open] .pt-fold-hint { display: none; }
+    .pt-rich [data-cb] { display: flex !important; gap: 10px; align-items: flex-start; padding: 6px 0 !important; text-indent: 0 !important; cursor: pointer; }
+    .pt-rich [data-cb] .pt-cbx { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--accent, #2b5fb4); }
+    .pt-rich [data-cb].on { color: var(--text-3); text-decoration: line-through; }
     .pt-msg { padding: 14px 16px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); line-height: 1.7; }
     .pt-err { color: var(--bad); min-height: 18px; font-size: 13px; }
     .pt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -78,6 +90,10 @@
     .pt-cd .nums div { min-width: 64px; padding: 10px 6px; border-radius: 12px; background: var(--surface-2, #f4f5f3); display: flex; flex-direction: column; gap: 2px; }
     .pt-cd .nums b { font-size: 28px; line-height: 1.1; color: var(--accent, #2b5fb4); font-variant-numeric: tabular-nums; }
     .pt-cd .nums span { font-size: 12px; color: var(--text-3); }
+    .pt-cd[data-lvl=yellow] .nums div { background: #fbf4dc; } .pt-cd[data-lvl=yellow] .nums b { color: #a37b06; }
+    .pt-cd[data-lvl=orange] .nums div { background: #fcebd9; } .pt-cd[data-lvl=orange] .nums b { color: #d06a12; }
+    .pt-cd[data-lvl=deep] .nums div { background: #fadfcc; } .pt-cd[data-lvl=deep] .nums b { color: #b4480b; }
+    .pt-cd[data-lvl=red] .nums div { background: #fbe0de; } .pt-cd[data-lvl=red] .nums b { color: #c62828; }
     .pt-cd .big { font-size: 20px; font-weight: 700; color: var(--accent, #2b5fb4); }
     .pt-check { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .pt-check label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; line-height: 1.6; }
@@ -196,9 +212,13 @@
         countdown: function () { return '<div data-cd></div>'; },
         status: function () {
           return card('報名進度', '<span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
-            (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '✓ ' : '') + esc(s.label) + '</li>'; }).join('') + '</ol>' : '') +
+            (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '<i>✓</i>' : '') + '<span>' + esc(s.label) + '</span>' + '</li>'; }).join('') + '</ol>' : '') +
             (d.statusText ? '<div class="pt-text"></div>' : '') +
-            (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a) { return preview ? '<span class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" title="預覽中不能點">' + esc(a.label) + '</span>' : '<a class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" href="' + esc(a.url) + '">' + esc(a.label) + '</a>'; }).join('') + '</div>' : ''));
+            (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a, i) {
+              // 已回報過匯款的按鈕變灰；預覽時按鈕不會開表單，點了只提示
+              var cls = 'btn ' + (a.kind === 'pay' && !a.done ? 'primary' : a.done ? 'done' : 'ghost');
+              return preview ? '<span class="' + cls + '" data-pv>' + esc(a.label) + '</span>' : '<a class="' + cls + '" data-a="' + i + '" href="' + esc(a.url) + '">' + esc(a.label) + (a.done ? '（已回報）' : '') + '</a>';
+            }).join('') + '</div>' : ''));
         },
         squad: function () {
           if (!d.squad) return '';
@@ -209,8 +229,9 @@
             }).join('') + '</div>' : ''));
         },
         pay: function () { return d.payHtml ? card('繳費資訊', '<div class="pt-rich">' + d.payHtml + '</div>') : ''; },
-        info: function () { return card('報名資訊', infoTable(d.info)); },
-        data: function () { return d.dataHtml ? card('', '<div class="pt-rich">' + d.dataHtml + '</div>') : ''; },
+        info: function () { return '<details class="card pt-blk pt-fold"><summary><h2>報名資訊</h2><span class="pt-fold-hint">點開查看</span></summary>' + infoTable(d.info) + '</details>'; },
+        // 報名資料：預設收起來，點標題展開
+        data: function () { return d.dataHtml ? '<details class="card pt-blk pt-fold"><summary><h2>報名資料</h2><span class="pt-fold-hint">點開查看</span></summary><div class="pt-rich">' + d.dataHtml + '</div></details>' : ''; },
         refund: function () { return d.refundHtml ? card('', '<div class="pt-rich">' + d.refundHtml + '</div>') : ''; },
         reports: function () { return d.reports.length ? card('我送出的表單', '<div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div>') : ''; },
         hotel: function () { return d.hotelHtml ? card('飯店資訊', '<div class="pt-rich">' + d.hotelHtml + '</div>') : ''; },
@@ -235,6 +256,21 @@
       // 姓名打錯但身分證字號對得上：一樣讓他看，最上方提示請籌辦團隊修改
       if (d.nameNotice) h = '<div class="pt-msg">' + esc(d.nameNotice) + '</div>' + h;
       blocks.innerHTML = h;
+      blocks.querySelectorAll('[data-pv]').forEach(function (b) { b.addEventListener('click', function () { alert('這是管理員預覽，按鈕不會開啟表單；學員登入後點這裡就會開啟。'); }); });
+      blocks.querySelectorAll('a[data-a]').forEach(function (b) {
+        var a = d.actions[Number(b.getAttribute('data-a'))];
+        if (a && a.warn) b.addEventListener('click', function (e) { if (!confirm(a.warn)) e.preventDefault(); });
+      });
+      // 核取方塊（編輯器的「☐ 核取」）：學員可以打勾，只記在這支手機
+      blocks.querySelectorAll('.pt-rich [data-cb]').forEach(function (row, n) {
+        var mark = row.firstElementChild, k = 'portal_cb_' + prefix + '_' + d.name + '_' + n + '_' + row.textContent.slice(1, 40), on = row.getAttribute('data-cb') === '1';
+        try { var v = localStorage.getItem(k); if (v !== null) on = v === '1'; } catch (e) {}
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = on; cb.disabled = !!preview; cb.className = 'pt-cbx';
+        if (mark) mark.replaceWith(cb); else row.insertBefore(cb, row.firstChild);
+        row.classList.toggle('on', on);
+        cb.addEventListener('change', function () { row.classList.toggle('on', cb.checked); try { localStorage.setItem(k, cb.checked ? '1' : '0'); } catch (e) {} });
+        row.addEventListener('click', function (e) { if (e.target !== cb && !preview && !e.target.closest('a')) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
+      });
       // 營隊倒數放到管理員排的位置；隱藏時留在最上面（不顯示）
       var slot = blocks.querySelector('[data-cd]');
       if (slot) slot.parentNode.replaceChild(cdBox, slot); else top.parentNode.insertBefore(cdBox, top);
@@ -275,8 +311,11 @@
       box.hidden = false;
       if (left > 0) {
         var s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+        // 越接近越醒目：剩一個月內黃、一週內橘、剩一天深橘、不到一天紅
+        box.setAttribute('data-lvl', d < 1 ? 'red' : d < 2 ? 'deep' : d < 7 ? 'orange' : d < 30 ? 'yellow' : '');
         box.innerHTML = '<div class="lbl">距離營隊開始還有</div><div class="nums"><div><b>' + d + '</b><span>天</span></div><div><b>' + pad(h) + '</b><span>時</span></div><div><b>' + pad(m) + '</b><span>分</span></div><div><b>' + pad(sec) + '</b><span>秒</span></div></div>';
       } else if (info.endMs && now < info.endMs) {
+        box.setAttribute('data-lvl', '');
         box.innerHTML = '<div class="big">營隊進行中</div><div class="lbl">祝大家玩得開心！</div>';
         clearInterval(cdTimer);
       } else {
@@ -327,5 +366,6 @@
   }).catch(function (e) { closed(e.message); });
 })();
 </script>
+<footer style="text-align:center;color:#9aa3a0;font-size:12px;padding:8px 16px calc(20px + env(safe-area-inset-bottom, 0px))">營隊報名管理系統　© 2026 Daniel GUO. All rights reserved.</footer>
 </body>
 </html>
