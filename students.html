@@ -421,7 +421,7 @@ App.page('students', function (root, params) {
         var raw = String(s.data[c] === undefined || s.data[c] === null ? '' : s.data[c]);
         var tip = /^https?:\/\//i.test(raw) ? '' : ' title="' + esc(raw) + '"';
         if (i === 0) {
-          html += '<td class="cell-name"><div class="clip-1 name-strong"' + tip + '>' + valueHtml(s.data[c] || s.name) + '</div>' + (tags ? '<div>' + tags + '</div>' : '') + '</td>';
+          html += '<td class="cell-name"><div class="clip-1 name-strong"' + tip + '>' + valueHtml(s.data[c] || s.name) + '</div>' + (tags ? '<div class="name-tags">' + tags + '</div>' : '') + '</td>';
           if (sq) html += '<td class="cell-squad">' + (s.squad === '' ? '<span class="muted">—</span>' : esc(s.squad)) + '</td>';
         }
         else html += '<td class="cell-clip' + (highlightHit(hl[c], raw) ? ' hl' : '') + '"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
