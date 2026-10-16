@@ -1,3 +1,4 @@
+/* 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. */
 /* 學員名單匯出 PDF：勾選欄位、選直式或橫式，在瀏覽器產生 PDF 直接下載。
  * 中文用網頁已載入的 Noto Sans TC 排版後轉成圖片放進 PDF，所以任何電腦都不會缺字。
  * 需要的兩個程式庫（html2canvas、jsPDF）第一次匯出時才從 cdnjs 載入。 */
@@ -265,7 +266,7 @@ function buildStudentsPdf_(o) {
         } else {
           $('.pdf-cont', pg).textContent = p.name + '　學員名單（續）';
         }
-        $('.pdf-foot span', pg).textContent = p.prefix + '　' + stamp + '　·　含學員個資，僅供營隊用途，請勿外流';
+        $('.pdf-foot span', pg).textContent = p.prefix + '　' + stamp + '　·　含學員個資，僅供營隊用途，請勿外流　·　' + COPYRIGHT;
         host.appendChild(pg);
         pages.push(pg);
         return pg;
