@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -116,7 +117,8 @@
 
   function confirmStep(r) {
     var info = '<div class="pf-info">' + r.info.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
-    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info;
+    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info +
+      (kind === 'pay' && r.info.some(function (x) { return x[0] === '上次回報'; }) ? '<div class="pf-msg">你已經回報過匯款了，籌辦團隊查帳後會寄確認信。只有補匯差額或上次填錯時才需要再回報一次。</div>' : '');
     if (!r.ok) {
       body.innerHTML = html + '<div class="pf-msg"></div><div><button class="btn" type="button" id="pf-back">重新查詢</button></div>';
       body.querySelector('.pf-msg').textContent = r.message;
@@ -189,5 +191,6 @@
   }).catch(function (e) { closed(e.message); });
 })();
 </script>
+<footer style="text-align:center;color:#9aa3a0;font-size:12px;padding:8px 16px calc(20px + env(safe-area-inset-bottom, 0px))">營隊報名管理系統　© 2026 Daniel GUO. All rights reserved.</footer>
 </body>
 </html>
