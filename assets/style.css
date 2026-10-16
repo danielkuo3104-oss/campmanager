@@ -313,8 +313,9 @@
   table.list tbody tr { cursor: pointer; transition: background .12s; }
   table.list tbody tr:hover td { background: #f2f7f6; }
   table.list tr.faded td { opacity: .45; }
-  table.list tr.group-start td { border-top: 2px solid #e6d7c3; }
-  table.list tr.in-group td:first-child { box-shadow: inset 3px 0 0 #d9b98f; }
+  table.list tr.group-start td { border-top: 2px solid #e6d7c3; border-top-color: color-mix(in srgb, var(--gc, #d9b98f) 45%, transparent); }
+  table.list tr.in-group td:first-child { box-shadow: inset 4px 0 0 var(--gc, #d9b98f); }
+  table.list tr.in-group .tag.group::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--gc, #d9b98f); margin-right: 5px; vertical-align: 1px; }
   table.list td.cell-clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table.list th.th-clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
   table.list td.cell-name .clip-1 { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -571,3 +572,20 @@
     .room-row { grid-template-columns: 1fr 1fr 70px; }
     .room-row [data-k=note] { grid-column: 1 / 3; }
   }
+
+/* 名單強調顯示：淡淡的暖色底，看得出差別但不搶眼；匯出 PDF 同色 */
+table.list td.hl { background: #f5eedf; box-shadow: inset 0 0 0 1px #ebdfc4; }
+table.list tr:hover td.hl { background: #efe6d2; }
+.pdf-table tbody tr td.hl, .pdf-table tbody tr:nth-child(even) td.hl { background: #f3ead6; }
+.col-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; max-height: 60vh; overflow: auto; }
+.col-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.col-row:last-child { border-bottom: 0; }
+.col-vals[hidden] { display: none; }
+.col-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.col-main .check { min-width: 0; }
+.col-main .check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-main .col-hl { width: 220px; flex: none; height: 34px; padding: 0 10px; font-size: 13px; }
+.col-vals { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: #f8f4ea; margin-left: 26px; }
+.col-opts { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.col-vals .col-extra { height: 34px; font-size: 13px; }
+@media (max-width: 560px) { .col-main { flex-wrap: wrap; } .col-main .col-hl { width: 100%; } .col-vals { margin-left: 0; } }
