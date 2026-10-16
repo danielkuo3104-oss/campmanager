@@ -36,6 +36,7 @@ function exportSystemFields_(groups) {
     { key: 'sys:rank', label: '候補順位', get: function (s) { return s.rank === '' ? '' : String(s.rank); } },
     { key: 'sys:group', label: '團報成員', get: function (s) { var x = g(s); return x ? x.names.join('、') + (s.groupIncomplete ? '（未齊）' : '') : ''; } },
     { key: 'sys:notified', label: '結果通知', get: function (s) { return /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出 ' + fmtTime(s.notified.split(' ')[0]) : (s.notified || ''); } },
+    { key: 'sys:consent', label: '同意書', get: function (s) { return s.consent ? '已簽 ' + fmtTime(s.consent.t) : ''; } },
     { key: 'sys:last', label: '最新備註', get: function (s) { var h = s.history || []; return h.length ? h[h.length - 1].msg : ''; } }
   ];
 }
@@ -392,4 +393,3 @@ function buildStudentsPdf_(o) {
       }, function (e) { host.remove(); throw e; });
     });
 }
-
