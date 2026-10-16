@@ -116,7 +116,7 @@
 
   function confirmStep(r) {
     var info = '<div class="pf-info">' + r.info.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
-    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + info;
+    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info;
     if (!r.ok) {
       body.innerHTML = html + '<div class="pf-msg"></div><div><button class="btn" type="button" id="pf-back">重新查詢</button></div>';
       body.querySelector('.pf-msg').textContent = r.message;
