@@ -200,7 +200,7 @@ function openExportDialog(o) {
     var fields = v.keys.map(function (k) {
       if (k.indexOf('sys:') === 0) return sys.filter(function (f) { return f.key === k; })[0];
       var q = k.slice(2);
-      return { key: k, label: q, get: function (s) { return exportCellText_((s.data || {})[q]); } };
+      return { key: k, label: q, hl: (p.highlight || {})[q], raw: function (s) { return (s.data || {})[q]; }, get: function (s) { return exportCellText_((s.data || {})[q]); } };
     });
     v.tools.forEach(function (t, i) {
       fields.push({ key: 'tool:' + i, label: t.label, tool: t.kind, get: function () { return t.kind === 'check' ? '☐' : ''; } });
@@ -325,6 +325,7 @@ function buildStudentsPdf_(o) {
           td.textContent = v;
           if (noWrap[c]) td.className = 'nw';
           if (o.fields[c].tool) td.classList.add('tool', 'tool-' + o.fields[c].tool);
+          if (o.fields[c].hl && highlightHit(o.fields[c].hl, o.fields[c].raw(s))) td.classList.add('hl');   // 和名單一樣的強調顯示
           tr.appendChild(td);
         });
         tb.appendChild(tr);
