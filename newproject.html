@@ -73,10 +73,10 @@
         <label class="field"><span>營期結束<em>*</em></span><input class="input" name="end" type="date"><span class="hint">超過營期後專案自動變成只能瀏覽</span></label>
         <label class="field"><span>招生人數上限<em>*</em></span><input class="input" name="capacity" type="number" min="1"></label>
         <label class="field"><span>原價（元）<em>*</em></span><input class="input" name="price" type="number" min="0"></label>
-        <label class="field"><span>團報價（元）</span><input class="input" name="groupPrice" type="number" min="0"></label>
-        <label class="field"><span>早鳥價（元）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
+        <label class="field"><span>團報價（元，選填）</span><input class="input" name="groupPrice" type="number" min="0"></label>
+        <label class="field"><span>早鳥價（元，選填）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
         <label class="field"><span>早鳥團報價（元，選填）</span><input class="input" name="earlyGroupPrice" type="number" min="0"><span class="hint">早鳥期限內的團報；沒填就在早鳥價與團報價中取較低的</span></label>
-        <label class="field"><span>早鳥期限</span><input class="input" name="earlyDeadline" type="date"></label>
+        <label class="field"><span>早鳥期限（有早鳥價才需要）</span><input class="input" name="earlyDeadline" type="date"></label>
         <div class="field bank-fields" style="grid-column:1/-1"><span>匯款帳號<em>*</em></span><div class="bank-grid">
           <input class="input" name="bank_bank" placeholder="銀行（例如 台灣銀行）" aria-label="銀行">
           <input class="input" name="bank_code" placeholder="銀行代碼（例如 004）" aria-label="銀行代碼" inputmode="numeric">
@@ -229,6 +229,7 @@ App.page('newproject', function (root) {
   }
 
   function check(d) {
+    if ((Number(d.earlyPrice) > 0 || Number(d.earlyGroupPrice) > 0) && !d.earlyDeadline) return '有填早鳥價時，請填早鳥期限';
     if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
     var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價']];
     for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
