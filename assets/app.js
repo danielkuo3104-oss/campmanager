@@ -320,11 +320,11 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區按鈕', '學員專區連結'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區按鈕', '學員專區連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
-  '團報名單': 'OOO、OOO', 'Email': 'ooo@example.com', '報名時間': '0000/00/00 00:00', '報名結果': '已報名', '結果說明': '', '目前人數': '已錄取 00 人／上限 00 人', '管理頁按鈕': '[center][button=https://example.com/students.html]到報名與學員管理[/button][/center]', '招生期間': '0000/00/00～0000/00/00', '需要名額': '0', '剩餘名額': '0', '預留人數': '0', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%',
+  '團報名單': 'OOO、OOO', 'Email': 'ooo@example.com', '報名時間': '0000/00/00 00:00', '報名結果': '已報名', '結果說明': '', '目前人數': '已錄取 00 人／上限 00 人', '管理頁按鈕': '[center][button=https://example.com/students.html]到報名與學員管理[/button][/center]', '招生期間': '0000/00/00～0000/00/00', '需要名額': '0', '剩餘名額': '0', '預留人數': '0', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%', '飯店資訊': '%%HOTEL%%', '飯店名稱': 'OOO 飯店', '飯店地址': 'OO市OO路 000 號', '飯店電話': '00-0000-0000', '房號': '000',
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
   '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
   '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel',
@@ -390,6 +390,25 @@ function refundSampleHtml(r) {
     }).join('') +
     (r.note ? '<tr><td colspan="2" style="' + td + 'color:#6b7280;font-size:13px;line-height:1.7">' + mailTextToHtml(esc(r.note)) + '</td></tr>' : '') +
     '</table>';
+}
+
+/** {{飯店資訊}}（與後端 hotelHtml_ 相同）；沒有傳入飯店時用示意資料 */
+function hotelSampleHtml(h) {
+  if (h && !h.name) return '<div style="font-size:12px;color:#9ca3af">（這個專案還沒填飯店資訊，寄出時不會出現；到「專案設定 → 飯店資訊」填寫）</div>';
+  h = h || { name: 'OOO 飯店', address: 'OO市OO路 000 號', phone: '00-0000-0000', checkin: '0/00 15:00', checkout: '0/00 11:00', url: '', note: '' };
+  var rows = [['飯店', '<b style="font-size:16px">' + esc(h.name) + '</b>'],
+    ['地址', esc(h.address) + '　<a href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(h.name + ' ' + h.address) + '" style="color:#1565c0;white-space:nowrap">地圖</a>'],
+    ['電話', '<a href="tel:' + esc(String(h.phone).replace(/[^\d+#]/g, '')) + '" style="color:#1f2937;text-decoration:none">' + esc(h.phone) + '</a>']];
+  if (h.checkin) rows.push(['入住', esc(h.checkin)]);
+  if (h.checkout) rows.push(['退房', esc(h.checkout)]);
+  if (h.url) rows.push(['網站', '<a href="' + esc(h.url) + '" style="color:#1565c0">飯店網站</a>']);
+  if (h.note) rows.push(['說明', mailTextToHtml(esc(stripNotes(h.note)))]);
+  return '<div style="margin:12px 0"><table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:0;background:#f6f8f7;border:1px solid #e3e8e5;border-radius:12px">' +
+    rows.map(function (r, i) {
+      var bt = i ? ';border-top:1px solid #e3e8e5' : '';
+      return '<tr><td style="padding:10px 16px;width:56px;color:#6b7280;font-size:13px;white-space:nowrap;vertical-align:top' + bt + '">' + r[0] + '</td>' +
+        '<td style="padding:10px 16px 10px 0;color:#1f2937;line-height:1.7' + bt + '">' + r[1] + '</td></tr>';
+    }).join('') + '</table></div>';
 }
 
 /** 聯絡人員（與後端 contactsHtml_ 相同）；沒有傳入名單時用示意資料 */
@@ -1060,7 +1079,7 @@ function openTemplateEditor(t, opts) {
     var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
     html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund));
+    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund)).replace(/(?:<br>)?%%HOTEL%%(?:<br>)?/g, hotelSampleHtml(opts.hotel));
     frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], blockBr(html.split('%%CONTACTS%%').join(contacts)), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
