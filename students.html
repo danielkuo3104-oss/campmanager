@@ -68,6 +68,16 @@ App.page('students', function (root, params) {
   var ISSUE_TAG = { id: '身分證有誤', email: '信箱有誤', phone: '電話有誤' };
   var STROKE = (window.Intl && Intl.Collator) ? new Intl.Collator('zh-Hant-TW').compare : function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   function hasIssue(s) { return !!(s.issues && s.issues.length) && tier(s) < 4; }
+  /** 已繳費的學員填了取消報名表單、還沒處理：回傳最後一筆申請（含退款帳戶），否則 null */
+  function refundReq(s) {
+    if (['報名取消', '報名失敗'].indexOf(s.status) >= 0) return null;
+    var list = (s.forms || []).filter(function (f) { return f.kind === 'cancel' && f.refund; });
+    return list.length ? list[list.length - 1] : null;
+  }
+  function lastRefundReq(s) {
+    var list = (s.forms || []).filter(function (f) { return f.kind === 'cancel' && f.refund; });
+    return list.length ? list[list.length - 1] : null;
+  }
 
   var FILTERS = [
     { key: 'all', label: '全部' },
@@ -81,6 +91,7 @@ App.page('students', function (root, params) {
   function load() {
     return apiFast('getProjectData', prefix, function (d, fresh) {
       D = d;
+      if (fresh) hideUpdate();   // 自己重新載入過，就是最新的名單
       if (fresh && $('#menu-pop')) return;   // 操作選單開著時不重畫，資料已更新
       render();
     })
@@ -89,6 +100,7 @@ App.page('students', function (root, params) {
 
   /* ---------- 排序：警示 → 已報名（期限近的在上）→ 程序完成 → 候補 → 取消；同層依報名時間；團報相鄰 ---------- */
   function tier(s) {
+    if (refundReq(s)) return 0;   // 申請取消待退款：排最上面
     if (D.warningStatuses.indexOf(s.status) >= 0) return 0;
     if (s.status === '程序完成') return 2;
     if (D.activeStatuses.indexOf(s.status) >= 0) return 1;
@@ -128,6 +140,7 @@ App.page('students', function (root, params) {
   function matches(s) {
     var t = tier(s);
     if (filter === 'warn' && t !== 0 && !hasIssue(s)) return false;
+    if (filter === 'refund' && !refundReq(s)) return false;
     if (squadFilter !== '' && D.project.squads > 0 && String(s.squad === '' ? 0 : s.squad) !== squadFilter) return false;
     if (filter === 'todo' && t !== 1 && t !== 0) return false;
     if (filter === 'done' && t !== 2) return false;
@@ -185,8 +198,10 @@ App.page('students', function (root, params) {
 
     var chips = $('#st-chips', root);
     chips.innerHTML = '';
-    FILTERS.forEach(function (f) {
-      var c = el('<button class="chip' + (filter === f.key ? ' on' : '') + '" type="button"></button>');
+    var nRefund = D.students.filter(refundReq).length;
+    if (filter === 'refund' && !nRefund) filter = 'all';
+    FILTERS.concat(nRefund ? [{ key: 'refund', label: '待退款 ' + nRefund, bad: true }] : []).forEach(function (f) {
+      var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + '' + (filter === f.key ? ' on' : '') + '" type="button"></button>');
       c.textContent = f.label;
       c.addEventListener('click', function () { filter = f.key; render(); });
       chips.appendChild(c);
@@ -254,9 +269,11 @@ App.page('students', function (root, params) {
         ['身分證有誤', (st.idInvalid || 0) + ' 人'], ['信箱有誤', (st.emailInvalid || 0) + ' 人'], ['電話有誤', (st.phoneInvalid || 0) + ' 人']]
         .filter(function (r) { return !/^0 /.test(r[1]); });
       if (!rows.length) rows = [['目前沒有警示', '']];
-      list = all.filter(function (s) { return D.warningStatuses.indexOf(s.status) >= 0 || (tierOk(s) && (s.issues || []).length); });
+      if (D.students.filter(refundReq).length) rows.unshift(['申請取消待退款', D.students.filter(refundReq).length + ' 人']);
+      list = all.filter(function (s) { return refundReq(s) || D.warningStatuses.indexOf(s.status) >= 0 || (tierOk(s) && (s.issues || []).length); });
       cols = function (s) {
         var why = [];
+        if (refundReq(s)) why.push('申請取消待退款');
         if (D.warningStatuses.indexOf(s.status) >= 0) why.push(s.status);
         (s.issues || []).forEach(function (x) { why.push(ISSUE_TAG[x.key] + '：' + x.value); });
         return [why.join('、')];
@@ -366,6 +383,7 @@ App.page('students', function (root, params) {
         tags += '<span class="tag bad" title="' + esc(x.field + '「' + x.value + '」' + x.msg + '；報名信已提醒更正') + '">' + ISSUE_TAG[x.key] + '</span>';
       });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
+      if (refundReq(s)) tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
       var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
       var html = '<td>' + pill(s.status) + deadlineNote + '</td>';
@@ -470,19 +488,23 @@ App.page('students', function (root, params) {
       ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }], function (v) { run(s, 'setStatus', v); });
     });
     items.push({ sep: true });
-    add('取消報名…', !has(s, ['報名取消', '報名失敗']), function () {
-      var paidAmt = s.paid !== '' && Number(s.paid) > 0 ? Number(s.paid) : 0;
-      var fields = [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel'),
-        hint: paidAmt ? '' : '此學員尚未確認繳款，不需退款，取消後只從預計收入扣除。' }];
-      if (paidAmt) fields.push({ name: 'refund', label: '退回金額（元）', type: 'number', required: true, value: paidAmt,
-        hint: '已確認繳款 ' + money(paidAmt) + ' 元，預設全額退款。不是全退時請改成實際退回的金額，沒退的部分仍計入收入。信件可用 {{退款金額}}。' });
-      fields.push({ name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true });
-      ask('取消報名', fields, function (v) { run(s, 'cancel', v); }, true);
-    }, true, 'opt');
+    add('取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
     popMenu(anchor, items);
   }
 
   function P(key) { return D.presets && D.presets[key] || []; }
+
+  /** 取消報名視窗；學員申請過取消（已繳費）時，原因與退回金額先帶入申請內容與退款規定估算的金額 */
+  function cancelDialog(s) {
+    var paidAmt = s.paid !== '' && Number(s.paid) > 0 ? Number(s.paid) : 0, req = refundReq(s);
+    var est = req && req.refund.amount !== '' && req.refund.amount !== undefined && req.refund.amount !== null ? Number(req.refund.amount) : null;
+    var fields = [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel'), value: req ? '學員申請取消：' + (req.reason || '') : '',
+      hint: paidAmt ? '' : '此學員尚未確認繳款，不需退款，取消後只從預計收入扣除。' }];
+    if (paidAmt) fields.push({ name: 'refund', label: '退回金額（元）', type: 'number', required: true, value: est !== null ? Math.min(est, paidAmt) : paidAmt,
+      hint: '已確認繳款 ' + money(paidAmt) + ' 元，' + (est !== null ? '依退款規定可退 ' + req.refund.pct + '%（' + money(est) + ' 元），已先帶入。' : '預設全額退款。') + '請填實際退回的金額，沒退的部分仍計入收入。信件可用 {{退款金額}}。' });
+    fields.push({ name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true });
+    ask(req ? '處理退款並取消報名' : '取消報名', fields, function (v) { run(s, 'cancel', v); }, true);
+  }
 
   /** 專案設定裡的預製表單：開關、連結、改內容／跟著系統預設；每個動作直接存 */
   function renderFormSettings(box) {
@@ -606,12 +628,12 @@ App.page('students', function (root, params) {
       '<div class="row wrap" style="gap:10px;align-items:center"><label class="check grow"><input type="checkbox" name="ptOn"' + (pt.on ? ' checked' : '') + (ro ? ' disabled' : '') + '><span><b>開放學員專區</b></span></label>' +
       '<button class="btn sm" type="button" id="pt-preview">預覽學員看到的畫面</button></div>' +
       '<div class="pt-url" style="margin-top:12px"></div></div>' +
-      '<div class="drawer-section"><h3>內容區塊</h3><p class="hint" style="margin-top:0">依序顯示在學員專區，例如行前準備清單、行前須知、飯店資訊、交通資訊。可以用信件的格式與變數；「勾選清單」每行一項，學員可以在自己的手機上打勾（只存在學員自己的手機）。沒有內容的區塊不會顯示。</p>' +
+      '<div class="drawer-section"><h3>區塊與順序</h3><p class="hint" style="margin-top:0">學員專區由上到下照這個順序顯示，每個區塊是一張圓角卡片。標「系統」的區塊內容由系統產生，可以調整位置或取消顯示；自訂區塊可以放行前準備清單、行前須知、飯店資訊、交通資訊等，按「編輯」展開內容。可以用信件的格式與變數；「勾選清單」每行一項，學員可以在自己的手機上打勾（只存在學員自己的手機）。沒有內容的區塊不會顯示。</p>' +
       '<div class="ps-list"></div>' +
       (ro ? '' : '<div class="row wrap" style="gap:6px;margin-top:10px"><span class="small muted">新增：</span>' +
         [['行前準備清單', 'checklist'], ['行前須知', 'text'], ['飯店資訊', 'text'], ['交通資訊', 'text'], ['', 'text']].map(function (x) {
           return '<button class="btn sm ghost" type="button" data-add="' + esc(x[0]) + '" data-type="' + x[1] + '">＋ ' + esc(x[0] || '自訂區塊') + '</button>';
-        }).join('') + '</div><div style="margin-top:14px"><button class="btn primary" type="button" id="pt-save">儲存內容</button></div>') + '</div>';
+        }).join('') + '</div><div style="margin-top:14px"><button class="btn primary" type="button" id="pt-save">儲存區塊與順序</button></div>') + '</div>';
     var urlBox = $('.pt-url', d.body);
     function drawUrl() {
       urlBox.innerHTML = '';
@@ -645,48 +667,69 @@ App.page('students', function (root, params) {
     });
     // 內容區塊：標題、類型（文字／勾選清單）、內容，可上下移動與刪除
     var psList = $('.ps-list', d.body);
-    function block(x) {
-      var b = el('<div class="ps-block"><div class="ps-top"><input class="input" placeholder="標題（例如 交通資訊）" maxlength="30" aria-label="區塊標題">' +
+    var SYS_NAMES = { countdown: '營隊倒數', status: '報名進度', squad: '我的小隊', pay: '繳費資訊', info: '報名資訊', data: '報名資料', refund: '退款規定', reports: '我送出的表單', contacts: '聯絡人員' };
+    var SYS_HINT = { countdown: '距離營隊開始的天、時、分、秒', status: '狀態、進度與表單按鈕（一定顯示）', squad: '分好小隊後才會出現', pay: '還沒繳費時才會出現', info: '營期、報名時間、應繳金額', data: '信件「報名資料」勾選的題目', refund: '專案設定的退款規定', reports: '送出過的匯款回報、取消申請', contacts: '專案設定的聯絡人員' };
+    function moveBtns() { return ro ? '' : '<button class="btn sm ghost" type="button" data-m="up" aria-label="上移">↑</button><button class="btn sm ghost" type="button" data-m="down" aria-label="下移">↓</button>'; }
+    function bindMove(b) {
+      $$('[data-m]', b).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var m = btn.getAttribute('data-m');
+          if (m === 'del') b.remove();
+          if (m === 'up' && b.previousElementSibling) psList.insertBefore(b, b.previousElementSibling);
+          if (m === 'down' && b.nextElementSibling) psList.insertBefore(b.nextElementSibling, b);
+          if (m === 'fold') { b.classList.toggle('folded'); btn.textContent = b.classList.contains('folded') ? '編輯' : '收合'; }
+          if (m === 'up' || m === 'down') b.scrollIntoView({ block: 'nearest' });
+        });
+      });
+    }
+    // 系統區塊：內容由系統產生，只能調整位置與隱藏（報名進度一定顯示）
+    function sysRow(x, at) {
+      var b = el('<div class="ps-block ps-sys' + (x.hidden ? ' off' : '') + '" data-sys="' + esc(x.key) + '"><div class="ps-top"><div class="ps-name"><b>' + esc(SYS_NAMES[x.key] || x.key) + '</b><span class="ps-tag">系統</span><small class="muted">' + esc(SYS_HINT[x.key] || '') + '</small></div>' +
+        (x.key === 'status' ? '' : '<label class="ps-show"><input type="checkbox"' + (x.hidden ? '' : ' checked') + (ro ? ' disabled' : '') + '> 顯示</label>') + moveBtns() + '</div></div>');
+      var cb = $('.ps-show input', b);
+      if (cb) cb.addEventListener('change', function () { b.classList.toggle('off', !cb.checked); });
+      psList.insertBefore(b, at || null);
+      bindMove(b);
+      return b;
+    }
+    function block(x, at, open) {
+      if (x.type === 'sys') return sysRow(x, at);
+      var b = el('<div class="ps-block' + (open ? '' : ' folded') + '"><div class="ps-top"><input class="input" placeholder="標題（例如 交通資訊）" maxlength="30" aria-label="區塊標題">' +
         '<select class="input" aria-label="類型"><option value="text">文字</option><option value="checklist">勾選清單</option></select>' +
-        (ro ? '' : '<button class="btn sm ghost" type="button" data-m="up" aria-label="上移">↑</button><button class="btn sm ghost" type="button" data-m="down" aria-label="下移">↓</button><button class="btn sm ghost" type="button" data-m="del">刪除</button>') +
-        '</div><textarea class="input" rows="5" maxlength="5000"></textarea></div>');
+        moveBtns() + (ro ? '' : '<button class="btn sm ghost" type="button" data-m="fold">' + (open ? '收合' : '編輯') + '</button><button class="btn sm ghost" type="button" data-m="del">刪除</button>') +
+        '</div><div class="ps-edit"><textarea class="input" rows="5" maxlength="5000"></textarea></div></div>');
       var ins = $('input', b), sel = $('select', b), t = $('textarea', b);
       ins.value = x.title || ''; sel.value = x.type === 'checklist' ? 'checklist' : 'text'; t.value = x.body || '';
       function ph() { t.placeholder = sel.value === 'checklist' ? '每行一項，例如：\n健保卡\n換洗衣物\n水壺' : '例如：集合時間 08:30，地點 清華大學校門口'; }
       ph(); sel.addEventListener('change', ph);
       [ins, sel, t].forEach(function (i) { i.disabled = ro; });
-      psList.appendChild(b);
+      psList.insertBefore(b, at || null);
       if (!ro) {
         var ed = chipEditor(t);
         t.parentNode.insertBefore(formatToolbar(ed, { vars: true }), t);
-        $$('[data-m]', b).forEach(function (btn) {
-          btn.addEventListener('click', function () {
-            var m = btn.getAttribute('data-m');
-            if (m === 'del') b.remove();
-            if (m === 'up' && b.previousElementSibling) psList.insertBefore(b, b.previousElementSibling);
-            if (m === 'down' && b.nextElementSibling) psList.insertBefore(b.nextElementSibling, b);
-            psEmpty();
-          });
-        });
+        bindMove(b);
       }
       return b;
     }
-    function psEmpty() {
-      var e = $('.ps-empty', psList);
-      if (!$('.ps-block', psList) && !e) psList.appendChild(el('<div class="small muted ps-empty">還沒有內容區塊，按下方按鈕新增。</div>'));
-      if ($('.ps-block', psList) && e) e.remove();
-    }
-    (pt.sections || []).forEach(block);
-    psEmpty();
+    (pt.sections || []).forEach(function (x) { block(x); });
     function sections() {
-      return $$('.ps-block', psList).map(function (b) { return { title: $('input', b).value.trim(), type: $('select', b).value, body: $('textarea', b).value.trim() }; })
-        .filter(function (x) { return x.title || x.body; });
+      return $$('.ps-block', psList).map(function (b) {
+        var k = b.getAttribute('data-sys');
+        if (k) { var cb = $('.ps-show input', b); return { type: 'sys', key: k, hidden: cb ? !cb.checked : false }; }
+        return { title: $('input', b).value.trim(), type: $('select', b).value, body: $('textarea', b).value.trim() };
+      }).filter(function (x) { return x.type === 'sys' || x.title || x.body; });
+    }
+    // 新增的區塊放在最後一個自訂區塊後面；還沒有自訂區塊時放在「報名資訊」後面
+    function addSpot() {
+      var all = $$('.ps-block', psList), last = null;
+      all.forEach(function (b) { if (!b.getAttribute('data-sys')) last = b; });
+      if (!last) last = $('[data-sys=info]', psList);
+      return last ? last.nextElementSibling : null;
     }
     if (!ro) {
       $$('[data-add]', d.body).forEach(function (btn) {
         btn.addEventListener('click', function () {
-          var b = block({ title: btn.getAttribute('data-add'), type: btn.getAttribute('data-type') });
-          psEmpty();
+          var b = block({ title: btn.getAttribute('data-add'), type: btn.getAttribute('data-type') }, addSpot(), true);
           (btn.getAttribute('data-add') ? $('.chip-editor', b) || $('textarea', b) : $('input', b)).focus();
           b.scrollIntoView({ block: 'nearest' });
         });
@@ -696,7 +739,7 @@ App.page('students', function (root, params) {
       });
       $('#pt-save', d.body).addEventListener('click', function () {
         var list = sections();
-        if (list.some(function (x) { return !x.title; })) { toast('每個區塊都要有標題', true); return; }
+        if (list.some(function (x) { return x.type !== 'sys' && !x.title; })) { toast('每個區塊都要有標題', true); return; }
         save({ on: pt.on, sections: list }, '已儲存學員專區內容');
       });
     }
@@ -787,7 +830,23 @@ App.page('students', function (root, params) {
       ['團報', g ? g.names.join('、') + '（預期 ' + g.expected + ' 人' + (s.groupIncomplete ? '，未齊' : '') + (g.reserved ? '，預留 ' + g.reserved + ' 名額至 ' + fmtTime(g.holdUntil) : '') + '）' : (s.partners && s.partners.length ? '填寫同伴：' + s.partners.join('、') : '個人報名')],
       ['結果通知', /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出（' + fmtTime(s.notified.split(' ')[0]) + '）' : (s.notified || '—')]
     ];
-    var html = '<div class="drawer-section"><h3>報名資訊</h3><dl class="kv">' +
+    var html = '';
+    var rq = lastRefundReq(s), rqOpen = !!refundReq(s);
+    if (rq) {
+      var r = rq.refund;
+      html += '<div class="drawer-section"><div class="rq-card' + (rqOpen ? ' open' : '') + '"><div class="rq-head"><b>' + (rqOpen ? '學員申請取消，待處理退款' : '學員的退款申請（已處理）') + '</b><span class="small muted">' + esc(fmtTime(rq.t)) + '</span></div>' +
+        '<dl class="kv"><dt>取消原因</dt><dd>' + esc(rq.reason || '—') + '</dd>' +
+        (rq.note ? '<dt>備註</dt><dd>' + esc(rq.note) + '</dd>' : '') +
+        '<dt>銀行</dt><dd>' + esc(r.bank) + '</dd><dt>分行</dt><dd>' + esc(r.branch || '—') + '</dd><dt>戶名</dt><dd>' + esc(r.name) + '</dd>' +
+        '<dt>帳號</dt><dd><b class="rq-no">' + esc(r.no) + '</b></dd>' +
+        '<dt>可退金額</dt><dd>' + (r.pct === null || r.pct === undefined || r.pct === '' ? '沒有設定退款規定，請自行判斷' : '依退款規定 ' + esc(r.pct) + '%，' + money(r.amount) + ' 元') + '</dd>' +
+        (s.status === '報名取消' && s.refund !== '' && s.refund !== undefined ? '<dt>實際退回</dt><dd>' + money(s.refund) + ' 元</dd>' : '') + '</dl>' +
+        '<div class="rq-acts"><button class="btn sm" type="button" data-rq="copy">複製退款帳戶</button>' +
+        (rqOpen && !D.readOnly ? '<button class="btn sm danger" type="button" data-rq="go">處理退款並取消報名</button>' : '') + '</div>' +
+        (rqOpen ? '<div class="small muted">匯款退回後按「處理退款並取消報名」，填實際退回的金額，系統會取消報名、寄信通知學員，並記下退款金額。在那之前報名仍然有效。</div>' : '') +
+        '</div></div>';
+    }
+    html += '<div class="drawer-section"><h3>報名資訊</h3><dl class="kv">' +
       sys.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl></div>';
 
     var titles = (p.questions || []).slice();
@@ -802,6 +861,14 @@ App.page('students', function (root, params) {
       return '<li><div>' + esc(h.msg) + '</div><div class="t">' + esc(fmtTime(h.t)) + '　·　' + esc(h.by) + '</div></li>';
     }).join('') + '</ul></div>';
     detail.body.innerHTML = html;
+    if (rq) {
+      $('[data-rq=copy]', detail.body).addEventListener('click', function () {
+        var r = rq.refund, txt = '戶名：' + r.name + '\n銀行：' + r.bank + (r.branch ? ' ' + r.branch : '') + '\n帳號：' + r.no + (r.amount !== '' && r.amount !== null && r.amount !== undefined ? '\n金額：' + money(r.amount) + ' 元' : '');
+        (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('已複製退款帳戶'); }).catch(function () { toast('複製失敗，請手動選取帳號', true); });
+      });
+      var go = $('[data-rq=go]', detail.body);
+      if (go) go.addEventListener('click', function () { cancelDialog(s); });
+    }
 
     $$('[data-edit]', detail.body).forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1299,21 +1366,38 @@ App.page('students', function (root, params) {
     if (hit) openDetail(hit);
     return !!hit;
   };
-  /* ---------- 收到新報名就自動重新載入名單（每 30 秒問一次列數，頁面在背景時不問） ---------- */
-  var watching = false;
+  /* ---------- 名單有變動時不自動重畫（避免正在編輯時被刷新），在下方跳出提示，按了才更新（每 30 秒問一次，頁面在背景時不問） ---------- */
+  var watching = false, pending = null, updBar = null;
+  function hideUpdate() { pending = null; if (updBar) { updBar.remove(); updBar = null; } }
+  function applyUpdate() {
+    if (!pending) return;
+    D = pending; hideUpdate(); render(); cacheSet(cacheKey('getProjectData', [prefix]), D);
+    toast('名單已更新');
+  }
+  function showUpdate(d) {
+    var old = {}, added = 0, changed = 0;
+    D.students.forEach(function (x) { old[x.id] = x.status; });
+    d.students.forEach(function (x) { if (!(x.id in old)) added++; else if (old[x.id] !== x.status) changed++; });
+    var parts = [];
+    if (added) parts.push(added + ' 筆新報名');
+    if (changed) parts.push(changed + ' 位學員狀態有變動');
+    pending = d;
+    if (!updBar) {
+      updBar = el('<div class="upd-bar" role="status"><span></span><button class="btn sm primary" type="button">更新名單</button><button class="btn sm ghost icon" type="button" aria-label="稍後再說" title="稍後再說">✕</button></div>');
+      $('.btn.primary', updBar).addEventListener('click', applyUpdate);
+      $('.icon', updBar).addEventListener('click', function () { updBar.classList.add('hidden'); });
+      document.body.appendChild(updBar);
+    }
+    updBar.classList.remove('hidden');
+    $('span', updBar).textContent = (parts.length ? '有 ' + parts.join('、') : '名單資料有更新') + '，按「更新名單」後顯示。';
+  }
   function checkNew() {
     if (watching || !D || document.hidden) return;
-    if ($('.overlay') || $('#menu-pop') || busyCount > 0) return;   // 正在操作、看確認視窗時先不動，下一輪再看
     watching = true;
     api('projectStamp', prefix).then(function (r) {
-      if (!D || r.stamp === D.stamp) return;
-      var before = D.students.length;
-      return api('getProjectData', prefix).then(function (d) {
-        if ($('.overlay') || busyCount > 0) return;
-        D = d; render(); cacheSet(cacheKey('getProjectData', [prefix]), d);
-        var n = d.students.length - before;
-        if (n > 0) toast('收到 ' + n + ' 筆新報名，名單已更新');
-      });
+      var cur = pending || D;
+      if (!D || r.stamp === D.stamp || r.stamp === cur.stamp) return;
+      return api('getProjectData', prefix).then(function (d) { if (D && d.stamp !== D.stamp) showUpdate(d); });
     }).catch(function () { /* 背景檢查失敗就略過 */ }).then(function () { watching = false; });
   }
   setInterval(checkNew, 30000);
