@@ -324,7 +324,7 @@ var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類�
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
-  '團報名單': 'OOO、OOO', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%',
+  '團報名單': 'OOO、OOO', 'Email': 'ooo@example.com', '報名時間': '0000/00/00 00:00', '報名結果': '已報名', '結果說明': '', '目前人數': '已錄取 00 人／上限 00 人', '管理頁按鈕': '[center][button=https://example.com/students.html]到報名與學員管理[/button][/center]', '招生期間': '0000/00/00～0000/00/00', '需要名額': '0', '剩餘名額': '0', '預留人數': '0', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%',
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
   '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
   '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel',
@@ -1394,8 +1394,12 @@ var Bell = {
       });
       form.appendChild(sec);
     });
+    // 寄信：新報名時寄信給專案管理員（預設開啟）
+    var ms = el('<div class="notify-group"><div class="small muted">寄信給我</div><div class="notify-grid"><label class="check"><input type="checkbox" value="mailRegister"><span>新報名寄信通知我（我負責的專案）</span></label></div></div>');
+    $('input', ms).checked = d.off.indexOf('mailRegister') < 0;
+    form.appendChild(ms);
     modal({
-      title: '通知設定', desc: '勾選要在鈴鐺顯示的通知。這裡只影響你自己，不會寄信；自己做的操作不會通知自己。', body: form,
+      title: '通知設定', desc: '勾選要在鈴鐺顯示的通知，以及要不要寄信給你。這裡只影響你自己；自己做的操作不會通知自己。', body: form,
       buttons: [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: function () {
         return $$('input', form).filter(function (i) { return !i.checked; }).map(function (i) { return i.value; });
       } }]
