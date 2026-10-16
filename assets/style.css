@@ -324,6 +324,21 @@
   table.list td.cell-name .clip-1 { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table.list td.cell-name { min-width: 120px; }
   table.list td.cell-name .tag { margin: 4px 4px 0 0; }
+  .seg.seg-sm { padding: 3px; gap: 2px; }
+  .seg.seg-sm span { height: 26px; padding: 0 10px; font-size: 12px; }
+  /* 窄檢視：行距、欄寬縮小，標籤和姓名排同一行，期限與紀錄時間收進一行 */
+  table.list.dense th { padding: 8px 10px; }
+  table.list.dense td { padding: 6px 10px; font-size: 12.5px; vertical-align: middle; }
+  table.list.dense .pill { height: 22px; padding: 0 9px; font-size: 11.5px; gap: 5px; }
+  table.list.dense .deadline-note { margin-top: 2px !important; font-size: 11px; white-space: nowrap; }
+  table.list.dense td.cell-clip, table.list.dense th.th-clip { max-width: 104px; }
+  table.list.dense td.cell-name { min-width: 0; }
+  table.list.dense td.cell-name > div { display: inline; }
+  table.list.dense td.cell-name .clip-1 { display: inline-block; vertical-align: middle; max-width: 110px; }
+  table.list.dense td.cell-name .tag { height: 18px; line-height: 18px; padding: 0 7px; font-size: 10.5px; margin: 0 0 0 4px; vertical-align: middle; }
+  table.list.dense td.note-cell .last { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.list.dense td.note-cell .small { display: none; }
+  table.list.dense .btn.icon { height: 28px; width: 28px; }
   td.note-cell { max-width: 260px; color: var(--text-2); font-size: 12px; }
   td.note-cell .last { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .empty { padding: 56px; border-radius: var(--radius); text-align: center; color: var(--text-3); }
@@ -442,6 +457,14 @@
     .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
     .field-row { grid-template-columns: 1fr auto; }
     .field-row .k { grid-column: 1 / -1; }
+    /* 手機：表格不擠成一字一行，改成左右滑動；上方列不透明，捲動時不會看到後面的字 */
+    .topbar { background: rgba(255, 255, 255, .97); }
+    table.simple th, table.simple td { white-space: nowrap; padding: 10px 12px; }
+    table.simple td .pill, table.simple td .tag, table.simple td .badge { white-space: nowrap; }
+    .table-wrap { -webkit-overflow-scrolling: touch; }
+    .toolbar { flex-wrap: wrap; }
+    table.list td.note-cell { min-width: 180px; }
+    table.list td:first-child { white-space: nowrap; }
   }
 
   /* ---------- 變數方塊編輯器 ---------- */
@@ -525,6 +548,22 @@
   .pf-set { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
   .pf-set:last-child { border-bottom: 0; }
   .pf-set .grow { flex: 1 1 140px; min-width: 0; }
+  .pf-mode { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-left: 30px; }
+  .pf-mode select { max-width: 320px; }
+  .pr-dlg { display: flex; flex-direction: column; gap: 12px; }
+  .pr-list { display: flex; flex-direction: column; max-height: 55vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-md); }
+  .pr-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .pr-row:last-child { border-bottom: 0; }
+  .pr-row .grow { min-width: 0; }
+  .pr-price { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+  .pr-price .tag { margin-left: 6px; }
+  .pr-mail.muted { opacity: .45; }
+  .consent-box { display: flex; flex-direction: column; gap: 6px; }
+  .consent-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .consent-view { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .consent-img { max-width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .consent-pdf { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 10px; }
+  .consent-txt { white-space: pre-wrap; font: 13px/1.7 inherit; max-height: 60vh; overflow: auto; background: var(--surface-2); padding: 12px; border-radius: 10px; width: 100%; box-sizing: border-box; }
   .check-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
   .check-list .check { align-items: flex-start; }
   .rf-list { display: flex; flex-direction: column; gap: 8px; }
@@ -615,3 +654,13 @@ table.list tr:hover td.hl { background: #efe6d2; }
 .sd-progress b small { font-size: 13px; font-weight: 500; margin-left: 2px; }
 .sd-progress .bar { margin-top: 0; }
 
+/* ---------- 公開頁面的載入動畫（assets/loading.js） ---------- */
+.ld { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 8px; text-align: center; color: var(--text-2); }
+.ld-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--brand); animation: ld-spin .8s linear infinite; }
+.ld-msg { font-size: 15px; font-weight: 500; color: var(--text); }
+.ld-sub { font-size: 13px; color: var(--text-3); min-height: 18px; line-height: 1.6; }
+.btn.is-busy { position: relative; padding-left: 40px; opacity: .85; }
+.btn.is-busy::before { content: ''; position: absolute; left: 16px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: ld-spin .7s linear infinite; }
+.ld-note { flex: 1 1 100%; font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+@keyframes ld-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ld-spin, .btn.is-busy::before { animation-duration: 2.4s; } }
