@@ -299,6 +299,8 @@
   .chip { height: 32px; padding: 0 14px; transition: background .15s, border-color .15s, color .15s; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); font: inherit; font-size: 12px; cursor: pointer; color: var(--text-2); }
   .chip:hover { border-color: var(--text-3); color: var(--text); }
   .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 3px 10px rgba(47, 93, 98, .22); }
+  .chip.chip-bad:not(.on) { color: var(--bad); border-color: #efcdc7; background: #fffafa; }
+  .chip.chip-bad.on { background: var(--bad); border-color: var(--bad); }
   .table-wrap { overflow-x: auto; padding: 4px 8px 8px; }
   table.list { width: 100%; border-collapse: separate; border-spacing: 0; }
   table.list th { position: sticky; top: 0; background: var(--surface-2); text-align: left; font-size: 12px; font-weight: 500; color: var(--text-2); padding: 11px 14px; white-space: nowrap; }
@@ -527,5 +529,30 @@
   .ps-list { display: flex; flex-direction: column; gap: 12px; }
   .ps-block { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
   .ps-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .ps-top input { flex: 1 1 160px; min-width: 0; }
-  .ps-top select { width: 110px; }
+  .ps-top input { flex: 1 1 120px; min-width: 0; }
+  .ps-top select { width: 96px; }
+  .ps-edit { display: flex; flex-direction: column; gap: 8px; }
+  .ps-block.folded .ps-edit { display: none; }
+  .ps-sys { background: var(--surface-2, #f4f5f3); padding: 10px 12px; }
+  .ps-sys.off .ps-name { opacity: .5; }
+  .ps-name { flex: 1 1 160px; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .ps-name small { flex-basis: 100%; }
+  .ps-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--line); color: var(--text-2); }
+  .ps-show { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
+
+  /* 學員申請取消（已繳費）：退款帳戶卡片 */
+  .rq-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2, #f4f5f3); }
+  .rq-card.open { border-color: #efcdc7; background: #fffafa; }
+  .rq-card.open .rq-head b { color: var(--bad); }
+  .rq-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .rq-card .kv { margin: 0; }
+  .rq-no { font-variant-numeric: tabular-nums; letter-spacing: .03em; user-select: all; }
+  .rq-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* 名單有更新時的提示（不自動刷新） */
+  .upd-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 10px 10px 18px; border-radius: 999px; background: var(--text, #1f2a2c); color: var(--surface, #fff); box-shadow: 0 10px 30px rgba(0, 0, 0, .22); font-size: 14px; animation: upd-in .25s ease; }
+  .upd-bar.hidden { display: none; }
+  .upd-bar span { min-width: 0; }
+  .upd-bar .btn.ghost { color: inherit; border-color: transparent; background: transparent; }
+  @keyframes upd-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @media (max-width: 520px) { .upd-bar { border-radius: 16px; flex-wrap: wrap; justify-content: flex-end; } .upd-bar span { flex-basis: 100%; } }
