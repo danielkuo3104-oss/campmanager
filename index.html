@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -10,6 +11,12 @@
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
   <title>登入｜營隊報名管理</title>
+  <script>
+    // 已登入（含勾「保持登入」）就直接進選單，不先顯示登入頁；token 失效時選單頁會帶訊息跳回來
+    try {
+      if ((sessionStorage.getItem('camp_token') || localStorage.getItem('camp_token')) && !/[?&]msg=/.test(location.search)) location.replace('menu.html');
+    } catch (e) {}
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
