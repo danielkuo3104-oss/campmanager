@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#2f5d62">
+  <meta name="theme-color" content="#2b5fb4">
   <meta name="robots" content="noindex">
   <link rel="icon" type="image/png" href="icon-192.png">
   <title>學員專區</title>
@@ -13,8 +13,22 @@
   <script src="assets/config.js"></script>
   <style>
     /* 學員專區：每個專案自己的入口，學員用姓名＋身分證字號登入，只看得到自己的報名 */
+    /* 學員專區用藍色調（和管理後台的綠色區分） */
+    :root {
+      --bg: #f1f5fb; --surface-2: #f4f7fc; --line: #e2e8f2; --line-strong: #cbd5e5;
+      --text: #15233b; --text-2: #50607a; --text-3: #8391a8;
+      --brand: #2b5fb4; --brand-2: #3d78d4; --brand-soft: #e5edfb;
+      --accent: #2b5fb4; --accent-soft: #e5edfb; --info: #2b5fb4; --info-soft: #e5edfb;
+      --focus: 0 0 0 4px rgba(43, 95, 180, .18);
+      --shadow: 0 1px 2px rgba(20, 40, 80, .04), 0 6px 24px rgba(20, 40, 80, .07);
+    }
+    body { background: radial-gradient(900px 480px at 0% -10%, #dfe9fb 0%, transparent 60%), radial-gradient(800px 460px at 100% 0%, #e3f1fb 0%, transparent 55%), var(--bg); background-attachment: fixed; }
+    ::selection { background: var(--brand-soft); }
+    .btn.primary { box-shadow: 0 4px 14px rgba(43, 95, 180, .25); }
+    .pt-rich [style*="color:#2f5d62"], #pt-foot [style*="color:#2f5d62"] { color: var(--brand) !important; }
+    .pt-rich a[style*="background:#2f5d62"] { background: var(--brand) !important; }
     .pt-wrap { max-width: 680px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 16px; }
-    .pt-head { padding: 18px 24px; color: #fff; font-weight: 700; font-size: 17px; background: #2f5d62; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .pt-head { padding: 18px 24px; color: #fff; font-weight: 700; font-size: 17px; background: linear-gradient(135deg, #2552a3 0%, #3a7bd5 100%); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .pt-head .grow { flex: 1 1 auto; min-width: 0; }
     .pt-head small { display: block; font-weight: 400; font-size: 13px; opacity: .85; margin-top: 2px; }
     .pt-head button { background: rgba(255, 255, 255, .18); color: inherit; border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -22,13 +36,19 @@
     .pt-body h1 { margin: 0; font-size: 22px; }
     .pt-body h2 { margin: 0; font-size: 16px; color: var(--text); }
     .pt-sec { display: flex; flex-direction: column; gap: 10px; }
-    .pt-status { display: inline-flex; align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; background: var(--accent-soft, #e3eeec); color: var(--accent, #2f5d62); }
+    .pt-blocks { display: flex; flex-direction: column; gap: 16px; }
+    .pt-blocks:empty { display: none; }
+    .pt-blk { padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .pt-blk h2 { margin: 0; font-size: 16px; color: var(--text); }
+    .pt-blk > .pt-rich > :first-child { margin-top: 0 !important; }
+    .pt-blk > .pt-rich > :last-child { margin-bottom: 0 !important; }
+    .pt-status { display: inline-flex; align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; background: var(--accent-soft, #e5edfb); color: var(--accent, #2b5fb4); }
     .pt-status.gone { background: var(--bad-soft); color: var(--bad); }
     .pt-text { line-height: 1.8; }
     .pt-steps { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
     .pt-steps li { flex: 1 1 64px; min-width: 0; padding: 9px 4px; border-radius: 10px; background: var(--surface-2, #f4f5f3); color: var(--text-3); font-size: 12.5px; text-align: center; white-space: nowrap; }
-    .pt-steps li.done { background: var(--accent-soft, #e3eeec); color: var(--accent, #2f5d62); font-weight: 500; }
-    .pt-steps li.now { background: var(--accent, #2f5d62); color: #fff; font-weight: 700; }
+    .pt-steps li.done { background: var(--accent-soft, #e5edfb); color: var(--accent, #2b5fb4); font-weight: 500; }
+    .pt-steps li.now { background: var(--accent, #2b5fb4); color: #fff; font-weight: 700; }
     .pt-info { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .pt-info div { display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
     .pt-info div:last-child { border-bottom: 0; }
@@ -42,8 +62,10 @@
     .pt-foot { color: var(--text-3); font-size: 13px; text-align: center; line-height: 1.7; }
     .pt-rich { line-height: 1.8; min-width: 0; overflow-wrap: anywhere; }
     .pt-rich table { width: 100%; }
+    .pt-rich img { max-width: 100%; height: auto; }
+    .pt-map { display: block; width: 100%; height: 200px; border: 0; border-radius: 10px; margin-top: 10px; background: #eaf0fa; }
     .pt-squad { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-    .pt-squad b { font-size: 22px; color: var(--accent, #2f5d62); }
+    .pt-squad b { font-size: 22px; color: var(--accent, #2b5fb4); }
     .pt-staff { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .pt-staff div { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
     .pt-staff div:last-child { border-bottom: 0; }
@@ -54,36 +76,37 @@
     .pt-cd .lbl { font-size: 14px; color: var(--text-2); }
     .pt-cd .nums { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     .pt-cd .nums div { min-width: 64px; padding: 10px 6px; border-radius: 12px; background: var(--surface-2, #f4f5f3); display: flex; flex-direction: column; gap: 2px; }
-    .pt-cd .nums b { font-size: 28px; line-height: 1.1; color: var(--accent, #2f5d62); font-variant-numeric: tabular-nums; }
+    .pt-cd .nums b { font-size: 28px; line-height: 1.1; color: var(--accent, #2b5fb4); font-variant-numeric: tabular-nums; }
     .pt-cd .nums span { font-size: 12px; color: var(--text-3); }
-    .pt-cd .big { font-size: 20px; font-weight: 700; color: var(--accent, #2f5d62); }
+    .pt-cd .big { font-size: 20px; font-weight: 700; color: var(--accent, #2b5fb4); }
     .pt-check { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .pt-check label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; line-height: 1.6; }
     .pt-check label:last-child { border-bottom: 0; }
-    .pt-check input { width: 18px; height: 18px; margin-top: 3px; flex: 0 0 auto; accent-color: var(--accent, #2f5d62); }
+    .pt-check input { width: 18px; height: 18px; margin-top: 3px; flex: 0 0 auto; accent-color: var(--accent, #2b5fb4); }
     .pt-check input:checked + span { color: var(--text-3); text-decoration: line-through; }
     .pt-check span { min-width: 0; overflow-wrap: anywhere; }
     .pt-cnt { font-size: 13px; font-weight: 400; color: var(--text-3); }
     .pt-log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
     .pt-log div { display: flex; gap: 10px; flex-wrap: wrap; }
     .pt-log time { color: var(--text-3); white-space: nowrap; }
-    @media (max-width: 520px) { .pt-row { grid-template-columns: 1fr; } .pt-body { padding: 20px 16px; } }
+    @media (max-width: 520px) { .pt-row { grid-template-columns: 1fr; } .pt-body { padding: 20px 16px; } .pt-blk { padding: 18px 16px; } }
   </style>
 </head>
 <body>
   <div class="pt-wrap">
     <div class="card pt-cd" id="pt-cd" hidden></div>
-    <div class="card">
+    <div class="card" id="pt-top">
       <div class="pt-head" id="pt-head"><div class="grow" id="pt-camp">載入中…</div></div>
       <div class="pt-body" id="pt-body"><div class="muted">載入中…</div></div>
     </div>
+    <div class="pt-blocks" id="pt-blocks"></div>
     <div class="pt-foot" id="pt-foot"></div>
   </div>
 <script>
 (function () {
   var q = new URLSearchParams(location.search);
   var prefix = q.get('p') || '', key = q.get('k') || '';
-  var body = document.getElementById('pt-body'), head = document.getElementById('pt-head'), camp = document.getElementById('pt-camp');
+  var body = document.getElementById('pt-body'), blocks = document.getElementById('pt-blocks'), top = document.getElementById('pt-top'), cdBox = document.getElementById('pt-cd'), head = document.getElementById('pt-head'), camp = document.getElementById('pt-camp');
   var I = null;
   var store = 'portal_' + prefix + '_' + key;   // 登入憑證只存在這個分頁，關掉就登出
 
@@ -97,7 +120,18 @@
       .then(function (r) { if (!r.ok) throw new Error('連線失敗，請稍後再試'); return r.json(); })
       .then(function (j) { if (!j.ok) throw new Error(j.error || '發生錯誤'); return j.result; });
   }
+  /** 沒登入的畫面：清掉區塊卡片，倒數回到最上面，聯絡人員放頁尾 */
+  function plain() {
+    blocks.innerHTML = '';
+    top.parentNode.insertBefore(cdBox, top);
+    foot(true);
+  }
+  function foot(withContacts) {
+    if (!I) return;
+    document.getElementById('pt-foot').innerHTML = (withContacts && I.contactsHtml ? '<div style="text-align:left;margin-bottom:16px">' + I.contactsHtml + '</div>' : '') + I.signatureHtml;
+  }
   function closed(msg) {
+    plain();
     camp.textContent = '學員專區';
     body.innerHTML = '<div class="pt-msg"></div>';
     body.firstChild.textContent = msg;
@@ -114,6 +148,7 @@
 
   function login(msg) {
     logoutBtn(false);
+    plain();
     body.innerHTML = '<h1>學員專區</h1><div class="pt-text">輸入報名時填的學員姓名與' + esc(I.keyLabel) + '，查看你的報名進度、繳費資訊與營隊資訊。</div>' +
       (msg ? '<div class="pt-msg"></div>' : '') +
       '<form class="pt-sec" id="pt-login" autocomplete="on"><div class="pt-row">' +
@@ -152,41 +187,61 @@
     });
   }
 
-  /** 學員看到的主畫面；preview 時按鈕不能點（管理員預覽） */
+  /** 學員看到的主畫面：問候在上方卡片，其他資訊依管理員排的順序各自一張圓角卡片；preview 時按鈕不能點（管理員預覽） */
   function render(d, preview) {
-      var h = '<h1>' + esc(d.name) + ' 你好</h1>';
-      h += '<div class="pt-sec"><h2>報名進度</h2><span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
-        (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '✓ ' : '') + esc(s.label) + '</li>'; }).join('') + '</ol>' : '') +
-        (d.statusText ? '<div class="pt-text"></div>' : '') +
-        (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a) { return preview ? '<span class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" title="預覽中不能點">' + esc(a.label) + '</span>' : '<a class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" href="' + esc(a.url) + '">' + esc(a.label) + '</a>'; }).join('') + '</div>' : '') + '</div>';
-      if (d.squad) {
-        h += '<div class="pt-sec"><h2>我的小隊</h2><div class="pt-squad"><b>第 ' + esc(d.squad.no) + ' 小隊</b></div>' +
-          (d.squad.staff.length ? '<div class="pt-staff">' + d.squad.staff.map(function (x) {
-            var c = x.contact ? (/^[\d\s()+\-#]{8,}$/.test(x.contact) ? '<a href="tel:' + esc(x.contact.replace(/[^\d+#]/g, '')) + '">' + esc(x.contact) + '</a>' : esc(x.contact)) : '';
-            return '<div><em>' + esc(x.role) + '</em><b>' + esc(x.name) + '</b>' + (c ? '<span>' + c + '</span>' : '') + '</div>';
-          }).join('') + '</div>' : '') + '</div>';
-      }
-      if (d.payHtml) h += '<div class="pt-sec"><h2>繳費資訊</h2><div class="pt-rich">' + d.payHtml + '</div></div>';
-      h += '<div class="pt-sec"><h2>報名資訊</h2>' + infoTable(d.info) + '</div>';
+      body.innerHTML = '<h1>' + esc(d.name) + ' 你好</h1>';
+      foot(false);
+      function card(title, inner, extra) { return '<section class="card pt-blk"' + (extra || '') + '>' + (title ? '<h2>' + title + '</h2>' : '') + inner + '</section>'; }
+      var SYS = {
+        countdown: function () { return '<div data-cd></div>'; },
+        status: function () {
+          return card('報名進度', '<span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
+            (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '✓ ' : '') + esc(s.label) + '</li>'; }).join('') + '</ol>' : '') +
+            (d.statusText ? '<div class="pt-text"></div>' : '') +
+            (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a) { return preview ? '<span class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" title="預覽中不能點">' + esc(a.label) + '</span>' : '<a class="btn ' + (a.kind === 'pay' ? 'primary' : 'ghost') + '" href="' + esc(a.url) + '">' + esc(a.label) + '</a>'; }).join('') + '</div>' : ''));
+        },
+        squad: function () {
+          if (!d.squad) return '';
+          return card('我的小隊', '<div class="pt-squad"><b>第 ' + esc(d.squad.no) + ' 小隊</b></div>' +
+            (d.squad.staff.length ? '<div class="pt-staff">' + d.squad.staff.map(function (x) {
+              var c = x.contact ? (/^[\d\s()+\-#]{8,}$/.test(x.contact) ? '<a href="tel:' + esc(x.contact.replace(/[^\d+#]/g, '')) + '">' + esc(x.contact) + '</a>' : esc(x.contact)) : '';
+              return '<div><em>' + esc(x.role) + '</em><b>' + esc(x.name) + '</b>' + (c ? '<span>' + c + '</span>' : '') + '</div>';
+            }).join('') + '</div>' : ''));
+        },
+        pay: function () { return d.payHtml ? card('繳費資訊', '<div class="pt-rich">' + d.payHtml + '</div>') : ''; },
+        info: function () { return card('報名資訊', infoTable(d.info)); },
+        data: function () { return d.dataHtml ? card('', '<div class="pt-rich">' + d.dataHtml + '</div>') : ''; },
+        refund: function () { return d.refundHtml ? card('', '<div class="pt-rich">' + d.refundHtml + '</div>') : ''; },
+        reports: function () { return d.reports.length ? card('我送出的表單', '<div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div>') : ''; },
+        contacts: function () { return I && I.contactsHtml ? card('', '<div class="pt-rich">' + I.contactsHtml + '</div>') : ''; }
+      };
+      var h = '';
       (d.sections || []).forEach(function (x, i) {
+        if (x.type === 'sys') { h += SYS[x.key] ? SYS[x.key]() : ''; return; }
         if (x.type === 'checklist') {
-          var done = 0;
-          h += '<div class="pt-sec"><h2>' + esc(x.title) + '<span class="pt-cnt" data-i="' + i + '"></span></h2><div class="pt-check">' + x.items.map(function (it, j) {
+          h += card(esc(x.title) + '<span class="pt-cnt" data-i="' + i + '"></span>', '<div class="pt-check">' + x.items.map(function (it, j) {
             return '<label><input type="checkbox" data-s="' + i + '" data-j="' + j + '"' + (preview ? ' disabled' : '') + '><span>' + it + '</span></label>';
-          }).join('') + '</div></div>';
-        } else h += '<div class="pt-sec"><h2>' + esc(x.title) + '</h2><div class="pt-rich">' + x.html + '</div></div>';
+          }).join('') + '</div>');
+        } else h += card(esc(x.title), '<div class="pt-rich">' + x.html + '</div>');
       });
-      if (d.dataHtml) h += '<div class="pt-rich">' + d.dataHtml + '</div>';
-      if (d.refundHtml) h += '<div class="pt-rich">' + d.refundHtml + '</div>';
-      if (d.reports.length) h += '<div class="pt-sec"><h2>我送出的表單</h2><div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div></div>';
-      body.innerHTML = h;
-      if (d.statusText) body.querySelector('.pt-text').textContent = d.statusText;
+      blocks.innerHTML = h;
+      // 營隊倒數放到管理員排的位置；隱藏時留在最上面（不顯示）
+      var slot = blocks.querySelector('[data-cd]');
+      if (slot) slot.parentNode.replaceChild(cdBox, slot); else top.parentNode.insertBefore(cdBox, top);
+      // 地點卡片下面加上嵌入的 Google 地圖
+      blocks.querySelectorAll('.pt-rich [data-map]').forEach(function (m) {
+        var f = document.createElement('iframe');
+        f.className = 'pt-map'; f.loading = 'lazy'; f.title = '地圖'; f.referrerPolicy = 'no-referrer-when-downgrade';
+        f.src = 'https://www.google.com/maps?q=' + m.getAttribute('data-map') + '&output=embed';
+        m.appendChild(f);
+      });
+      if (d.statusText) blocks.querySelector('.pt-text').textContent = d.statusText;
       // 勾選清單：勾選狀態只存在這支手機（每個區塊依標題記住）
       (d.sections || []).forEach(function (x, i) {
         if (x.type !== 'checklist') return;
         var k = 'portal_chk_' + prefix + '_' + d.name + '_' + x.title, saved = {};
         try { saved = JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) {}
-        var boxes = body.querySelectorAll('input[data-s="' + i + '"]'), cnt = body.querySelector('.pt-cnt[data-i="' + i + '"]');
+        var boxes = blocks.querySelectorAll('input[data-s="' + i + '"]'), cnt = blocks.querySelector('.pt-cnt[data-i="' + i + '"]');
         function count() { var n = 0; boxes.forEach(function (b) { if (b.checked) n++; }); cnt.textContent = '　' + n + ' / ' + boxes.length; }
         boxes.forEach(function (b) {
           var key2 = b.parentNode.textContent.trim();
@@ -202,7 +257,7 @@
   function countdown(info) {
     var box = document.getElementById('pt-cd');
     if (cdTimer) clearInterval(cdTimer);
-    if (!info.startMs) { box.hidden = true; return; }
+    if (!info.startMs || info.countdown === false) { box.hidden = true; return; }
     var skew = info.now ? info.now - Date.now() : 0;
     function pad(n) { return n < 10 ? '0' + n : String(n); }
     function tick() {
@@ -227,8 +282,7 @@
     I = info;
     countdown(info);
     camp.innerHTML = esc(info.campName) + (info.period ? '<small>' + esc(info.period) + '</small>' : '');
-    head.style.background = info.headerColor;
-    document.getElementById('pt-foot').innerHTML = (info.contactsHtml ? '<div style="text-align:left;margin-bottom:16px">' + info.contactsHtml + '</div>' : '') + info.signatureHtml;
+    foot(!blocks.innerHTML);
   }
 
   /** 管理員預覽：從學員管理頁打開，用管理員的登入看某位學員的畫面 */
