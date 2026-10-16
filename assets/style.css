@@ -556,3 +556,18 @@
   .upd-bar .btn.ghost { color: inherit; border-color: transparent; background: transparent; }
   @keyframes upd-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
   @media (max-width: 520px) { .upd-bar { border-radius: 16px; flex-wrap: wrap; justify-content: flex-end; } .upd-bar span { flex-basis: 100%; } }
+
+  /* 分房 */
+  .room-dlg { display: flex; flex-direction: column; gap: 16px; }
+  .room-sec { display: flex; flex-direction: column; gap: 8px; }
+  .room-head, .room-row { display: grid; grid-template-columns: 90px 1.2fr 76px 2fr auto; gap: 6px; align-items: center; }
+  .room-head { font-size: 12px; color: var(--text-3); padding: 0 2px; }
+  .room-list { display: flex; flex-direction: column; gap: 6px; max-height: 30vh; overflow-y: auto; }
+  .room-row .input { min-width: 0; }
+  .room-assign { max-height: 36vh; }
+  .room-assign .squad-row select { width: 210px; max-width: 55%; }
+  @media (max-width: 640px) {
+    .room-head { display: none; }
+    .room-row { grid-template-columns: 1fr 1fr 70px; }
+    .room-row [data-k=note] { grid-column: 1 / 3; }
+  }
