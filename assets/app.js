@@ -308,19 +308,25 @@ function formDialog(o) {
 }
 
 /* ---------- 預製表單（匯款回報、取消候補、取消報名）的內容編輯 ---------- */
-var FORM_VAR_NAMES = { pay: '匯款回報', unwait: '取消候補', cancel: '取消報名' };
+var FORM_VAR_NAMES = { pay: '匯款回報', unwait: '取消候補', cancel: '取消報名', consent: '簽署同意書' };
 
 /** 編輯一張表單的標題、按鈕文字、說明、送出後訊息；回傳 {title, button, intro, done} 或 null */
 function openFormEditor(f, desc) {
-  return formDialog({
-    title: '編輯「' + f.name + '」', desc: desc, wide: true, okLabel: '儲存',
-    fields: [
-      { name: 'title', label: '表單標題', required: true, value: f.title },
-      { name: 'button', label: '信裡按鈕的文字', required: true, value: f.button, hint: '信件可放 {{' + FORM_VAR_NAMES[f.kind] + '按鈕}}（置中的按鈕）或 {{' + FORM_VAR_NAMES[f.kind] + '連結}}（網址）' },
-      { name: 'intro', label: '表單說明（顯示在最上方）', type: 'textarea', format: true, value: f.intro, hint: '可用粗體、顏色、卡片等格式。學員先輸入姓名與身分證字號查到自己的報名，最後一欄固定是「任何想說的話」' },
-      { name: 'done', label: '送出後顯示的訊息', type: 'textarea', format: true, value: f.done }
-    ]
-  });
+  var fields = [
+    { name: 'title', label: '表單標題', required: true, value: f.title },
+    { name: 'button', label: '信裡按鈕的文字', required: true, value: f.button, hint: '信件可放 {{' + FORM_VAR_NAMES[f.kind] + '按鈕}}（置中的按鈕）或 {{' + FORM_VAR_NAMES[f.kind] + '連結}}（網址）' },
+    { name: 'intro', label: '表單說明（顯示在最上方）', type: 'textarea', format: true, value: f.intro, hint: f.kind === 'consent' ? '可用粗體、顏色、卡片等格式。學員先輸入姓名與身分證字號查到自己的報名，再閱讀並簽署下面兩份同意書' : '可用粗體、顏色、卡片等格式。學員先輸入姓名與身分證字號查到自己的報名，最後一欄固定是「任何想說的話」' },
+    { name: 'done', label: '送出後顯示的訊息', type: 'textarea', format: true, value: f.done }
+  ];
+  if (f.kind === 'consent') {
+    fields.push(
+      { name: 'guardianTitle', label: '第一份同意書標題', required: true, value: f.guardianTitle },
+      { name: 'guardian', label: '第一份同意書內容', type: 'textarea', format: true, value: f.guardian, hint: '可用 {{姓名}}（學員姓名）、{{營隊名稱}}、{{營期}} 等變數。簽名欄與日期由系統加在最後，不用寫在內容裡' },
+      { name: 'privacyTitle', label: '第二份同意書標題', required: true, value: f.privacyTitle },
+      { name: 'privacy', label: '第二份同意書內容', type: 'textarea', format: true, value: f.privacy }
+    );
+  }
+  return formDialog({ title: '編輯「' + f.name + '」', desc: desc, wide: true, okLabel: '儲存', fields: fields });
 }
 
 /* ---------- 日期防呆：開始招生 ≤ 早鳥期限 ≤ 結束招生 ≤ 營期開始 ≤ 營期結束 ---------- */
@@ -1318,6 +1324,7 @@ function renderTopbar(name, params) {
       { header: App.user.email },
       { label: '修改密碼', onClick: changeMyPassword },
       { label: '安裝到桌面', onClick: installApp },
+      { label: '聯絡開發人員', onClick: contactDeveloper },
       { sep: true },
       { label: '登出', danger: true, onClick: function () { api('logout').finally(function () { store('camp_token', null); location.href = 'index.html'; }); } }
     ]);
@@ -1703,6 +1710,24 @@ function installApp() {
     title: '安裝到桌面', desc: '安裝後會有獨立視窗與圖示，像一般應用程式一樣開啟。',
     body: '<ol class="summary-list">' + lines.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ol>',
     buttons: [{ label: '知道了', cls: 'primary', value: true }]
+  });
+}
+
+/** 聯絡開發人員：問題回報或功能建議直接寄給開發人員，回信會寄到自己的信箱 */
+function contactDeveloper() {
+  formDialog({
+    title: '聯絡開發人員', okLabel: '寄出',
+    desc: '問題回報、功能建議都可以寫在這裡，會寄給系統開發人員；對方回信會寄到你的信箱 ' + ((App.user && App.user.email) || '') + '。',
+    fields: [
+      { name: 'kind', label: '類型', type: 'select', value: 'bug', options: [{ value: 'bug', label: '問題回報' }, { value: 'idea', label: '功能建議' }, { value: 'other', label: '其他' }] },
+      { name: 'subject', label: '主旨', required: true },
+      { name: 'body', label: '內容', type: 'textarea', required: true, hint: '問題回報請寫：在哪一頁、做了什麼、看到什麼訊息。目前頁面網址與瀏覽器會自動附上' }
+    ]
+  }).then(function (v) {
+    if (!v) return;
+    v.page = location.pathname.split('/').pop() + location.search;
+    v.ua = navigator.userAgent;
+    withBusy(api('contactDeveloper', v)).then(function () { toast('已寄給開發人員，謝謝你的回報'); }).catch(function (e) { toast(e.message, true); });
   });
 }
 
