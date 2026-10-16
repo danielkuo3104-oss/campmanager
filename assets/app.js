@@ -1,3 +1,4 @@
+/* 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. */
 /* 共用程式：API、頁面框架、彈窗、確認視窗、提示 */
 /* ============ 共用：API、登入、路由、彈窗、提示 ============ */
 var App = {
@@ -117,6 +118,19 @@ function highlightHit(rule, v) {
   return (rule.values || []).some(function (x) { return x === s || parts.indexOf(x) >= 0; });
 }
 
+/** 手機版（窄螢幕）：只留瀏覽、寄信等操作與專案設定，版面複雜的編輯功能請用電腦（樣式見 .desk-only） */
+function isPhone() { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); }
+
+/** 版權標示：每一頁最下方 */
+var COPYRIGHT = '© 2026 Daniel GUO. All rights reserved.';
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.querySelector('.copyright')) return;
+  var f = document.createElement('footer');
+  f.className = 'copyright';
+  f.textContent = '營隊報名管理系統　' + COPYRIGHT;
+  document.body.appendChild(f);
+});
+
 function esc(s) {
   return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -218,7 +232,10 @@ function formDialog(o) {
   o.fields.forEach(function (f) {
     var id = 'f_' + f.name;
     var wrap;
-    if (f.type === 'checkbox') {
+    if (f.type === 'note') {
+      // 唯讀資訊方塊（html 由呼叫端組好並跳脫）
+      wrap = el('<div class="dlg-note"></div>'); wrap.innerHTML = f.html || '';
+    } else if (f.type === 'checkbox') {
       wrap = el('<label class="check"><input type="checkbox" name="' + f.name + '"' + (f.value ? ' checked' : '') + '><span></span></label>');
       $('span', wrap).textContent = f.label;
     } else if (f.type === 'checklist') {
@@ -271,6 +288,7 @@ function formDialog(o) {
       validate: function () {
         for (var i = 0; i < o.fields.length; i++) {
           var f = o.fields[i];
+          if (f.type === 'note') continue;
           if (f.type === 'checklist') { if (f.required && !$$('input[data-cl="' + f.name + '"]:checked', form).length) { err.textContent = '請至少勾選一位'; return false; } continue; }
           if (f.required && f.type !== 'checkbox' && !String(form.elements[f.name].value).trim()) { err.textContent = '請填寫「' + f.label + '」'; return false; }
         }
@@ -279,6 +297,7 @@ function formDialog(o) {
       value: function () {
         var out = {};
         o.fields.forEach(function (f) {
+          if (f.type === 'note') return;
           if (f.type === 'checklist') { out[f.name] = $$('input[data-cl="' + f.name + '"]:checked', form).map(function (i) { return i.value; }); return; }
           var i = form.elements[f.name]; out[f.name] = f.type === 'checkbox' ? i.checked : i.value;
         });
@@ -474,7 +493,7 @@ function prefixLines(ta, mark) {
   var v = ta.value, a = v.lastIndexOf('\n', ta.selectionStart - 1) + 1;
   var z = v.indexOf('\n', Math.max(ta.selectionEnd - (ta.selectionEnd > ta.selectionStart ? 1 : 0), ta.selectionStart));
   if (z < 0) z = v.length;
-  var block = v.slice(a, z).split('\n').map(function (ln) { return mark + ln.replace(/^[ \t\u3000]*(?:[-–]\s+|[•・]\s*)/, ''); }).join('\n');
+  var block = v.slice(a, z).split('\n').map(function (ln) { return mark + ln.replace(/^[ \t\u3000]*(?:[-–]\s+|[•・]\s*|\[[ xXvV✓]?\]\s+)/, ''); }).join('\n');
   ta.value = v.slice(0, a) + block + v.slice(z);
   ta.focus();
   ta.selectionStart = a; ta.selectionEnd = a + block.length;
@@ -510,7 +529,7 @@ function formatToolbar(ta, opts) {
     '<span class="fmt-sep"></span>' + hexField('fmt-hex-main', '#c62828') +
     '<button type="button" class="fmt-btn" data-f="color" title="[#色號]文字[/#]">文字色</button><button type="button" class="fmt-btn" data-f="bg" title="[hl=#色號]文字[/hl]">底色</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="hl" title="螢光標記 ==文字==" style="background:#fde68a;color:#111">螢光</button>' +
-    '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button>' +
+    '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button><button type="button" class="fmt-btn" data-f="cb" title="核取方塊：行首「[ ] 」，信件顯示 ☐，學員專區可以打勾">☐ 核取</button>' +
     '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button>' +
     '<button type="button" class="fmt-btn fmt-card" data-f="card" title="卡片：[card]文字[/card]，淡色底、粗體色字的提醒方塊；用左邊的色號或顏色代號換顏色">卡片</button>' +
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
@@ -623,7 +642,7 @@ function formatToolbar(ta, opts) {
       ta.selectionStart = ta.selectionEnd = a0 + pre.length + 3 + post.length;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    if (f === 'ul' || f === 'sub') prefixLines(ta, f === 'ul' ? '- ' : '  - ');
+    if (f === 'ul' || f === 'sub' || f === 'cb') prefixLines(ta, f === 'ul' ? '- ' : f === 'sub' ? '  - ' : '[ ] ');
     if (color) wrapSelection(ta, '[' + color + ']', '[/' + color + ']', '彩色文字');
     if (f === 'color' || f === 'bg') {
       var hx = mainHex();
@@ -957,6 +976,15 @@ function mailTextToHtml(text) {
       lastBlock = true;
       return;
     }
+    // 核取方塊：行首 [ ] 或 [x]，信件顯示 ☐／☑，學員專區可以打勾
+    var cb = ln.match(/^\s*\[([ xXvV✓]?)\]\s+(.*)$/);
+    if (cb) {
+      flush();
+      var on = !!cb[1].trim();
+      html += '<div data-cb="' + (on ? 1 : 0) + '" style="margin:2px 0;padding-left:1.5em;text-indent:-1.5em;line-height:1.75"><span style="display:inline-block;width:1.5em;text-indent:0;color:#6b7280">' + (on ? '☑' : '☐') + '</span>' + cb[2] + '</div>';
+      lastBlock = true;
+      return;
+    }
     var sub = ln.match(/^[ \t\u3000]+(?:[-–]\s+|[•・]\s*)(.*)$/);
     var top = sub ? null : ln.match(/^(?:[-–]\s+|[•・]\s*)(.*)$/);
     if (sub) {
@@ -1025,7 +1053,7 @@ function openTemplateEditor(t, opts) {
   var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
-    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目<br>' +
+    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目、<code>[ ] </code> 核取方塊（<code>[x] </code> 已勾）<br>' +
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
