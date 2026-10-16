@@ -79,6 +79,10 @@
     .cs-print .camp { text-align: center; color: #5b665f; margin-bottom: 22px; }
     .cs-print .sigs { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px 32px; }
     .cs-print .sigs div { border-bottom: 1px solid #1d2621; padding-top: 34px; font-size: 13px; color: #5b665f; }
+    .cs-part + .cs-part { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--line); }
+    .cs-part-t { margin: 0 0 8px; font-size: 16px; }
+    .cs-print .gap { height: 36px; }
+    .cs-print .note { margin-top: 36px; color: #5b665f; font-size: 13px; }
     .cs-print .date { margin-top: 30px; text-align: center; letter-spacing: .3em; }
   </style>
 </head>
@@ -210,58 +214,55 @@
     var form = document.getElementById('cs-form'), submitBtn = form.querySelector('button[type=submit]');
     var mode = r.mode === 'upload' ? 'upload' : 'online';
     var onlineBox = document.getElementById('cs-online'), uploadBox = document.getElementById('cs-upload');
-    var pads = {}, state = {}, files = [];
+    var pads = {}, files = [];
 
-    /* ----- 線上簽署：每份要讀到最底下並停留 readSeconds 秒才出現簽名欄 ----- */
-    r.docs.forEach(function (d) {
-      var sec = document.createElement('section');
-      sec.className = 'cs-doc';
-      sec.innerHTML = '<div class="cs-doc-head"><h2></h2></div><div class="cs-scroll" tabindex="0">' + d.html + '<div class="cs-end">— 已經到最底下 —</div></div>' +
-        '<div class="cs-prog"><div class="cs-prog-t"></div><div class="bar"><i></i></div></div><div class="cs-sign" hidden></div>';
-      sec.querySelector('h2').textContent = d.title;
-      onlineBox.appendChild(sec);
-      state[d.key] = { sec: 0, bottom: false, open: false, el: sec };
-      var sc = sec.querySelector('.cs-scroll');
-      function checkBottom() { if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 12) state[d.key].bottom = true; }
-      sc.addEventListener('scroll', checkBottom, { passive: true });
-      state[d.key].check = checkBottom;
-      var sign = sec.querySelector('.cs-sign');
-      pads[d.key] = {};
-      r.signers.forEach(function (sg) {
-        var w = document.createElement('div');
-        w.className = 'cs-pad-wrap';
-        w.innerHTML = '<div class="cs-pad-head"><span></span><button class="btn sm ghost" type="button">清除重簽</button></div><div class="cs-pad"><div class="ph">請在這裡簽名</div></div>';
-        w.querySelector('span').textContent = sg.label + '簽名' + (sg.role === 'student' ? '（' + who.name + '）' : '');
-        sign.appendChild(w);
-        pads[d.key][sg.role] = { box: w.querySelector('.cs-pad'), pad: null, btn: w.querySelector('button') };
-      });
+    /* ----- 線上簽署：兩份同意書放在同一個捲動框，讀到最底下（第二份的最後）並停留 readSeconds 秒才出現簽名欄；兩份共用一組簽名 ----- */
+    var sec = document.createElement('section');
+    sec.className = 'cs-doc';
+    sec.innerHTML = '<div class="cs-doc-head"><h2></h2></div><div class="cs-scroll" tabindex="0">' +
+      r.docs.map(function (d, i) { return '<div class="cs-part"><h3 class="cs-part-t"></h3>' + d.html + '</div>'; }).join('') +
+      '<div class="cs-end">— 已經到最底下 —</div></div>' +
+      '<div class="cs-prog"><div class="cs-prog-t"></div><div class="bar"><i></i></div></div><div class="cs-sign" hidden></div>';
+    sec.querySelector('h2').textContent = r.docs.map(function (d) { return d.title; }).join('、');
+    Array.prototype.forEach.call(sec.querySelectorAll('.cs-part-t'), function (h, i) { h.textContent = (r.docs.length > 1 ? (i + 1) + '. ' : '') + r.docs[i].title; });
+    onlineBox.appendChild(sec);
+    var state = { sec: 0, bottom: false, open: false, el: sec };
+    var sc = sec.querySelector('.cs-scroll');
+    function checkBottom() { if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 12) state.bottom = true; }
+    sc.addEventListener('scroll', checkBottom, { passive: true });
+    var sign = sec.querySelector('.cs-sign');
+    sign.innerHTML = '<div class="small muted">以下簽名同時適用於' + (r.docs.length > 1 ? '以上 ' + r.docs.length + ' 份同意書' : '本同意書') + '</div>';
+    // 成年人只有學員本人一欄；未成年（或看不出生日）才有家長（監護人）簽名欄
+    r.signers.forEach(function (sg) {
+      var w = document.createElement('div');
+      w.className = 'cs-pad-wrap';
+      w.innerHTML = '<div class="cs-pad-head"><span></span><button class="btn sm ghost" type="button">清除重簽</button></div><div class="cs-pad"><div class="ph">請在這裡簽名</div></div>';
+      w.querySelector('span').textContent = sg.label + '簽名' + (sg.role === 'student' ? '（' + who.name + '）' : '');
+      sign.appendChild(w);
+      pads[sg.role] = { box: w.querySelector('.cs-pad'), pad: null, btn: w.querySelector('button') };
     });
     function inView(el) { var b = el.getBoundingClientRect(); return b.bottom > 60 && b.top < window.innerHeight - 60; }
     function tick(add) {
-      var need = r.readSeconds;
-      r.docs.forEach(function (d) {
-        var st = state[d.key], sc = st.el.querySelector('.cs-scroll');
-        st.check();
-        if (add && document.visibilityState === 'visible' && inView(sc)) st.sec = Math.min(need, st.sec + 1);
-        var t = st.el.querySelector('.cs-prog-t');
-        if (st.open) return;
-        if (st.bottom && st.sec >= need) {
-          st.open = true;
-          t.innerHTML = '<span class="ok">已閱讀完畢，請在下面簽名</span>';
-          st.el.querySelector('.bar i').style.width = '100%';
-          var sg = st.el.querySelector('.cs-sign');
-          sg.hidden = false;
-          Object.keys(pads[d.key]).forEach(function (role) {
-            var pd = pads[d.key][role];
-            pd.pad = makePad(pd.box);
-            pd.btn.onclick = function () { pd.pad.clear(); };
-          });
-          updateSubmit();
-          return;
-        }
-        t.textContent = (st.bottom ? '✓ 已讀到最底下' : '請捲動閱讀到最底下') + '　·　閱讀時間 ' + mmss(st.sec) + ' / ' + mmss(need) + (st.sec >= need ? '　✓' : '');
-        st.el.querySelector('.bar i').style.width = Math.round(((st.bottom ? 0.25 : 0) + 0.75 * st.sec / need) * 100) + '%';
-      });
+      var need = r.readSeconds, st = state;
+      if (st.open) return;
+      checkBottom();
+      if (add && document.visibilityState === 'visible' && inView(sc)) st.sec = Math.min(need, st.sec + 1);
+      var t = sec.querySelector('.cs-prog-t');
+      if (st.bottom && st.sec >= need) {
+        st.open = true;
+        t.innerHTML = '<span class="ok">已閱讀完畢，請在下面簽名</span>';
+        sec.querySelector('.bar i').style.width = '100%';
+        sign.hidden = false;
+        Object.keys(pads).forEach(function (role) {
+          var pd = pads[role];
+          pd.pad = makePad(pd.box);
+          pd.btn.onclick = function () { pd.pad.clear(); };
+        });
+        updateSubmit();
+        return;
+      }
+      t.textContent = (st.bottom ? '✓ 已讀到最底下' : '請捲動閱讀到最底下') + '　·　閱讀時間 ' + mmss(st.sec) + ' / ' + mmss(need) + (st.sec >= need ? '　✓' : '');
+      sec.querySelector('.bar i').style.width = Math.round(((st.bottom ? 0.25 : 0) + 0.75 * st.sec / need) * 100) + '%';
     }
     timer = setInterval(function () { tick(true); }, 1000);
     tick(false);
@@ -318,35 +319,47 @@
       });
     }
 
-    /** 下載 PDF：每份同意書一頁起（太長自動分頁），最後是簽名欄與日期 */
+    /** 下載 PDF：兩份同意書接在一起（太長自動分頁），最後是共用的簽名欄與日期 */
     function downloadPdf(btn) {
       busy(btn, true, '下載同意書 PDF');
       Promise.all(PDF_LIBS.map(loadScript)).then(function () { return document.fonts && document.fonts.ready; }).then(function () {
         var host = document.createElement('div'); host.className = 'pdf-host'; document.body.appendChild(host);
         var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true }), first = true;
-        var chain = Promise.resolve();
-        r.docs.forEach(function (d) {
-          chain = chain.then(function () {
-            var pg = document.createElement('div');
-            pg.className = 'cs-print';
-            pg.innerHTML = '<h1></h1><div class="camp"></div><div class="txt">' + d.html + '</div><div class="sigs">' +
-              r.signers.map(function (sg) { return '<div>' + esc(sg.label) + '簽名' + '</div>'; }).join('') + (r.adult ? '' : '') + '</div>' +
-              '<div class="date">中華民國　　　年　　　月　　　日</div>';
-            pg.querySelector('h1').textContent = d.title;
-            pg.querySelector('.camp').textContent = F.campName + '　·　學員 ' + who.name;
-            host.appendChild(pg);
-            return window.html2canvas(pg, { scale: 2, backgroundColor: '#ffffff', logging: false, windowWidth: 794 }).then(function (cv) {
-              var pageH = Math.round(cv.width * 297 / 210);
-              for (var y = 0; y < cv.height; y += pageH) {
-                var part = document.createElement('canvas'); part.width = cv.width; part.height = Math.min(pageH, cv.height - y);
-                var px = part.getContext('2d'); px.fillStyle = '#fff'; px.fillRect(0, 0, part.width, part.height); px.drawImage(cv, 0, -y);
-                if (!first) doc.addPage('a4', 'portrait');
-                first = false;
-                doc.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 210 * part.height / part.width, undefined, 'FAST');
-              }
-              pg.remove();
-            });
+        var pg = document.createElement('div');
+        pg.className = 'cs-print';
+        pg.innerHTML = '<div class="camp"></div>' + r.docs.map(function (d) { return '<h1></h1><div class="txt">' + d.html + '</div>'; }).join('<div class="gap"></div>') +
+          '<div class="sig-block"><div class="note">以下簽名同時適用於以上' + (r.docs.length > 1 ? ' ' + r.docs.length + ' 份' : '') + '同意書</div><div class="sigs">' +
+          r.signers.map(function (sg) { return '<div>' + esc(sg.label) + '簽名' + '</div>'; }).join('') + '</div>' +
+          '<div class="date">中華民國　　　年　　　月　　　日</div></div>';
+        Array.prototype.forEach.call(pg.querySelectorAll('h1'), function (h, i) { h.textContent = r.docs[i].title; });
+        pg.querySelector('.camp').textContent = F.campName + '　·　學員 ' + who.name;
+        host.appendChild(pg);
+        var chain = window.html2canvas(pg, { scale: 2, backgroundColor: '#ffffff', logging: false, windowWidth: 794 }).then(function (cv) {
+          // 分頁點選在段落之間，不把一行字切成兩半；簽名欄與日期整塊放在同一頁
+          var pageH = Math.round(cv.width * 297 / 210), k = cv.height / pg.offsetHeight, top0 = pg.getBoundingClientRect().top;
+          var pad = Math.round(56 * k), cuts = [];
+          Array.prototype.forEach.call(pg.querySelectorAll('h1, .txt > *, .txt li, .txt p, .sig-block'), function (el) {
+            if (el.closest('.sig-block') && !el.classList.contains('sig-block')) return;
+            cuts.push(Math.round((el.getBoundingClientRect().top - top0) * k));
           });
+          var y = 0, n = 0;
+          while (y < cv.height - 2) {
+            var room = pageH - pad - (n ? pad : 0), end = y + room;
+            if (end < cv.height) {
+              var best = 0;
+              cuts.forEach(function (c) { if (c > y + room * 0.4 && c <= end && c > best) best = c; });
+              if (best) end = best;
+            } else end = cv.height;
+            var h = end - y, part = document.createElement('canvas'), off = n ? pad : 0;
+            part.width = cv.width; part.height = pageH;
+            var px = part.getContext('2d'); px.fillStyle = '#fff'; px.fillRect(0, 0, part.width, part.height);
+            px.drawImage(cv, 0, y, cv.width, h, 0, off, cv.width, h);
+            if (!first) doc.addPage('a4', 'portrait');
+            first = false;
+            doc.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+            y = end; n++;
+          }
+          pg.remove();
         });
         return chain.then(function () {
           var url = URL.createObjectURL(doc.output('blob'));
@@ -361,11 +374,8 @@
     function ready() {
       if (!r.adult && !(form.elements.parentName.value.trim())) return '請填寫家長（監護人）姓名';
       if (mode === 'upload') return files.length ? '' : '請上傳簽好的同意書';
-      for (var i = 0; i < r.docs.length; i++) {
-        var d = r.docs[i];
-        if (!state[d.key].open) return '請先閱讀完「' + d.title + '」';
-        for (var role in pads[d.key]) if (!pads[d.key][role].pad || !pads[d.key][role].pad.inked()) return '「' + d.title + '」還缺簽名';
-      }
+      if (!state.open) return '請先閱讀完同意書';
+      for (var role in pads) if (!pads[role].pad || !pads[role].pad.inked()) return '還缺簽名';
       return '';
     }
     function updateSubmit() { submitBtn.disabled = !!ready(); }
@@ -393,7 +403,7 @@
       var data = { mode: mode, parentName: r.adult ? '' : form.elements.parentName.value.trim(), ua: navigator.userAgent };
       if (mode === 'online') {
         data.sigs = {};
-        r.docs.forEach(function (d) { data.sigs[d.key] = {}; Object.keys(pads[d.key]).forEach(function (role) { data.sigs[d.key][role] = pads[d.key][role].pad.png(); }); });
+        Object.keys(pads).forEach(function (role) { data.sigs[role] = pads[role].pad.png(); });
       } else data.files = files.map(function (f) { return { name: f.name, data: f.data }; });
       confirmSelf().then(function (yes) {
         if (!yes) return;
