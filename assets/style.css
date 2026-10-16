@@ -1,3 +1,4 @@
+/* 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. */
   :root {
     --bg: #f3f5f2;
     --surface: #ffffff;
@@ -263,6 +264,7 @@
   .pill.mute { background: var(--mute-soft); color: var(--mute); }
   .tag { display: inline-block; padding: 0 10px; height: 22px; line-height: 22px; border-radius: var(--pill); font-size: 11px; background: var(--mute-soft); color: var(--text-2); margin-left: 6px; white-space: nowrap; }
   .tag.group { background: #f3ebe0; color: #8a5a22; }
+  .tag.early { background: #e4efe6; color: #2f6a45; }
 
   /* 提示條 */
   .banner { display: flex; gap: 10px; align-items: center; padding: 14px 20px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 13px; }
@@ -315,7 +317,8 @@
   table.list tr.faded td { opacity: .45; }
   table.list tr.group-start td { border-top: 2px solid #e6d7c3; border-top-color: color-mix(in srgb, var(--gc, #d9b98f) 45%, transparent); }
   table.list tr.in-group td:first-child { box-shadow: inset 4px 0 0 var(--gc, #d9b98f); }
-  table.list tr.in-group .tag.group::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--gc, #d9b98f); margin-right: 5px; vertical-align: 1px; }
+  /* 「團報」標籤跟著這一組的色帶顏色（淡底、深一點的字） */
+  table.list tr.in-group .tag.group { background: #efe7da; background: color-mix(in srgb, var(--gc, #d9b98f) 30%, #ffffff); color: #5b4a33; color: color-mix(in srgb, var(--gc, #d9b98f) 35%, #2b2b2b); }
   table.list td.cell-clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table.list th.th-clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
   table.list td.cell-name .clip-1 { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -354,6 +357,13 @@
   .modal.wide { width: min(760px, 100%); }
   .modal-head { padding: 26px 28px 8px; }
   .modal-head p { margin: 6px 0 0; color: var(--text-2); }
+  .dlg-note { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 14px; background: var(--brand-soft); display: flex; flex-direction: column; gap: 6px; }
+  .dlg-note .pc-title { font-size: 12px; color: var(--text-2); letter-spacing: .04em; }
+  .dlg-note .pc-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .dlg-note .pc-row.old { opacity: .6; }
+  .dlg-note .pc-l5 { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+  .dlg-note .pc-row small { color: var(--text-2); width: 100%; }
+  .dlg-note .pc-none { color: var(--text-2); font-size: 13px; }
   .modal-body { padding: 12px 28px; display: flex; flex-direction: column; gap: 14px; }
   .modal-foot { padding: 18px 28px 24px; display: flex; justify-content: flex-end; gap: 10px; }
   .kv { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; font-size: 13px; }
@@ -589,3 +599,18 @@ table.list tr:hover td.hl { background: #efe6d2; }
 .col-opts { display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .col-vals .col-extra { height: 34px; font-size: 13px; }
 @media (max-width: 560px) { .col-main { flex-wrap: wrap; } .col-main .col-hl { width: 100%; } .col-vals { margin-left: 0; } }
+
+/* 手機版：版面複雜的編輯功能只在電腦上出現 */
+.phone-note { display: none; }
+@media (max-width: 760px) {
+  .desk-only { display: none !important; }
+  .phone-note { display: block; margin: 10px 0 4px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); color: var(--text-2); font-size: 12.5px; line-height: 1.6; }
+}
+
+/* 版權標示 */
+.copyright { text-align: center; color: var(--text-3); font-size: 12px; padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); letter-spacing: .02em; }
+
+.sd-progress { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); margin-bottom: 12px; }
+.sd-progress b { font-size: 22px; }
+.sd-progress b small { font-size: 13px; font-weight: 500; margin-left: 2px; }
+.sd-progress .bar { margin-top: 0; }
