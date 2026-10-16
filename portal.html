@@ -12,6 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/config.js"></script>
+  <script src="assets/loading.js"></script>
   <style>
     /* 學員專區：每個專案自己的入口，學員用姓名＋身分證字號登入，只看得到自己的報名 */
     /* 學員專區用藍色調（和管理後台的綠色區分） */
@@ -113,7 +114,7 @@
     <div class="card pt-cd" id="pt-cd" hidden></div>
     <div class="card" id="pt-top">
       <div class="pt-head" id="pt-head"><div class="grow" id="pt-camp">載入中…</div></div>
-      <div class="pt-body" id="pt-body"><div class="muted">載入中…</div></div>
+      <div class="pt-body" id="pt-body"><div class="ld"><div class="ld-spin"></div><div class="ld-msg">載入中…</div></div></div>
     </div>
     <div class="pt-blocks" id="pt-blocks"></div>
     <div class="pt-foot" id="pt-foot"></div>
@@ -177,10 +178,11 @@
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var btn = form.querySelector('button'), err = form.querySelector('.pt-err');
-      err.textContent = ''; btn.disabled = true; btn.textContent = '登入中…';
+      err.textContent = ''; btnBusy(btn, true, '登入', '登入中…');
       call('portalLogin', prefix, key, form.elements.name.value.trim(), form.elements.key.value.trim()).then(function (r) {
-        setTok(r.token); show();
-      }).catch(function (e2) { err.textContent = e2.message; btn.disabled = false; btn.textContent = '登入'; });
+        setTok(r.token);
+        if (r.data) { logoutBtn(true); render(r.data); } else show();
+      }).catch(function (e2) { err.textContent = e2.message; btnBusy(btn, false, '登入'); });
     });
   }
 
@@ -191,8 +193,8 @@
   function show() {
     var tok = getTok();
     if (!tok) { login(); return; }
-    body.innerHTML = '<div class="muted">載入中…</div>';
-    call('portalData', tok, prefix, key).then(function (d) {
+    showLoading(body, '正在載入你的報名資料…');
+    (pending || call('portalData', tok, prefix, key)).then(function (d) {
       logoutBtn(true);
       render(d);
     }).catch(function (e) {
@@ -339,7 +341,7 @@
     var adminTok = '';
     try { adminTok = sessionStorage.getItem('camp_token') || localStorage.getItem('camp_token') || ''; } catch (e) {}
     if (!adminTok) { closed('預覽需要先登入管理系統，請從「報名與學員管理 → 學員專區 → 預覽」打開'); return; }
-    body.innerHTML = '<div class="muted">載入中…</div>';
+    showLoading(body, '正在載入學員看到的畫面…');
     call('portalPreview', adminTok, prefix, sid || '').then(function (r) {
       applyHead(r.head);
       document.title = '預覽學員專區｜' + r.head.campName;
@@ -358,11 +360,15 @@
 
   if (prefix && q.get('preview') === '1') { preview(q.get('s') || ''); return; }
   if (!prefix || !key) { closed('網址不完整，請使用籌辦團隊提供的學員專區網址'); return; }
+  // 已經登入過：專案資訊和報名資料同時載入，不用一個等一個
+  var pending = getTok() ? call('portalData', getTok(), prefix, key) : null;
+  if (pending) pending.catch(function () {});
   call('portalInfo', prefix, key).then(function (info) {
     if (info.closed) { closed(info.message); return; }
     applyHead(info);
     document.title = '學員專區｜' + info.campName;
     show();
+    pending = null;
   }).catch(function (e) { closed(e.message); });
 })();
 </script>
