@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -89,7 +90,7 @@ App.page('menu', function (root) {
       box.appendChild(t);
     });
     if (r.canCreate) {
-      var add = el('<div class="tile add"><div class="plus">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單' + (r.needsApproval ? '（需總管核准）' : '') + '</div></div>');
+      var add = el('<div class="tile add desk-only"><div class="plus">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單' + (r.needsApproval ? '（需總管核准）' : '') + '</div></div>');
       add.addEventListener('click', function () { go('newproject'); });
       box.appendChild(add);
     }
