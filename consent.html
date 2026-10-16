@@ -202,7 +202,7 @@
       document.getElementById('pf-back').onclick = start;
       return;
     }
-    if (r.signed) html += '<div class="pf-msg">你在 ' + esc(r.signed.t) + ' 已經簽署過同意書。如需重新簽署，送出後會以新的一份為準。</div>';
+    if (r.signed) html += '<div class="pf-msg">' + (r.signed.redo ? '籌辦團隊請你重新簽署同意書。原因：' + esc(r.signed.redo) : '你在 ' + esc(r.signed.t) + ' 已經簽署過同意書。如需重新簽署，送出後會以新的一份為準。') + '</div>';
     html += '<div class="pf-est">' + esc(r.ageNote) + '</div>';
     if (r.mode === 'both') html += '<div class="cs-tabs" role="tablist"><button type="button" data-m="online" class="on">線上簽署</button><button type="button" data-m="upload">下載 PDF 簽好後上傳</button></div>';
     html += '<form class="pf-steps" id="cs-form" novalidate>' +
