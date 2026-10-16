@@ -25,6 +25,7 @@ function exportSystemFields_(groups) {
   return [
     { key: 'sys:no', label: '序號', get: function (s, i) { return String(i + 1); } },
     { key: 'sys:status', label: '狀態', get: function (s) { return s.status; } },
+    { key: 'sys:room', label: '房間', get: function (s) { return s.room || ''; } },
     { key: 'sys:squad', label: '小隊', get: function (s) { return s.squad === '' || s.squad === undefined ? '' : String(s.squad); } },
     { key: 'sys:time', label: '報名時間', get: function (s) { return fmtTime(s.time); } },
     { key: 'sys:id', label: '學員編號', get: function (s) { return s.id; } },
@@ -67,6 +68,7 @@ function openExportDialog(o) {
   var questions = (p.questions || []).slice();
   (o.all || []).forEach(function (s) { Object.keys(s.data || {}).forEach(function (k) { if (questions.indexOf(k) < 0) questions.push(k); }); });
   var display = o.displayCols || [];
+  var rooms = o.rooms || [];
 
   function checkHtml(key, label, on) {
     return '<label class="check"><input type="checkbox" name="col" value="' + esc(key) + '"' + (on ? ' checked' : '') + '><span>' + esc(label) + '</span></label>';
@@ -79,14 +81,12 @@ function openExportDialog(o) {
       '<label class="check"><input type="checkbox" name="noGone" checked><span>不含取消／失敗</span></label>' +
       '<label class="check"><input type="checkbox" name="noWait" checked><span>不含候補</span></label>' +
       '<span class="small muted export-count"></span></div></div>' +
-    (o.squads > 0 ? '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
+    '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
       '<label><input type="radio" name="order" value="screen" checked><span>與畫面相同</span></label>' +
-      '<label><input type="radio" name="order" value="squad"><span>依小隊（隊內依姓名筆畫）</span></label>' +
+      (o.squads > 0 ? '<label><input type="radio" name="order" value="squad"><span>依小隊（隊內依姓名筆畫）</span></label>' : '') +
+      (rooms.length ? '<label><input type="radio" name="order" value="room"><span>分房表（依房號，房內依姓名筆畫）</span></label>' : '') +
       '<label><input type="radio" name="order" value="stroke"><span>依姓名筆畫</span></label></div>' +
-      '<label class="check export-break hidden"><input type="checkbox" name="squadBreak" checked><span>每個小隊從新的一頁開始</span></label></div>'
-      : '<div class="export-row"><span class="export-label">排列順序</span><div class="seg">' +
-      '<label><input type="radio" name="order" value="screen" checked><span>與畫面相同</span></label>' +
-      '<label><input type="radio" name="order" value="stroke"><span>依姓名筆畫</span></label></div></div>') +
+      '<label class="check export-break hidden"><input type="checkbox" name="squadBreak" checked><span>每個小隊從新的一頁開始</span></label></div>' +
     '<div class="export-row"><span class="export-label">紙張方向</span><div class="seg">' +
       '<label><input type="radio" name="orient" value="portrait" checked><span>直式 A4</span></label>' +
       '<label><input type="radio" name="orient" value="landscape"><span>橫式 A4</span></label></div></div>' +
@@ -162,7 +162,12 @@ function openExportDialog(o) {
     });
   });
   body.addEventListener('change', function (e) {
-    if (e.target.name === 'order') { var br = $('.export-break', body); if (br) br.classList.toggle('hidden', e.target.value !== 'squad'); }
+    if (e.target.name === 'order') {
+      var br = $('.export-break', body), ord = e.target.value;
+      br.classList.toggle('hidden', ord !== 'squad' && ord !== 'room');
+      $('span', br).textContent = ord === 'room' ? '每間房從新的一頁開始' : '每個小隊從新的一頁開始';
+      if (ord === 'room') $('input[name=squadBreak]', body).checked = false;
+    }
     if (e.target.name === 'col' || e.target.name === 'tool') {
       // 欄位一多自動建議橫式（使用者仍可改回）
       if (selected().length + tools().length > 7 && !body.dataset.touched) $('input[name=orient][value=landscape]', body).checked = true;
@@ -211,8 +216,22 @@ function openExportDialog(o) {
     if (v.order === 'squad') list.sort(function (a, b) {
       return (a.squad === '' || a.squad === undefined ? 999 : a.squad) - (b.squad === '' || b.squad === undefined ? 999 : b.squad) || STROKE_CMP(a.name, b.name);
     });
+    // 分房表：房號順序同分房清單，清單外的房號接在後面，未分房排最後；每間房一個標題列
+    var groupOf = null;
+    if (v.order === 'room') {
+      var idx = {}, cnt = {};
+      rooms.forEach(function (x, i) { idx[x.no] = i; });
+      list.forEach(function (s) { if (s.room) cnt[s.room] = (cnt[s.room] || 0) + 1; });
+      var rk = function (s) { return !s.room ? 99999 : idx[s.room] === undefined ? 99998 : idx[s.room]; };
+      list.sort(function (a, b) { return rk(a) - rk(b) || String(a.room || '').localeCompare(String(b.room || '')) || STROKE_CMP(a.name, b.name); });
+      groupOf = function (s) {
+        if (!s.room) return '未分房';
+        var x = rooms[idx[s.room]] || {};
+        return '房號 ' + s.room + (x.label ? '　' + x.label : '') + (x.beds ? '　床位 ' + (cnt[s.room] || 0) + '/' + x.beds : '') + (x.note ? '　' + x.note : '');
+      };
+    }
     if (!list.length) { toast('沒有可匯出的學員', true); return; }
-    var scopeText = (v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel) + (v.order === 'squad' ? '　·　依小隊' : v.order === 'stroke' ? '　·　依筆畫' : '') + (v.exclude ? '　·　' + v.exclude : '');
+    var scopeText = (v.scope === 'all' ? '全部學員' : '篩選：' + o.filterLabel) + (v.order === 'squad' ? '　·　依小隊' : v.order === 'room' ? '　·　' + rooms.length + ' 間房' : v.order === 'stroke' ? '　·　依筆畫' : '') + (v.exclude ? '　·　' + v.exclude : '');
     return confirmDialog({
       title: '此內容包含學員個資', desc: '匯出的 PDF 含有學員個人資料，僅供營隊用途使用。',
       lines: ['請勿轉寄、公開或用於營隊以外的目的', '用畢請妥善保管或刪除檔案', '每頁頁尾會標示「含學員個資，僅供營隊用途」，匯出會記錄在操作紀錄'],
@@ -221,7 +240,7 @@ function openExportDialog(o) {
     if (!agreed) return;
     busy(true);
     return api('logExport', o.prefix, { columns: fields.map(function (f) { return f.label; }), count: list.length, orientation: v.orientation, scope: scopeText })
-      .then(function () { return buildStudentsPdf_({ project: p, fields: fields, list: list, orientation: v.orientation, scopeText: scopeText, bySquad: v.order === 'squad', squadBreak: v.order === 'squad' && v.squadBreak }); })
+      .then(function () { return buildStudentsPdf_({ project: p, fields: fields, list: list, orientation: v.orientation, scopeText: scopeText, bySquad: v.order === 'squad', squadBreak: (v.order === 'squad' || v.order === 'room') && v.squadBreak, groupOf: groupOf, title: v.order === 'room' ? '分房表' : '' }); })
       .then(function (r) { busy(false); toast('已匯出 ' + list.length + ' 筆，共 ' + r.pages + ' 頁'); })
       .catch(function (e) { busy(false); toast(e.message, true); });
     });
@@ -250,6 +269,10 @@ function buildStudentsPdf_(o) {
       var head = '<tr>' + o.fields.map(function (f) { return '<th' + toolStyle(f) + (f.tool ? ' class="tool"' : '') + '>' + esc(f.label) + '</th>'; }).join('') + '</tr>';
       var hasSign = o.fields.some(function (f) { return f.tool === 'sign'; });
       function squadLabel(s) { return s.squad === '' || s.squad === undefined ? '未分隊' : '第 ' + s.squad + ' 小隊'; }
+      // 分組依據：預設是小隊，分房 PDF 傳入 groupOf 依房間分組
+      var grouped = !!(o.bySquad || o.groupOf);
+      if (o.groupOf) squadLabel = o.groupOf;
+      var docTitle = o.title || '學員名單';
 
       function newPage() {
         var first = !pages.length;
@@ -261,10 +284,10 @@ function buildStudentsPdf_(o) {
             '<table class="pdf-table" style="' + tableStyle + '"><thead>' + head + '</thead><tbody></tbody></table>' +
           '</div><div class="pdf-foot" style="left:' + PAD + 'px;right:' + PAD + 'px;bottom:' + (PAD / 2) + 'px"><span></span><span class="pn"></span></div></div>');
         if (first) {
-          $('h1', pg).textContent = p.name + '　學員名單';
+          $('h1', pg).textContent = p.name + '　' + docTitle;
           $('.pdf-meta', pg).textContent = p.prefix + '　·　營期 ' + fmtDate(p.start) + ' – ' + fmtDate(p.end) + '　·　' + o.scopeText + '　·　共 ' + o.list.length + ' 筆　·　' + stamp + ' 由 ' + user + ' 匯出';
         } else {
-          $('.pdf-cont', pg).textContent = p.name + '　學員名單（續）';
+          $('.pdf-cont', pg).textContent = p.name + '　' + docTitle + '（續）';
         }
         $('.pdf-foot span', pg).textContent = p.prefix + '　' + stamp + '　·　含學員個資，僅供營隊用途，請勿外流　·　' + COPYRIGHT;
         host.appendChild(pg);
@@ -276,7 +299,7 @@ function buildStudentsPdf_(o) {
       // 先算好每格內容；內容都很短的欄位（狀態、電話、金額）不換行，長文字欄位才換行
       // 依小隊排列時，序號在每一隊重新從 1 開始
       var seq = [], cnt = {};
-      o.list.forEach(function (s) { var k = o.bySquad ? squadLabel(s) : ''; cnt[k] = (cnt[k] || 0) + 1; seq.push(cnt[k] - 1); });
+      o.list.forEach(function (s) { var k = grouped ? squadLabel(s) : ''; cnt[k] = (cnt[k] || 0) + 1; seq.push(cnt[k] - 1); });
       var rows = o.list.map(function (s, i) { return o.fields.map(function (f) { return String(f.get(s, seq[i]) || ''); }); });
       var noWrap = o.fields.map(function (f, c) {
         return !f.tool && rows.every(function (r) { return r[c].length <= 14; });
@@ -309,7 +332,7 @@ function buildStudentsPdf_(o) {
       function fits() { return $('.pdf-flow', pg).offsetHeight <= avail; }
       o.list.forEach(function (s, i) {
         var tb = $('tbody', pg);
-        if (o.bySquad && squadLabel(s) !== lastSquad) {
+        if (grouped && squadLabel(s) !== lastSquad) {
           var n = o.list.filter(function (x) { return squadLabel(x) === squadLabel(s); }).length;
           if (o.squadBreak && lastSquad !== null && tb.children.length) { pg = newPage(); tb = $('tbody', pg); }
           var hr = el('<tr class="squad-head"><td colspan="' + o.fields.length + '"></td></tr>');
@@ -336,7 +359,7 @@ function buildStudentsPdf_(o) {
           if (prevHead) tb.removeChild(prevHead);       // 小隊標題不要孤單留在上一頁底部
           pg = newPage();
           if (prevHead) $('tbody', pg).appendChild(prevHead);
-          else if (o.bySquad) {                         // 跨頁的小隊在新頁標示「（續）」
+          else if (grouped) {                         // 跨頁的小隊在新頁標示「（續）」
             var cont = el('<tr class="squad-head"><td colspan="' + o.fields.length + '"></td></tr>');
             cont.firstChild.textContent = squadLabel(s) + '（續）';
             $('tbody', pg).appendChild(cont);
@@ -359,7 +382,7 @@ function buildStudentsPdf_(o) {
       });
       return chain.then(function () {
         var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-        var name = p.prefix + '_學員名單_' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.pdf';
+        var name = p.prefix + '_' + docTitle + '_' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.pdf';
         var url = URL.createObjectURL(doc.output('blob'));
         var a = document.createElement('a');
         a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -369,3 +392,4 @@ function buildStudentsPdf_(o) {
       }, function (e) { host.remove(); throw e; });
     });
 }
+
