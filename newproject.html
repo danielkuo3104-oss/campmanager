@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -26,14 +27,15 @@
     </div>
   </div>
 
-  <div class="stepper">
+  <div class="stepper desk-only">
     <div class="step on" data-step="1"><b>1</b>連結表單</div>
     <div class="step" data-step="2"><b>2</b>專案設定</div>
     <div class="step" data-step="3"><b>3</b>欄位對應</div>
     <div class="step" data-step="4"><b>4</b>共同管理員</div>
   </div>
 
-  <form id="np-form" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
+  <div class="phone-note">開始新專案需要對應表單欄位、設定營期與費用，畫面較複雜，請用電腦操作。</div>
+  <form id="np-form" class="desk-only" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
     <section class="card card-pad" id="np-step1">
       <h2>1. 連結表單</h2>
       <p class="muted small" id="np-account" style="margin:6px 0 12px"></p>
@@ -73,6 +75,7 @@
         <label class="field"><span>原價（元）<em>*</em></span><input class="input" name="price" type="number" min="0"></label>
         <label class="field"><span>團報價（元）</span><input class="input" name="groupPrice" type="number" min="0"></label>
         <label class="field"><span>早鳥價（元）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
+        <label class="field"><span>早鳥團報價（元，選填）</span><input class="input" name="earlyGroupPrice" type="number" min="0"><span class="hint">早鳥期限內的團報；沒填就在早鳥價與團報價中取較低的</span></label>
         <label class="field"><span>早鳥期限</span><input class="input" name="earlyDeadline" type="date"></label>
         <div class="field bank-fields" style="grid-column:1/-1"><span>匯款帳號<em>*</em></span><div class="bank-grid">
           <input class="input" name="bank_bank" placeholder="銀行（例如 台灣銀行）" aria-label="銀行">
@@ -215,7 +218,7 @@ App.page('newproject', function (root) {
     return {
       formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(), signature: e.signature.value.trim(),
       start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
-      groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyDeadline: e.earlyDeadline.value,
+      groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyGroupPrice: e.earlyGroupPrice.value, earlyDeadline: e.earlyDeadline.value,
       bank: { bank: e.bank_bank.value.trim(), code: e.bank_code.value.trim(), branch: e.bank_branch.value.trim(), name: e.bank_name.value.trim(), no: e.bank_no.value.trim() },
       payDays: e.payDays.value, holdHours: e.holdHours.value,
       squads: e.squads.value, emailDomains: e.emailDomains.value.trim(),
@@ -254,7 +257,7 @@ App.page('newproject', function (root) {
         '專案代碼：' + d.prefix + '（活頁 ' + d.prefix + '_學員）',
         '招生期間：' + d.regStart + ' – ' + (d.regEnd || '未定') + '（期間外的報名會先記為「招生期外」，不自動寄結果）',
         '營期：' + d.start + ' – ' + d.end + '，上限 ' + d.capacity + ' 人',
-        '原價 ' + d.price + (d.groupPrice ? '／團報 ' + d.groupPrice : '') + (d.earlyPrice ? '／早鳥 ' + d.earlyPrice + '（至 ' + (d.earlyDeadline || '未設定') + '）' : ''),
+        '原價 ' + d.price + (d.groupPrice ? '／團報 ' + d.groupPrice : '') + (d.earlyGroupPrice ? '／早鳥團報 ' + d.earlyGroupPrice : '') + (d.earlyPrice ? '／早鳥 ' + d.earlyPrice + '（至 ' + (d.earlyDeadline || '未設定') + '）' : ''),
         '共同管理員：' + (d.coAdmins.map(function (a) { return a.name + ' ' + a.email; }).join('、') || '無'),
         '表單既有 ' + info.responses + ' 筆回覆將匯入' + (d.notifyExisting ? '並寄出通知' : '，不寄通知') + (info.needsApproval ? '（核准後才匯入）' : ''),
         info.needsApproval ? '需要總管核准：核准前不收報名、不寄信，核准後才開始運作' : '之後每筆新回覆會即時判斷並自動寄出報名結果'
