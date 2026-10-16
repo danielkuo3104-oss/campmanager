@@ -265,6 +265,7 @@
   .tag { display: inline-block; padding: 0 10px; height: 22px; line-height: 22px; border-radius: var(--pill); font-size: 11px; background: var(--mute-soft); color: var(--text-2); margin-left: 6px; white-space: nowrap; }
   .tag.group { background: #f3ebe0; color: #8a5a22; }
   .tag.early { background: #e4efe6; color: #2f6a45; }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
 
   /* 提示條 */
   .banner { display: flex; gap: 10px; align-items: center; padding: 14px 20px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 13px; }
@@ -562,6 +563,13 @@
   .consent-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .consent-view { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
   .consent-img { max-width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .consent-inline { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .consent-fig { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .consent-fig figcaption { font-size: 12.5px; color: var(--text-2); }
+  .consent-fig .consent-img { cursor: zoom-in; width: 100%; }
+  .consent-ph { padding: 18px; border: 1px dashed var(--line); border-radius: 10px; text-align: center; }
+  .consent-more summary { cursor: pointer; font-size: 13px; color: var(--text-2); }
+  .consent-more .consent-files { margin-top: 8px; }
   .consent-pdf { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 10px; }
   .consent-txt { white-space: pre-wrap; font: 13px/1.7 inherit; max-height: 60vh; overflow: auto; background: var(--surface-2); padding: 12px; border-radius: 10px; width: 100%; box-sizing: border-box; }
   .check-list { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
