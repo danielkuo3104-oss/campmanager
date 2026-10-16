@@ -355,8 +355,17 @@ App.page('students', function (root, params) {
 
   function renderTable() {
     var cols = columns();
+    var hl = D.project.highlight || {};
     var sq = D.project.squads > 0;
     $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c, i) { return '<th class="' + (i === 0 ? 'th-name' : 'th-clip') + '" title="' + esc(c) + '">' + esc(c) + '</th>' + (i === 0 && sq ? '<th>小隊</th>' : ''); }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
+    // 團報側邊條：每組固定一種柔和的顏色（依團報代號決定），和上一組同色時換下一個
+    var GROUP_COLORS = ['#a7bfa9', '#a3b6cc', '#bfa9c4', '#d4b994', '#c9a6a0', '#94bcb8', '#bab88f', '#adadcf'];
+    function groupColor(id, avoid) {
+      var h = 0;
+      String(id).split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) % 9973; });
+      var i = h % GROUP_COLORS.length;
+      return i === avoid ? (i + 1) % GROUP_COLORS.length : i;
+    }
     var list = sorted(D.students).filter(matches);
     $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 筆';
     var body = $('#st-body', root);
@@ -365,14 +374,15 @@ App.page('students', function (root, params) {
       body.innerHTML = '<tr><td colspan="' + (cols.length + 3 + (sq ? 1 : 0)) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
       return;
     }
-    var prevGroup = null;
+    var prevGroup = null, prevColor = -1;
     list.forEach(function (s) {
       var grouped = s.groupId && tier(s) < 4;
       var tr = document.createElement('tr');
       if (tier(s) >= 4) tr.className = 'faded';
       if (grouped) {
         tr.classList.add('in-group');
-        if (prevGroup !== s.groupId) tr.classList.add('group-start');
+        if (prevGroup !== s.groupId) { tr.classList.add('group-start'); prevColor = groupColor(s.groupId, prevColor); }
+        tr.style.setProperty('--gc', GROUP_COLORS[prevColor]);
       }
       prevGroup = grouped ? s.groupId : null;
 
@@ -397,7 +407,7 @@ App.page('students', function (root, params) {
           html += '<td class="cell-name"><div class="clip-1 name-strong"' + tip + '>' + valueHtml(s.data[c] || s.name) + '</div>' + (tags ? '<div>' + tags + '</div>' : '') + '</td>';
           if (sq) html += '<td class="cell-squad">' + (s.squad === '' ? '<span class="muted">—</span>' : esc(s.squad)) + '</td>';
         }
-        else html += '<td class="cell-clip"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
+        else html += '<td class="cell-clip' + (highlightHit(hl[c], raw) ? ' hl' : '') + '"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
       });
       var last = s.history && s.history.length ? s.history[s.history.length - 1] : null;
       html += '<td class="note-cell">' + (last ? '<div class="last">' + esc(last.msg) + '</div><div class="small" style="color:var(--text-3)">' + esc(fmtTime(last.t)) + '　·　共 ' + s.history.length + ' 筆</div>' : '') + '</td>';
@@ -574,15 +584,22 @@ App.page('students', function (root, params) {
   function openSquadStaff() {
     var n = D.project.squads || 0, ro = D.readOnly;
     if (!(n > 0)) { toast('請先在專案設定填小隊數', true); return; }
+    function fmtMobile(v) {   // 與後端 fmtMobile_ 相同：手機號碼寫成 0900-000-000
+      v = String(v || '').trim();
+      var d = v.replace(/[\s\-－–()（）.]/g, '');
+      if (/^\+?8869\d{8}$/.test(d)) d = '0' + d.replace(/^\+?886/, '');
+      return /^09\d{8}$/.test(d) ? d.slice(0, 4) + '-' + d.slice(4, 7) + '-' + d.slice(7) : v;
+    }
     var st = D.project.squadStaff || { show: true, squads: {} };
     var body = el('<div class="ss-dlg"><label class="check"><input type="checkbox" name="ssShow"' + (st.show !== false ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>在學員專區公布學員自己的小隊與專輔、隨輔</span></label><div class="ss-list"></div></div>');
     function row(x) {
       var r = el('<div class="ss-row"><select class="input" aria-label="角色"><option>專輔</option><option>隨輔</option></select>' +
-        '<input class="input" placeholder="姓名" maxlength="40" aria-label="姓名"><input class="input" placeholder="聯絡方式（選填，例如電話、LINE）" maxlength="100" aria-label="聯絡方式">' +
+        '<input class="input" placeholder="姓名" maxlength="40" aria-label="姓名"><input class="input" placeholder="聯絡方式（選填，例如 0900-000-000）" maxlength="100" aria-label="聯絡方式">' +
         (ro ? '' : '<button class="btn sm ghost" type="button" aria-label="刪除">刪除</button>') + '</div>');
       $('select', r).value = x.role; $$('input', r)[0].value = x.name || ''; $$('input', r)[1].value = x.contact || '';
       $$('select,input', r).forEach(function (i) { i.disabled = ro; });
       if (!ro) $('button', r).addEventListener('click', function () { r.remove(); });
+      $$('input', r)[1].addEventListener('blur', function () { this.value = fmtMobile(this.value); });
       return r;
     }
     for (var i = 1; i <= n; i++) {
@@ -925,7 +942,7 @@ App.page('students', function (root, params) {
             signature: D.project.signature || '', footer: D.project.footerEffective || '', campName: D.project.name,
             footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
             headerColor: D.project.headerColor,
-            contacts: D.project.contacts || [], refund: D.project.refund, hotel: D.project.hotel, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
+            contacts: D.project.contacts || [], refund: D.project.refund, hotel: D.project.hotel, portalUrl: (D.project.portal && D.project.portal.url) || '', portalKeyLabel: D.project.portal && D.project.portal.keyLabel, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
             onSaveEcho: ro ? null : function (list) { return api('updateProjectSettings', prefix, { echo: list }).then(function () { D.project.echo = list; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
             resetLabel: t.custom && !ro ? '恢復系統預設' : null
@@ -1263,19 +1280,64 @@ App.page('students', function (root, params) {
     });
   }
 
-  /* ---------- 名單顯示欄位 ---------- */
+  /* ---------- 名單顯示欄位與強調顯示 ---------- */
   function openColumns() {
-    var p = D.project, nameCol = p.mapping.name;
-    var body = el('<div><div class="small muted" style="margin-bottom:10px">勾選要在名單顯示的表單題目。學員姓名一定顯示在第一欄。信件附上的報名資料在「信件範本」或「專案設定」設定。</div>' +
-      '<div class="multi-q">' + (p.questions || []).map(function (q) {
-        var isName = q === nameCol;
-        return '<label class="check"><input type="checkbox" value="' + esc(q) + '"' + (isName || p.display.indexOf(q) >= 0 ? ' checked' : '') + (isName || D.readOnly ? ' disabled' : '') + '><span>' + esc(q) + (isName ? '（姓名，固定顯示）' : '') + '</span></label>';
-      }).join('') + '</div></div>');
-    modal({ title: '名單顯示欄位', body: body, wide: true, buttons: D.readOnly ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
+    var p = D.project, nameCol = p.mapping.name, ro = D.readOnly, hl = JSON.parse(JSON.stringify(p.highlight || {}));
+    // 每題實際出現過的答案（多選題拆開），依次數排序，給「答案是…」勾選
+    function answers(q) {
+      var cnt = {};
+      D.students.forEach(function (st) {
+        String((st.data || {})[q] === undefined ? '' : st.data[q]).split(/,\s*/).forEach(function (x) { x = x.trim(); if (x && x.length <= 40 && !/^https?:/i.test(x)) cnt[x] = (cnt[x] || 0) + 1; });
+      });
+      return Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; }).slice(0, 30);
+    }
+    var body = el('<div><div class="small muted" style="margin-bottom:10px">勾選要在名單顯示的表單題目，學員姓名一定顯示在第一欄。右邊的「強調」可以讓符合條件的格子標上淡淡的底色（例如飲食是素食、過敏有填寫），匯出 PDF 也會一起標。</div>' +
+      '<div class="col-list"></div></div>');
+    var list = $('.col-list', body);
+    (p.questions || []).forEach(function (q) {
+      var isName = q === nameCol, r = hl[q] || null;
+      var row = el('<div class="col-row" data-q="' + esc(q) + '"><div class="col-main">' +
+        '<label class="check grow"><input type="checkbox" name="disp" value="' + esc(q) + '"' + (isName || p.display.indexOf(q) >= 0 ? ' checked' : '') + (isName || ro ? ' disabled' : '') + '><span>' + esc(q) + (isName ? '（姓名，固定顯示）' : '') + '</span></label>' +
+        (isName ? '' : '<select class="input sm col-hl" aria-label="強調"' + (ro ? ' disabled' : '') + '><option value="">不強調</option><option value="filled">有填寫就強調（「無」不算）</option><option value="match">答案是…</option></select>') +
+        '</div><div class="col-vals" hidden></div></div>');
+      list.appendChild(row);
+      if (isName) return;
+      var sel = $('.col-hl', row), box = $('.col-vals', row);
+      sel.value = r ? r.mode : '';
+      function drawVals() {
+        box.hidden = sel.value !== 'match';
+        if (box.hidden || box.childNodes.length) return;
+        var have = (hl[q] && hl[q].mode === 'match') ? hl[q].values : [];
+        var opts = answers(q);
+        var extra = have.filter(function (x) { return opts.indexOf(x) < 0; });
+        box.innerHTML = (opts.length ? '<div class="col-opts">' + opts.map(function (x) {
+          return '<label class="check"><input type="checkbox" value="' + esc(x) + '"' + (have.indexOf(x) >= 0 ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>' + esc(x) + '</span></label>';
+        }).join('') + '</div>' : '<div class="small muted">目前還沒有人回答這題，可以直接在下面輸入答案</div>') +
+          '<input class="input sm col-extra" placeholder="其他答案（完全相同才算，多個用「、」分隔）" maxlength="400"' + (ro ? ' disabled' : '') + '>';
+        $('.col-extra', box).value = extra.join('、');
+      }
+      sel.addEventListener('change', drawVals);
+      drawVals();
+    });
+    modal({ title: '名單顯示欄位與強調', body: body, wide: true, buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
       if (!ok) return;
-      var disp = $$('input:checked', body).map(function (i) { return i.value; });
-      if (JSON.stringify(disp) === JSON.stringify(p.display)) { toast('沒有變更'); return; }
-      withBusy(api('updateProjectSettings', prefix, { display: disp })).then(function () { toast('已更新顯示欄位'); return load(); }).catch(function (e) { toast(e.message, true); });
+      var disp = $$('input[name=disp]:checked', body).map(function (i) { return i.value; });
+      var out = {}, bad = '';
+      $$('.col-row', body).forEach(function (row) {
+        var sel = $('.col-hl', row); if (!sel || !sel.value) return;
+        var q = row.getAttribute('data-q');
+        if (sel.value === 'filled') { out[q] = { mode: 'filled', values: [] }; return; }
+        var vals = $$('.col-opts input:checked', row).map(function (i) { return i.value; })
+          .concat(String(($('.col-extra', row) || {}).value || '').split(/[、,，\n]+/).map(function (x) { return x.trim(); }).filter(String));
+        if (!vals.length) { bad = bad || q; return; }
+        out[q] = { mode: 'match', values: vals };
+      });
+      if (bad) { toast('「' + bad + '」選了「答案是…」，請勾選或輸入要強調的答案', true); return; }
+      var patch = {};
+      if (JSON.stringify(disp) !== JSON.stringify(p.display)) patch.display = disp;
+      if (JSON.stringify(out) !== JSON.stringify(p.highlight || {})) patch.highlight = out;
+      if (!Object.keys(patch).length) { toast('沒有變更'); return; }
+      withBusy(api('updateProjectSettings', prefix, patch)).then(function () { toast('已更新顯示欄位與強調'); return load(); }).catch(function (e) { toast(e.message, true); });
     });
   }
 
