@@ -204,7 +204,7 @@
           if (!d.squad) return '';
           return card('我的小隊', '<div class="pt-squad"><b>第 ' + esc(d.squad.no) + ' 小隊</b></div>' +
             (d.squad.staff.length ? '<div class="pt-staff">' + d.squad.staff.map(function (x) {
-              var c = x.contact ? (/^[\d\s()+\-#]{8,}$/.test(x.contact) ? '<a href="tel:' + esc(x.contact.replace(/[^\d+#]/g, '')) + '">' + esc(x.contact) + '</a>' : esc(x.contact)) : '';
+              var c = x.contact ? esc(x.contact) : '';   // 純文字，不做撥號連結
               return '<div><em>' + esc(x.role) + '</em><b>' + esc(x.name) + '</b>' + (c ? '<span>' + c + '</span>' : '') + '</div>';
             }).join('') + '</div>' : ''));
         },
@@ -232,6 +232,8 @@
           }).join('') + '</div>');
         } else h += card(esc(x.title), '<div class="pt-rich">' + x.html + '</div>');
       });
+      // 姓名打錯但身分證字號對得上：一樣讓他看，最上方提示請籌辦團隊修改
+      if (d.nameNotice) h = '<div class="pt-msg">' + esc(d.nameNotice) + '</div>' + h;
       blocks.innerHTML = h;
       // 營隊倒數放到管理員排的位置；隱藏時留在最上面（不顯示）
       var slot = blocks.querySelector('[data-cd]');
