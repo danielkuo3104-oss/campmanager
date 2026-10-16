@@ -213,6 +213,14 @@
         data: function () { return d.dataHtml ? card('', '<div class="pt-rich">' + d.dataHtml + '</div>') : ''; },
         refund: function () { return d.refundHtml ? card('', '<div class="pt-rich">' + d.refundHtml + '</div>') : ''; },
         reports: function () { return d.reports.length ? card('我送出的表單', '<div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div>') : ''; },
+        hotel: function () { return d.hotelHtml ? card('飯店資訊', '<div class="pt-rich">' + d.hotelHtml + '</div>') : ''; },
+        room: function () {
+          var r = d.room;
+          if (!r) return '';
+          return card('我的房間', '<div class="pt-squad"><b>' + esc(r.no) + '</b>' + (r.label ? '<span class="muted">' + esc(r.label) + '</span>' : '') + '</div>' +
+            (r.note ? '<div class="pt-rich">' + r.note + '</div>' : '') +
+            (r.mates ? '<div class="pt-text"><span class="muted">室友：</span>' + (r.mates.length ? r.mates.map(esc).join('、') : '目前只有你') + '</div>' : ''));
+        },
         contacts: function () { return I && I.contactsHtml ? card('', '<div class="pt-rich">' + I.contactsHtml + '</div>') : ''; }
       };
       var h = '';
