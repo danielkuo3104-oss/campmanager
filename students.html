@@ -1597,7 +1597,7 @@ App.page('students', function (root, params) {
       prefix: prefix, project: D.project, groups: D.groups || {},
       filtered: sorted(D.students).filter(matches), all: sorted(D.students),
       filterLabel: (f ? f.label : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
-      displayCols: columns(), squads: D.project.squads || 0
+      displayCols: columns(), squads: D.project.squads || 0, rooms: ((D.project.rooms || {}).rooms || []).filter(function (x) { return x.no; })
     });
   }
   $('#st-sync', root).addEventListener('click', function () {
