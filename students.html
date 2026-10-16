@@ -34,6 +34,7 @@
       <button class="btn" type="button" id="st-forms">預製表單</button>
       <button class="btn" type="button" id="st-portal">學員專區</button>
       <button class="btn" type="button" id="st-squad">分小隊</button>
+      <button class="btn" type="button" id="st-room">分房</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
       <span class="sync-note" id="st-synced"></span>
     </div>
@@ -384,6 +385,7 @@ App.page('students', function (root, params) {
       });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
       if (refundReq(s)) tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
+      if (s.room && tierOk(s)) tags += '<span class="tag" title="房間">房 ' + esc(s.room) + '</span>';
       var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
       var html = '<td>' + pill(s.status) + deadlineNote + '</td>';
@@ -481,6 +483,17 @@ App.page('students', function (root, params) {
       ask('調整小隊', [{ name: 'squad', label: s.name + '　目前：' + squadText(s), type: 'select', options: opts, value: s.squad === '' ? '' : String(s.squad) }], function (v) {
         var a = {}; a[s.id] = v.squad;
         withBusy(api('setSquads', prefix, a)).then(function () { toast('已調整小隊'); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
+      });
+    });
+    var rmList = (D.project.rooms && D.project.rooms.rooms) || [];
+    if (rmList.length) add('調整房間…', tierOk(s), function () {
+      var opts = [{ value: '', label: '未分房' }].concat(rmList.map(function (x) {
+        var n = D.students.filter(function (y) { return y.room === x.no && tierOk(y); }).length;
+        return { value: x.no, label: x.no + (x.label ? ' ' + x.label : '') + '（' + n + (x.beds ? '/' + x.beds : '') + ' 人）' };
+      }));
+      ask('調整房間', [{ name: 'room', label: s.name + '　目前：' + (s.room || '未分房'), type: 'select', options: opts, value: s.room || '' }], function (v) {
+        var a = {}; a[s.id] = v.room;
+        withBusy(api('setRooms', prefix, a)).then(function () { toast('已調整房間'); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
       });
     });
     add('手動變更狀態…', true, function () {
@@ -667,8 +680,8 @@ App.page('students', function (root, params) {
     });
     // 內容區塊：標題、類型（文字／勾選清單）、內容，可上下移動與刪除
     var psList = $('.ps-list', d.body);
-    var SYS_NAMES = { countdown: '營隊倒數', status: '報名進度', squad: '我的小隊', pay: '繳費資訊', info: '報名資訊', data: '報名資料', refund: '退款規定', reports: '我送出的表單', contacts: '聯絡人員' };
-    var SYS_HINT = { countdown: '距離營隊開始的天、時、分、秒', status: '狀態、進度與表單按鈕（一定顯示）', squad: '分好小隊後才會出現', pay: '還沒繳費時才會出現', info: '營期、報名時間、應繳金額', data: '信件「報名資料」勾選的題目', refund: '專案設定的退款規定', reports: '送出過的匯款回報、取消申請', contacts: '專案設定的聯絡人員' };
+    var SYS_NAMES = { countdown: '營隊倒數', status: '報名進度', squad: '我的小隊', pay: '繳費資訊', info: '報名資訊', data: '報名資料', refund: '退款規定', reports: '我送出的表單', contacts: '聯絡人員', hotel: '飯店資訊', room: '我的房間' };
+    var SYS_HINT = { countdown: '距離營隊開始的天、時、分、秒', status: '狀態、進度與表單按鈕（一定顯示）', squad: '分好小隊後才會出現', pay: '還沒繳費時才會出現', info: '營期、報名時間、應繳金額', data: '信件「報名資料」勾選的題目', refund: '專案設定的退款規定', reports: '送出過的匯款回報、取消申請', contacts: '專案設定的聯絡人員', hotel: '專案設定的飯店資訊（含地圖）', room: '分房後才會出現，可設定是否公布室友' };
     function moveBtns() { return ro ? '' : '<button class="btn sm ghost" type="button" data-m="up" aria-label="上移">↑</button><button class="btn sm ghost" type="button" data-m="down" aria-label="下移">↓</button>'; }
     function bindMove(b) {
       $$('[data-m]', b).forEach(function (btn) {
@@ -827,6 +840,7 @@ App.page('students', function (root, params) {
       ['退款金額', s.status === '報名取消' ? (s.refund !== '' && s.refund !== undefined ? money(s.refund) + ' 元' : (s.paid !== '' && Number(s.paid) > 0 ? '全額（舊資料未記錄）' : '未繳費，不需退款')) : '—'],
       ['候補順位', s.rank === '' ? '—' : s.rank],
       ['小隊', p.squads > 0 ? squadText(s) : '未設定小隊數'],
+      ['房間', s.room || ((p.rooms && p.rooms.rooms.length) ? '未分房' : '—')],
       ['團報', g ? g.names.join('、') + '（預期 ' + g.expected + ' 人' + (s.groupIncomplete ? '，未齊' : '') + (g.reserved ? '，預留 ' + g.reserved + ' 名額至 ' + fmtTime(g.holdUntil) : '') + '）' : (s.partners && s.partners.length ? '填寫同伴：' + s.partners.join('、') : '個人報名')],
       ['結果通知', /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出（' + fmtTime(s.notified.split(' ')[0]) + '）' : (s.notified || '—')]
     ];
@@ -911,7 +925,7 @@ App.page('students', function (root, params) {
             signature: D.project.signature || '', footer: D.project.footerEffective || '', campName: D.project.name,
             footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
             headerColor: D.project.headerColor,
-            contacts: D.project.contacts || [], refund: D.project.refund, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
+            contacts: D.project.contacts || [], refund: D.project.refund, hotel: D.project.hotel, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
             onSaveEcho: ro ? null : function (list) { return api('updateProjectSettings', prefix, { echo: list }).then(function () { D.project.echo = list; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
             resetLabel: t.custom && !ro ? '恢復系統預設' : null
@@ -958,13 +972,20 @@ App.page('students', function (root, params) {
       }).join('') + '</div><span class="hint">' + (p.bank ? '信件裡的 {{匯款帳號}} 會顯示：' + esc(p.account) : '目前是舊格式：「' + esc(p.account) + '」，請改填銀行、分行、戶名、帳號') + '</span></div>' +
       '<div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">退款規定</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="rf-add">＋ 新增時間段</button>') + '</div>' +
-      '<p class="hint" style="margin-top:0">每一段是「這天（含）前取消，退還幾 %」，日期要在招生期間內；最後一段之後取消不退費。信件放 {{退款規定}} 會變成表格，取消報名表單也會顯示；已繳費的人取消時會看到依今天日期估算的退款金額。</p>' +
+      '<p class="hint" style="margin-top:0">每一段是「這天（含）前取消，退還幾 %」，日期可以設到營隊開始前一天；最後一段之後取消不退費。信件放 {{退款規定}} 會變成表格，取消報名表單也會顯示；已繳費的人取消時會看到依今天日期估算的退款金額。</p>' +
       '<div class="rf-list"></div>' +
       '<label class="field" style="margin-top:10px"><span>其他說明</span><textarea class="input" name="refundNote" rows="2" maxlength="1000" placeholder="例如：自行取消報名者，需自行負擔衍生費用（郵匯費、手續費等）"' + (ro ? ' disabled' : '') + '></textarea><span class="hint">可以用信件的格式（粗體、顏色…）</span></label></div>' +
       '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
       f('name', '營隊名稱', 'text', p.name) + '<div class="field set-sig" style="grid-column:1 / -1"><span>信件署名（每封信最後置中顯示）</span><input class="input" name="signature" placeholder="' + esc((p.name || '營隊名稱') + ' 籌辦團隊 敬上') + '"' + (ro ? ' disabled' : '') + '><span class="hint">留空時用「' + esc(p.name || '營隊名稱') + ' 籌辦團隊 敬上」；選取文字後按上方按鈕加粗體、顏色、螢光、字級</span></div>' + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
       f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
       '<div class="field"><span>信件標頭預設顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">沒自訂顏色的信都用這個（原本是墨綠 #2f5d62）；每種信可在「信件範本」各自改顏色來區分</span></div>' +
+      '</div></div>' +
+      '<div class="drawer-section"><h3>飯店資訊</h3><p class="hint" style="margin-top:0">有住宿時填寫，名稱、地址、電話必填；不需要住宿就全部留空。信件可用 {{飯店資訊}}（整張卡片）、{{飯店名稱}}、{{飯店地址}}、{{飯店電話}}，學員專區會自動顯示（含地圖）。分房請用上方的「分房」按鈕，信件可用 {{房號}}。</p><div class="grid-2">' +
+      f('h_name', '飯店名稱 *', 'text', (p.hotel || {}).name) + f('h_phone', '電話 *', 'text', (p.hotel || {}).phone) +
+      '<div style="grid-column:1 / -1">' + f('h_address', '地址 *', 'text', (p.hotel || {}).address) + '</div>' +
+      f('h_checkin', '入住時間（選填）', 'text', (p.hotel || {}).checkin, '例如 7/1 15:00 後') + f('h_checkout', '退房時間（選填）', 'text', (p.hotel || {}).checkout, '例如 7/3 11:00 前') +
+      '<div style="grid-column:1 / -1">' + f('h_url', '飯店網站（選填）', 'text', (p.hotel || {}).url, 'https:// 開頭') + '</div>' +
+      '<label class="field" style="grid-column:1 / -1"><span>其他說明（選填）</span><textarea class="input" name="h_note" rows="3" maxlength="2000" placeholder="例如：停車資訊、早餐時間、需自備盥洗用品"' + (ro ? ' disabled' : '') + '></textarea></label>' +
       '</div></div>' +
       '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
       '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。第一格填職稱（總召）或官方帳號名稱（例如 醫工營 IG），官方帳號可以不填姓名；電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
@@ -1051,6 +1072,7 @@ App.page('students', function (root, params) {
     ((p.refund && p.refund.tiers) || []).forEach(rfRow);
     rfEmpty();
     $('[name=refundNote]', d.body).value = (p.refund && p.refund.note) || '';
+    $('[name=h_note]', d.body).value = (p.hotel && p.hotel.note) || '';
     if ($('#rf-add', d.body)) $('#rf-add', d.body).addEventListener('click', function () {
       var rows = $$('.rf-row', rfList), last = rows.length ? $$('input', rows[rows.length - 1]) : null;
       rfRow({ pct: last && last[1].value !== '' ? Math.max(0, Number(last[1].value) - 50) : 100 });
@@ -1135,18 +1157,31 @@ App.page('students', function (root, params) {
       var tiers = $$('.rf-row', form).map(function (r) { var i = $$('input', r); return { until: i[0].value, pct: i[1].value }; })
         .filter(function (t) { return t.until || t.pct !== ''; });
       var rfErr = '';
-      var rs = form.elements.regStart.value, re = form.elements.regEnd.value, seen = {};
+      var rs = form.elements.regStart.value, cs = form.elements.start.value, seen = {};
+      var re = '';
+      if (cs) { var cd = new Date(cs + 'T00:00:00Z'); cd.setUTCDate(cd.getUTCDate() - 1); re = cd.toISOString().slice(0, 10); }   // 營隊開始前一天
       tiers.forEach(function (t) {
         if (rfErr) return;
         if (!t.until) rfErr = '退款規定的日期請填完整';
         else if (t.pct === '' || !(Number(t.pct) >= 0 && Number(t.pct) <= 100)) rfErr = '退還比例請填 0 到 100';
-        else if ((rs && t.until < rs) || (re && t.until > re)) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）要在招生期間內';
+        else if (rs && t.until < rs) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）早於開始招生日期';
+        else if (re && t.until > re) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）要在營隊開始前一天（' + re.replace(/-/g, '/') + '）以前';
         else if (seen[t.until]) rfErr = '退款規定有重複的日期';
         seen[t.until] = true;
       });
       if (rfErr) { toast(rfErr, true); return; }
       var refund = { tiers: tiers.map(function (t) { return { until: t.until, pct: Math.round(Number(t.pct)) }; }).sort(function (a, b) { return a.until < b.until ? -1 : 1; }), note: form.elements.refundNote.value.replace(/\r\n/g, '\n').trim() };
       if (JSON.stringify(refund) !== JSON.stringify(p.refund || { tiers: [], note: '' })) patch.refund = refund;
+      var hotel = {};
+      ['name', 'address', 'phone', 'checkin', 'checkout', 'url', 'note'].forEach(function (k) { hotel[k] = form.elements['h_' + k].value.replace(/\r\n/g, '\n').trim(); });
+      var hAny = Object.keys(hotel).some(function (k) { return hotel[k]; });
+      if (hAny) {
+        var hMiss = [['name', '名稱'], ['address', '地址'], ['phone', '電話']].filter(function (x) { return !hotel[x[0]]; }).map(function (x) { return x[1]; });
+        if (hMiss.length) { toast('飯店資訊請填' + hMiss.join('、') + '（不需要住宿就全部留空）', true); return; }
+        if (hotel.url && !/^https?:\/\/[^\s"'<>]+$/i.test(hotel.url)) { toast('飯店網站需以 https:// 開頭', true); return; }
+      }
+      var oldH = p.hotel || {};
+      if (Object.keys(hotel).some(function (k) { return hotel[k] !== (oldH[k] || ''); })) patch.hotel = hotel;
       var contacts = $$('.ct-row', form).map(function (r) {
         var c = {}; $$('input', r).forEach(function (i) { c[i.dataset.k] = i.value.trim(); }); return c;
       }).filter(function (c) { return c.title || c.name || c.phone || c.email || c.ig || c.line || c.link; });
@@ -1321,6 +1356,132 @@ App.page('students', function (root, params) {
     });
   }
 
+  /* ---------- 分房：房間清單＋每位學員的房間 ---------- */
+  function roomGender(label) { return /女/.test(label || '') ? '女' : /男/.test(label || '') ? '男' : ''; }
+  function openRooms() {
+    var ro = D.readOnly, cfg = D.project.rooms || { show: true, mates: true, rooms: [] };
+    var list = D.students.filter(function (s) { return tierOk(s); }).sort(function (a, b) { return STROKE(a.name, b.name); });
+    var cur = {};
+    list.forEach(function (s) { cur[s.id] = s.room || ''; });
+    var body = el('<div class="room-dlg">' +
+      '<div class="row wrap" style="gap:16px"><label class="check"><input type="checkbox" name="show"' + (cfg.show ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>在學員專區公布房號</span></label>' +
+      '<label class="check"><input type="checkbox" name="mates"' + (cfg.mates ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>也公布室友姓名</span></label></div>' +
+      '<div class="room-sec"><div class="row wrap" style="gap:8px"><h3 class="grow">房間</h3>' + (ro ? '' : '<button class="btn sm" type="button" data-a="add">＋ 新增房間</button><button class="btn sm ghost" type="button" data-a="batch">一次新增多間…</button>') + '</div>' +
+      '<div class="small muted">類型寫「男」或「女」（例如 男生四人房），自動分配時只會放同性別的學員；床位留空表示不限。</div>' +
+      '<div class="room-head"><span>房號</span><span>類型</span><span>床位</span><span>備註（學員看得到）</span><span></span></div><div class="room-list"></div></div>' +
+      '<div class="room-sec"><div class="row wrap" style="gap:8px"><h3 class="grow">分配</h3>' + (ro ? '' : '<button class="btn sm" type="button" data-a="auto">自動分配未分房的人</button><button class="btn sm ghost" type="button" data-a="clear">全部改為未分房</button>') + '</div>' +
+      '<div class="squad-sum room-sum"></div><div class="squad-list room-assign"></div></div></div>');
+    var rl = $('.room-list', body);
+    function roomRow(x) {
+      var r = el('<div class="room-row"><input class="input" data-k="no" maxlength="20" placeholder="301"><input class="input" data-k="label" maxlength="20" placeholder="男生四人房"><input class="input" data-k="beds" type="number" min="1" max="50" placeholder="不限"><input class="input" data-k="note" maxlength="200" placeholder="例如：3 樓，靠電梯"><button class="btn sm ghost" type="button" data-a="del"' + (ro ? ' disabled' : '') + '>刪除</button></div>');
+      ['no', 'label', 'beds', 'note'].forEach(function (k) { var i = $('[data-k=' + k + ']', r); i.value = x[k] === undefined || x[k] === null ? '' : x[k]; i.disabled = ro; });
+      rl.appendChild(r);
+      return r;
+    }
+    function rooms() {
+      return $$('.room-row', rl).map(function (r) {
+        var o = {}; ['no', 'label', 'beds', 'note'].forEach(function (k) { o[k] = $('[data-k=' + k + ']', r).value.trim(); });
+        o.beds = o.beds === '' ? '' : Number(o.beds);
+        return o;
+      }).filter(function (x) { return x.no || x.label || x.note || x.beds !== ''; });
+    }
+    cfg.rooms.forEach(roomRow);
+    function draw() {
+      var rs = rooms().filter(function (x) { return x.no; }), cnt = {};
+      list.forEach(function (s) { if (cur[s.id]) cnt[cur[s.id]] = (cnt[cur[s.id]] || 0) + 1; });
+      var known = {}; rs.forEach(function (x) { known[x.no] = true; });
+      var opts = '<option value="">未分房</option>' + rs.map(function (x) {
+        return '<option value="' + esc(x.no) + '">' + esc(x.no) + (x.label ? ' ' + esc(x.label) : '') + '（' + (cnt[x.no] || 0) + (x.beds ? '/' + x.beds : '') + '）</option>';
+      }).join('');
+      $('.room-assign', body).innerHTML = list.map(function (s) {
+        var lost = cur[s.id] && !known[cur[s.id]] ? '<option value="' + esc(cur[s.id]) + '">' + esc(cur[s.id]) + '（已不在房間清單）</option>' : '';
+        return '<div class="squad-row" data-id="' + esc(s.id) + '"><div class="grow"><b>' + esc(s.name) + '</b> <span class="small muted">' + esc(s.status) + (genderOf(s) ? '・' + genderOf(s) : '') + (s.groupId ? '・團報' : '') + '</span></div>' +
+          '<select class="input"' + (ro ? ' disabled' : '') + '>' + opts + lost + '</select></div>';
+      }).join('') || '<div class="small muted">還沒有學員</div>';
+      $$('.squad-row', body).forEach(function (r) { $('select', r).value = cur[r.getAttribute('data-id')]; });
+      var full = rs.filter(function (x) { return x.beds && (cnt[x.no] || 0) > x.beds; }).map(function (x) { return x.no; });
+      var un = list.filter(function (s) { return !cur[s.id]; }).length;
+      $('.room-sum', body).innerHTML = esc(rs.length + ' 間房，已分 ' + (list.length - un) + ' 人' + (un ? '，未分房 ' + un + ' 人' : '')) +
+        (full.length ? '　<span style="color:var(--bad)">' + esc('超過床位：' + full.join('、')) + '</span>' : '');
+    }
+    body.addEventListener('change', function (e) {
+      var r = e.target.closest('.squad-row');
+      if (r) cur[r.getAttribute('data-id')] = e.target.value;
+      draw();
+    });
+    if (!ro) {
+      rl.addEventListener('click', function (e) { var b = e.target.closest('[data-a=del]'); if (b) { b.closest('.room-row').remove(); draw(); } });
+      $('[data-a=add]', body).addEventListener('click', function () { $('[data-k=no]', roomRow({})).focus(); });
+      $('[data-a=batch]', body).addEventListener('click', function () {
+        formDialog({ title: '一次新增多間房', desc: '房號是數字時，從起始號碼連續新增，例如 301 到 310。', okLabel: '新增',
+          fields: [{ name: 'from', label: '起始房號', type: 'number', required: true }, { name: 'to', label: '結束房號', type: 'number', required: true },
+            { name: 'label', label: '類型（選填，例如 男生四人房）' }, { name: 'beds', label: '每間床位（選填）', type: 'number' }] }).then(function (v) {
+          if (!v) return;
+          var a = Number(v.from), z = Number(v.to);
+          if (!(a > 0 && z >= a && z - a < 100)) { toast('房號範圍不正確（一次最多 100 間）', true); return; }
+          var have = {}; rooms().forEach(function (x) { have[x.no] = true; });
+          for (var i = a; i <= z; i++) if (!have[String(i)]) roomRow({ no: String(i), label: v.label || '', beds: v.beds || '' });
+          draw();
+        });
+      });
+      $('[data-a=clear]', body).addEventListener('click', function () { list.forEach(function (s) { cur[s.id] = ''; }); draw(); });
+      $('[data-a=auto]', body).addEventListener('click', function () {
+        var rs = rooms().filter(function (x) { return x.no; });
+        if (!rs.length) { toast('請先新增房間', true); return; }
+        var cnt = {}, groupRoom = {};
+        list.forEach(function (s) { if (cur[s.id]) { cnt[cur[s.id]] = (cnt[cur[s.id]] || 0) + 1; if (s.groupId) groupRoom[s.groupId] = cur[s.id]; } });
+        function fits(x, s) { var g = roomGender(x.label); return (!g || !genderOf(s) || g === genderOf(s)) && (!x.beds || (cnt[x.no] || 0) < x.beds); }
+        var todo = list.filter(function (s) { return !cur[s.id]; });
+        todo.sort(function (a, b) { return (a.groupId ? 0 : 1) - (b.groupId ? 0 : 1) || String(a.groupId).localeCompare(String(b.groupId)) || genderOf(a).localeCompare(genderOf(b)) || STROKE(a.name, b.name); });
+        var left = 0;
+        todo.forEach(function (s) {
+          var pick = null, pref = s.groupId && groupRoom[s.groupId];
+          if (pref) pick = rs.filter(function (x) { return x.no === pref && fits(x, s); })[0] || null;
+          // 先放進已經有人、還有空床的房間，房間比較不會零散
+          if (!pick) pick = rs.filter(function (x) { return fits(x, s) && cnt[x.no] && sameSex(x.no, s); })[0] || rs.filter(function (x) { return fits(x, s) && !cnt[x.no]; })[0] || null;
+          if (!pick) { left++; return; }
+          cur[s.id] = pick.no; cnt[pick.no] = (cnt[pick.no] || 0) + 1;
+          if (s.groupId && !groupRoom[s.groupId]) groupRoom[s.groupId] = pick.no;
+        });
+        function sameSex(no, s) { var g = genderOf(s); return !g || list.every(function (y) { return cur[y.id] !== no || !genderOf(y) || genderOf(y) === g; }); }
+        draw();
+        if (left) toast('有 ' + left + ' 位找不到合適的空床（床位不夠或性別不符），請手動分配', true);
+      });
+    }
+    draw();
+    modal({ title: '分房', desc: list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回；學員專區與信件的 {{房號}} 會顯示房間。', body: body, wide: true,
+      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
+      if (!ok) return;
+      var rs = rooms(), seen = {}, err = '';
+      rs.forEach(function (x) {
+        if (err) return;
+        if (!x.no) err = '每間房都要填房號';
+        else if (seen[x.no]) err = '房號重複：' + x.no;
+        else if (x.beds !== '' && !(x.beds >= 1 && x.beds <= 50)) err = '房號 ' + x.no + ' 的床位請填 1 到 50';
+        seen[x.no] = true;
+      });
+      if (err) { toast(err, true); return; }
+      var lost = list.filter(function (s) { return cur[s.id] && !seen[cur[s.id]]; }).map(function (s) { return s.name; });
+      if (lost.length) { toast(lost.join('、') + ' 的房間已不在清單，請改分其他房間', true); return; }
+      var newCfg = { show: $('[name=show]', body).checked, mates: $('[name=mates]', body).checked, rooms: rs };
+      var oldKnown = {}; cfg.rooms.forEach(function (x) { oldKnown[x.no] = true; });
+      var first = {}, later = {}, n = 0;
+      list.forEach(function (s) {
+        if (cur[s.id] === (s.room || '')) return;
+        n++;
+        if (!cur[s.id] || oldKnown[cur[s.id]]) first[s.id] = cur[s.id]; else later[s.id] = cur[s.id];
+      });
+      var cfgChanged = JSON.stringify(newCfg) !== JSON.stringify(cfg);
+      if (!cfgChanged && !n) { toast('沒有變更'); return; }
+      // 先把要搬走的人移出，再存房間清單（刪掉的房間要先沒人），最後分到新房間
+      var job = Promise.resolve();
+      if (Object.keys(first).length) job = job.then(function () { return api('setRooms', prefix, first); });
+      if (cfgChanged) job = job.then(function () { return api('updateProjectSettings', prefix, { rooms: newCfg }); });
+      if (Object.keys(later).length) job = job.then(function () { return api('setRooms', prefix, later); });
+      withBusy(job).then(function () { toast('已儲存分房' + (n ? '（' + n + ' 人變更）' : '')); cacheClear(); return load(); }).catch(function (e) { toast(e.message, true); load(); });
+    });
+  }
+
   /* ---------- 事件 ---------- */
   $('#st-search', root).addEventListener('input', function (e) { search = e.target.value.trim().toLowerCase(); if (D) renderTable(); });
   $('#st-settings', root).addEventListener('click', function () { if (D) openSettings(); });
@@ -1329,6 +1490,7 @@ App.page('students', function (root, params) {
   $('#st-forms', root).addEventListener('click', function () { if (D) openForms(); });
   $('#st-portal', root).addEventListener('click', function () { if (D) openPortal(); });
   $('#st-squad', root).addEventListener('click', function () { if (D) openSquads(); });
+  $('#st-room', root).addEventListener('click', function () { if (D) openRooms(); });
   $('#st-cols', root).addEventListener('click', function () { if (D) openColumns(); });
   $('#st-squad-filter', root).addEventListener('change', function (e) { squadFilter = e.target.value; renderTable(); });
   /** 匯出 PDF 的程式在 assets/export.js；沒載到（檔案沒上傳、舊快取）就現場補載一次 */
