@@ -333,9 +333,9 @@
   table.list.dense .deadline-note { margin-top: 2px !important; font-size: 11px; white-space: nowrap; }
   table.list.dense td.cell-clip, table.list.dense th.th-clip { max-width: 104px; }
   table.list.dense td.cell-name { min-width: 0; }
-  table.list.dense td.cell-name > div { display: inline; }
-  table.list.dense td.cell-name .clip-1 { display: inline-block; vertical-align: middle; max-width: 110px; }
-  table.list.dense td.cell-name .tag { height: 18px; line-height: 18px; padding: 0 7px; font-size: 10.5px; margin: 0 0 0 4px; vertical-align: middle; }
+  /* 窄：姓名欄只留姓名，團報、早鳥、待退款等標籤收起來（切回預設就看得到） */
+  table.list.dense td.cell-name .name-tags { display: none; }
+  table.list.dense td.cell-name .clip-1 { max-width: 110px; }
   table.list.dense td.note-cell .last { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table.list.dense td.note-cell .small { display: none; }
   table.list.dense .btn.icon { height: 28px; width: 28px; }
