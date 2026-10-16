@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/config.js"></script>
+  <script src="assets/loading.js"></script>
   <style>
     /* 學員填的預製表單：不用登入，版面跟寄出的信一樣（標頭色條＋白底內容） */
     .pf-wrap { max-width: 640px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); }
@@ -48,7 +49,7 @@
   <div class="pf-wrap">
     <div class="card">
       <div class="pf-head" id="pf-camp">載入中…</div>
-      <div class="pf-body" id="pf-body"><div class="muted">載入中…</div></div>
+      <div class="pf-body" id="pf-body"><div class="ld"><div class="ld-spin"></div><div class="ld-msg">載入中…</div></div></div>
     </div>
     <div class="pf-foot" id="pf-foot" style="margin-top:20px"></div>
   </div>
@@ -67,7 +68,7 @@
       .then(function (r) { if (!r.ok) throw new Error('連線失敗，請稍後再試'); return r.json(); })
       .then(function (j) { if (!j.ok) throw new Error(j.error || '發生錯誤'); return j.result; });
   }
-  function busy(btn, on, label) { btn.disabled = on; btn.textContent = on ? '處理中…' : label; }
+  function busy(btn, on, label, busyLabel) { btnBusy(btn, on, label, busyLabel); }
 
   /** 二次確認：列出要送出的內容，按「確定送出」才送 */
   function confirmBox(title, rows, warn, danger) {
@@ -108,7 +109,7 @@
       e.preventDefault();
       var btn = form.querySelector('button'), err = form.querySelector('.pf-err');
       err.textContent = '';
-      busy(btn, true, '查詢我的報名');
+      busy(btn, true, '查詢我的報名', '查詢中…');
       who = { name: form.elements.name.value.trim(), key: form.elements.key.value.trim() };
       call('publicLookup', prefix, kind, who.name, who.key).then(function (r) { confirmStep(r); })
         .catch(function (e2) { err.textContent = e2.message; busy(btn, false, '查詢我的報名'); });
@@ -180,6 +181,7 @@
   }
 
   if (!prefix || !kind) { closed('網址不完整，請從信裡的按鈕重新打開'); return; }
+  showLoading(document.getElementById('pf-body'));
   call('publicForm', prefix, kind).then(function (f) {
     if (f.closed) { closed(f.message); return; }
     F = f;
