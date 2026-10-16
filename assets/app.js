@@ -102,6 +102,21 @@ function bankError(b) {
   return '';
 }
 
+/**
+ * 名單強調顯示（學員列表與匯出 PDF 共用）：不做文字偵測，只看設定的規則。
+ * rule = {mode:'filled'} 有填寫就強調，但「無」「沒有」「-」之類不算；{mode:'match', values:[…]} 答案（多選題任一個）符合時強調。
+ */
+var HL_NONE = /^(無|沒有|没有|無特殊|皆無|none|no|n\/?a|-+|—+|／|\/|x|0)$/i;
+function highlightHit(rule, v) {
+  if (!rule) return false;
+  var s = String(v === undefined || v === null ? '' : v).trim();
+  if (!s) return false;
+  if (rule.mode === 'filled') return !HL_NONE.test(s.replace(/[\s。.、，,]+$/g, ''));
+  if (rule.mode !== 'match') return false;
+  var parts = s.split(/,\s*/).map(function (x) { return x.trim(); });
+  return (rule.values || []).some(function (x) { return x === s || parts.indexOf(x) >= 0; });
+}
+
 function esc(s) {
   return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -320,7 +335,7 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區按鈕', '學員專區連結'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區', '學員專區按鈕', '學員專區連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
@@ -328,7 +343,7 @@ var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[n
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
   '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
   '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel',
-  '學員專區按鈕': '[center][button=https://example.com/portal.html]學員專區：查詢報名進度[/button][/center]', '學員專區連結': 'https://example.com/portal.html?p=OOOO' };
+  '學員專區': '%%PORTAL%%', '學員專區按鈕': '[center][button=https://example.com/portal.html]學員專區：查詢報名進度[/button][/center]', '學員專區連結': 'https://example.com/portal.html?p=OOOO' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
 function echoSampleHtml(fields) {
@@ -393,6 +408,19 @@ function refundSampleHtml(r) {
 }
 
 /** {{飯店資訊}}（與後端 hotelHtml_ 相同）；沒有傳入飯店時用示意資料 */
+/** {{學員專區}} 方塊（與後端 portalBlockHtml_ 相同）；url 為 '' 表示這個專案的學員專區還沒開放 */
+function portalSampleHtml(url, keyLabel) {
+  if (url === '') return '<div style="font-size:12px;color:#9ca3af">（這個專案的學員專區還沒開放，寄出時不會出現；到上方「學員專區」開放）</div>';
+  url = url || 'https://example.com/portal.html?p=OOOO';
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:12px 0;border-collapse:separate;border-spacing:0;background:#eef4fb;border:1px solid #d3e1f1;border-radius:12px"><tr><td style="padding:16px 18px;color:#1f2937;line-height:1.7">' +
+    '<div style="font-size:16px;font-weight:700;color:#1d4f86">學員專區</div>' +
+    '<div style="margin-top:4px">登入後可以隨時查看報名進度、繳費資訊、營隊資訊與行前須知。</div>' +
+    '<div style="margin-top:2px;color:#4b5563;font-size:13px">登入方式：學員姓名＋' + esc(keyLabel || '身分證字號') + '</div>' +
+    '<div style="margin-top:12px"><a href="' + esc(url) + '" style="display:inline-block;padding:10px 22px;border-radius:999px;background:#1d64b5;color:#ffffff;font-weight:700;text-decoration:none">進入學員專區</a></div>' +
+    '<div style="margin-top:10px;font-size:12px;color:#6b7280;word-break:break-all">網址：<a href="' + esc(url) + '" style="color:#1d64b5">' + esc(url) + '</a></div>' +
+    '</td></tr></table>';
+}
+
 function hotelSampleHtml(h) {
   if (h && !h.name) return '<div style="font-size:12px;color:#9ca3af">（這個專案還沒填飯店資訊，寄出時不會出現；到「專案設定 → 飯店資訊」填寫）</div>';
   h = h || { name: 'OOO 飯店', address: 'OO市OO路 000 號', phone: '00-0000-0000', checkin: '0/00 15:00', checkout: '0/00 11:00', url: '', note: '' };
@@ -1079,7 +1107,7 @@ function openTemplateEditor(t, opts) {
     var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
     html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund)).replace(/(?:<br>)?%%HOTEL%%(?:<br>)?/g, hotelSampleHtml(opts.hotel));
+    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund)).replace(/(?:<br>)?%%HOTEL%%(?:<br>)?/g, hotelSampleHtml(opts.hotel)).replace(/(?:<br>)?%%PORTAL%%(?:<br>)?/g, portalSampleHtml(opts.portalUrl, opts.portalKeyLabel));
     frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], blockBr(html.split('%%CONTACTS%%').join(contacts)), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
