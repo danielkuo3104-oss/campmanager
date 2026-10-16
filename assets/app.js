@@ -360,14 +360,14 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '學員專區', '學員專區按鈕', '學員專區連結'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '簽署同意書按鈕', '簽署同意書連結', '同意書保存期限', '學員專區', '學員專區按鈕', '學員專區連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '候補順位': '0',
   '團報名單': 'OOO、OOO', 'Email': 'ooo@example.com', '報名時間': '0000/00/00 00:00', '報名結果': '已報名', '結果說明': '', '目前人數': '已錄取 00 人／上限 00 人', '管理頁按鈕': '[center][button=https://example.com/students.html]到報名與學員管理[/button][/center]', '招生期間': '0000/00/00～0000/00/00', '需要名額': '0', '剩餘名額': '0', '預留人數': '0', '原因': 'OOO', '原金額': '0,000', '訊息': 'OOO', '團報說明': '', '回覆內容': '%%ECHO%%', '聯絡人員': '%%CONTACTS%%', '匯款資訊': '%%PAYINFO%%', '退款規定': '%%REFUND%%', '飯店資訊': '%%HOTEL%%', '飯店名稱': 'OOO 飯店', '飯店地址': 'OO市OO路 000 號', '飯店電話': '00-0000-0000', '房號': '000',
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
   '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
-  '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel',
+  '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel', '簽署同意書按鈕': '[center][button=https://example.com/consent.html]簽署同意書[/button][/center]', '簽署同意書連結': 'https://example.com/consent.html', '同意書保存期限': '營隊結束後 12 個月（0000/00/00）',
   '學員專區': '%%PORTAL%%', '學員專區按鈕': '[center][button=https://example.com/portal.html]學員專區：查詢報名進度[/button][/center]', '學員專區連結': 'https://example.com/portal.html?p=OOOO' };
 
 /** 預覽用的回覆內容表格（實際信件依專案設定勾選的題目） */
@@ -1324,6 +1324,8 @@ function renderTopbar(name, params) {
       { header: App.user.email },
       { label: '修改密碼', onClick: changeMyPassword },
       { label: '安裝到桌面', onClick: installApp },
+      { label: '使用手冊', onClick: function () { openManual(''); } },
+      { label: '問題快速排除', onClick: function () { openManual('troubleshoot'); } },
       { label: '聯絡開發人員', onClick: contactDeveloper },
       { sep: true },
       { label: '登出', danger: true, onClick: function () { api('logout').finally(function () { store('camp_token', null); location.href = 'index.html'; }); } }
@@ -1686,9 +1688,9 @@ window.addEventListener('appinstalled', function () {
   $$('.install-btn').forEach(function (b) { b.classList.add('hidden'); });
   toast('已安裝，之後可以從桌面或應用程式清單直接開啟');
 });
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
-}
+window.addEventListener('load', function () {
+  try { if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) { /* 沙盒環境不能用 */ }
+});
 function isStandalone() {
   return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 }
@@ -1711,6 +1713,11 @@ function installApp() {
     body: '<ol class="summary-list">' + lines.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ol>',
     buttons: [{ label: '知道了', cls: 'primary', value: true }]
   });
+}
+
+/** 使用手冊（manual.html）：另開分頁，section 是章節錨點，例如 troubleshoot＝問題快速排除 */
+function openManual(section) {
+  window.open('manual.html' + (section ? '#' + section : ''), '_blank', 'noopener');
 }
 
 /** 聯絡開發人員：問題回報或功能建議直接寄給開發人員，回信會寄到自己的信箱 */
