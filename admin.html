@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
@@ -25,11 +26,12 @@
       <div class="sub" id="ad-sub"></div>
     </div>
   </div>
+  <div class="phone-note">手機版提供瀏覽、核准與人員操作。系統信件範本與預製表單請用電腦編輯。</div>
   <div class="tabs" id="ad-tabs">
     <button type="button" data-tab="staff" class="on">人員</button>
     <button type="button" data-tab="projects">專案</button>
-    <button type="button" data-tab="templates">信件範本</button>
-    <button type="button" data-tab="forms">預製表單</button>
+    <button type="button" data-tab="templates" class="desk-only">信件範本</button>
+    <button type="button" data-tab="forms" class="desk-only">預製表單</button>
     <button type="button" data-tab="perms">權限與移交</button>
   </div>
   <div id="ad-body"><div class="loading"><div class="spinner"></div>載入中</div></div>
@@ -44,7 +46,7 @@ App.page('admin', function (root, params) {
   /** 每個分頁需要的權限（任一項） */
   var TAB_PERMS = { staff: ['approveStaff', 'manageStaff'], projects: ['approveProject', 'projectStatus', 'siteMaint'], templates: ['templates'], forms: ['templates'], perms: ['__root'] };
   function can(k) { return D.me.isRoot || (k !== '__root' && D.me.perms.indexOf(k) >= 0); }
-  function tabAllowed(t) { return (TAB_PERMS[t] || []).some(can); }
+  function tabAllowed(t) { return (TAB_PERMS[t] || []).some(can) && !(isPhone() && (t === 'templates' || t === 'forms')); }   // 手機版不編輯範本與預製表單
 
   function load() {
     return apiFast('getAdminData', function (d) {
