@@ -64,6 +64,22 @@
     .cs-pad .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b4bcb8; font-size: 14px; pointer-events: none; }
     .cs-pad.inked .ph { display: none; }
     .cs-pad.inked { border-style: solid; border-color: var(--brand, #2f5d62); }
+    .cs-pad .ph { text-align: center; padding: 0 12px; }
+    .sg-full { position: fixed; inset: 0; z-index: 100; background: rgba(20, 24, 22, .55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .sg-stage { background: #fff; border-radius: 18px; width: min(1100px, 100%); height: min(600px, 100%); display: flex; flex-direction: column; overflow: hidden; color: #1d2621; }
+    .sg-top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #e3e8e5; }
+    .sg-top b { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sg-sp { flex: 1; }
+    .sg-area { position: relative; flex: 1; margin: 14px; border: 1.5px dashed #cfd6d2; border-radius: 12px; background: #fff; touch-action: none; overflow: hidden; }
+    .sg-area canvas { position: absolute; left: 0; top: 0; cursor: crosshair; touch-action: none; }
+    .sg-area .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b4bcb8; font-size: 18px; pointer-events: none; }
+    .sg-area.inked .ph { display: none; }
+    .sg-line { position: absolute; left: 8%; right: 8%; bottom: 26%; border-bottom: 1px solid #e3e8e5; pointer-events: none; }
+    .sg-full.touch { padding: 0; background: #fff; }
+    .sg-full.touch .sg-stage { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; border-radius: 0;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); box-sizing: border-box; }
+    /* 手機直拿：簽名區轉 90 度，手機橫拿就是橫式簽名 */
+    .sg-full.touch.rot .sg-stage { width: 100vh; width: 100dvh; height: 100vw; transform-origin: 0 0; transform: translateX(100vw) rotate(90deg); }
     .cs-tabs { display: flex; gap: 6px; padding: 4px; border-radius: 14px; background: var(--surface-2, #f4f5f3); }
     .cs-tabs button { flex: 1; border: 0; background: transparent; padding: 10px; border-radius: 10px; font: inherit; font-size: 14px; color: var(--text-2); cursor: pointer; }
     .cs-tabs button.on { background: #fff; color: var(--brand, #2f5d62); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
@@ -167,7 +183,8 @@
       if (keep) { var im = new Image(); im.onload = function () { ctx.drawImage(im, 0, 0, r.width, r.height); }; im.src = keep; }
     }
     function pos(e) { var r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-    cv.addEventListener('pointerdown', function (e) { e.preventDefault(); drawing = true; last = pos(e); cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); });
+    var ext = null;   // 用「放大簽名」簽的高解析度簽名；在小簽名框再簽就換回小框
+    cv.addEventListener('pointerdown', function (e) { e.preventDefault(); if (ext) { ext = null; ctx.clearRect(0, 0, cv.width, cv.height); inked = false; } drawing = true; last = pos(e); cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); });
     cv.addEventListener('pointermove', function (e) {
       if (!drawing) return;
       e.preventDefault();
@@ -181,15 +198,104 @@
     window.addEventListener('resize', fit);
     return {
       inked: function () { return inked; },
-      clear: function () { ctx.clearRect(0, 0, cv.width, cv.height); inked = false; box.classList.remove('inked'); box.dispatchEvent(new Event('ink', { bubbles: true })); },
+      clear: function () { ext = null; ctx.clearRect(0, 0, cv.width, cv.height); inked = false; box.classList.remove('inked'); box.dispatchEvent(new Event('ink', { bubbles: true })); },
+      /** 放大簽名簽好後：小框顯示縮圖，送出時用大圖 */
+      setFrom: function (big) {
+        ext = big;
+        var r = box.getBoundingClientRect(), k = Math.min(r.width / big.width, r.height / big.height);
+        var w = big.width * k, h = big.height * k;
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(big, (r.width - w) / 2, (r.height - h) / 2, w, h);
+        inked = true; box.classList.add('inked'); box.dispatchEvent(new Event('ink', { bubbles: true }));
+      },
       png: function () {
-        // 縮成寬 600 的白底圖，檔案小、在後台看得清楚
-        var w = 600, h = Math.round(600 * cv.height / cv.width), out = document.createElement('canvas');
+        // 縮成寬 600（放大簽名的用寬 900）的白底圖，檔案小、在後台看得清楚
+        var src = ext || cv, w = ext ? 900 : 600, h = Math.round(w * src.height / src.width), out = document.createElement('canvas');
         out.width = w; out.height = h;
-        var o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, w, h); o.drawImage(cv, 0, 0, w, h);
+        var o = out.getContext('2d'); o.fillStyle = '#fff'; o.fillRect(0, 0, w, h); o.drawImage(src, 0, 0, w, h);
         return out.toDataURL('image/png');
       }
     };
+  }
+
+  /**
+   * 放大簽名：手機滿版（轉成橫式；能鎖定螢幕方向就鎖，不能就把簽名區轉 90 度，手機橫拿著簽），
+   * 電腦開一個大的簽名視窗。按「完成」後簽名放回原本的簽名框。
+   */
+  function bigSign(label, onDone) {
+    var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    var ov = document.createElement('div');
+    ov.className = 'sg-full' + (touch ? ' touch' : '');
+    ov.innerHTML = '<div class="sg-stage" role="dialog" aria-modal="true"><div class="sg-top"><b></b><span class="sg-sp"></span>' +
+      '<button class="btn sm ghost" type="button" data-k="clear">清除</button><button class="btn sm ghost" type="button" data-k="cancel">取消</button><button class="btn sm primary" type="button" data-k="ok">完成</button></div>' +
+      '<div class="sg-area"><div class="sg-line"></div><canvas></canvas><div class="ph">請在這裡簽名</div></div></div>';
+    ov.querySelector('b').textContent = label;
+    document.body.appendChild(ov);
+    var stage = ov.querySelector('.sg-stage'), area = ov.querySelector('.sg-area'), cv = ov.querySelector('canvas'), ctx = cv.getContext('2d');
+    var inked = false, drawing = false, last = null, rot = false;
+    document.documentElement.style.overflow = 'hidden';
+    function layout() {
+      // 手機直拿：把簽名區轉 90 度變成橫的
+      rot = touch && window.innerHeight > window.innerWidth;
+      ov.classList.toggle('rot', rot);
+      var keep = inked ? cv.toDataURL() : null, ow = cv.width, oh = cv.height;
+      var w = area.clientWidth, h = area.clientHeight, dpr = window.devicePixelRatio || 1;
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      cv.style.width = w + 'px'; cv.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111'; ctx.lineWidth = touch ? 3.4 : 3;
+      if (keep) { var im = new Image(); im.onload = function () { var k = Math.min(w / (ow / dpr), h / (oh / dpr)); ctx.drawImage(im, 0, 0, ow / dpr * k, oh / dpr * k); }; im.src = keep; }
+    }
+    function pos(e) {
+      var r = cv.getBoundingClientRect();
+      // 轉了 90 度（順時針）：畫面的 y 是簽名區的 x，畫面的 x 由右往左是簽名區的 y
+      if (rot) return { x: e.clientY - r.top, y: r.right - e.clientX };
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    cv.addEventListener('pointerdown', function (e) { e.preventDefault(); drawing = true; last = pos(e); cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.5, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); });
+    cv.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      e.preventDefault();
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      if (!inked && Math.abs(p.x - last.x) + Math.abs(p.y - last.y) > 0) { inked = true; area.classList.add('inked'); }
+      last = p;
+    });
+    ['pointerup', 'pointercancel'].forEach(function (t) { cv.addEventListener(t, function () { drawing = false; }); });
+    function relayout() { setTimeout(layout, 120); }
+    window.addEventListener('resize', relayout);
+    // 能全螢幕、鎖定橫向的手機（多數 Android）就鎖；iPhone 不支援，改用轉 90 度
+    if (touch && ov.requestFullscreen) {
+      ov.requestFullscreen().then(function () {
+        return screen.orientation && screen.orientation.lock ? screen.orientation.lock('landscape') : null;
+      }).catch(function () {}).then(relayout);
+    }
+    layout();
+    function close(ok) {
+      window.removeEventListener('resize', relayout);
+      document.removeEventListener('keydown', onKey);
+      document.documentElement.style.overflow = '';
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+      if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+      if (ok && inked) {
+        // 裁掉四周空白，只留簽名
+        var d = ctx.getImageData(0, 0, cv.width, cv.height).data, W = cv.width, H = cv.height, x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (var y = 0; y < H; y += 2) for (var x = 0; x < W; x += 2) if (d[(y * W + x) * 4 + 3] > 20) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        if (x1 < 0) { x0 = 0; y0 = 0; x1 = W - 1; y1 = H - 1; }
+        var m = Math.round(24 * (window.devicePixelRatio || 1));
+        x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m);
+        var wd = Math.max(x1 - x0, Math.round((y1 - y0) * 3.5)), out = document.createElement('canvas');   // 至少 3.5:1，跟原本的簽名框比例接近
+        out.width = wd; out.height = y1 - y0;
+        out.getContext('2d').drawImage(cv, x0, y0, x1 - x0, y1 - y0, Math.round((wd - (x1 - x0)) / 2), 0, x1 - x0, y1 - y0);
+        onDone(out);
+      }
+      ov.remove();
+    }
+    function onKey(e) { if (e.key === 'Escape') close(false); }
+    document.addEventListener('keydown', onKey);
+    ov.querySelector('[data-k=clear]').onclick = function () { ctx.clearRect(0, 0, cv.width, cv.height); inked = false; area.classList.remove('inked'); };
+    ov.querySelector('[data-k=cancel]').onclick = function () { close(false); };
+    ov.querySelector('[data-k=ok]').onclick = function () { close(true); };
   }
 
   function signStep() {
@@ -236,10 +342,10 @@
     r.signers.forEach(function (sg) {
       var w = document.createElement('div');
       w.className = 'cs-pad-wrap';
-      w.innerHTML = '<div class="cs-pad-head"><span></span><button class="btn sm ghost" type="button">清除重簽</button></div><div class="cs-pad"><div class="ph">請在這裡簽名</div></div>';
+      w.innerHTML = '<div class="cs-pad-head"><span></span><button class="btn sm ghost cs-big" type="button">⤢ 放大簽名</button><button class="btn sm ghost cs-clr" type="button">清除重簽</button></div><div class="cs-pad"><div class="ph">請在這裡簽名，或按「放大簽名」' + (window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? '橫向滿版簽' : '在大視窗簽') + '</div></div>';
       w.querySelector('span').textContent = sg.label + '簽名' + (sg.role === 'student' ? '（' + who.name + '）' : '');
       sign.appendChild(w);
-      pads[sg.role] = { box: w.querySelector('.cs-pad'), pad: null, btn: w.querySelector('button') };
+      pads[sg.role] = { box: w.querySelector('.cs-pad'), pad: null, btn: w.querySelector('.cs-clr'), big: w.querySelector('.cs-big'), label: sg.label + '簽名' + (sg.role === 'student' ? '（' + who.name + '）' : '') };
     });
     function inView(el) { var b = el.getBoundingClientRect(); return b.bottom > 60 && b.top < window.innerHeight - 60; }
     function tick(add) {
@@ -257,6 +363,7 @@
           var pd = pads[role];
           pd.pad = makePad(pd.box);
           pd.btn.onclick = function () { pd.pad.clear(); };
+          pd.big.onclick = function () { bigSign(pd.label, function (c) { pd.pad.setFrom(c); }); };
         });
         updateSubmit();
         return;
