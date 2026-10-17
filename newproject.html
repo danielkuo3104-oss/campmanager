@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
+  <script src="assets/settings-form.js"></script>
 </head>
 <body>
   <main id="app">
@@ -23,15 +24,15 @@
   <div class="page-head">
     <div>
       <h1>開始新專案</h1>
-      <div class="sub">連結舉辦方的 Google 表單，設定營期、費用與共同管理員</div>
+      <div class="sub">連結舉辦方的 Google 表單，填專案設定與共同管理員</div>
     </div>
   </div>
 
   <div class="stepper desk-only">
     <div class="step on" data-step="1"><b>1</b>連結表單</div>
     <div class="step" data-step="2"><b>2</b>專案設定</div>
-    <div class="step" data-step="3"><b>3</b>欄位對應</div>
-    <div class="step" data-step="4"><b>4</b>共同管理員</div>
+    <div class="step" data-step="3"><b>3</b>共同管理員</div>
+    <div class="step" data-step="4"><b>4</b>完成</div>
   </div>
 
   <div class="phone-note">開始新專案需要對應表單欄位、設定營期與費用，畫面較複雜，請用電腦操作。</div>
@@ -61,48 +62,16 @@
     </section>
 
     <section class="card card-pad hidden" id="np-step2">
-      <h2 style="margin-bottom:16px">2. 專案設定</h2>
-      <div class="grid-3">
-        <label class="field"><span>專案代碼（活頁前綴）<em>*</em></span><input class="input" name="prefix" placeholder="例如 2027S"><span class="hint">2–12 個英文或數字，同一屆所有活頁都用這個前綴</span></label>
-        <label class="field" style="grid-column:span 2"><span>營隊名稱<em>*</em></span><input class="input" name="name"></label>
-        <label class="field" style="grid-column:1 / -1"><span>信件署名</span><input class="input" name="signature" placeholder="例如：清大醫工營籌辦團隊 敬上"><span class="hint">每封信最後置中顯示；可留空、之後在專案設定修改</span></label>
-        <label class="field"><span>開始招生日期<em>*</em></span><input class="input" name="regStart" type="date"><span class="hint">這天 00:00 起系統開始受理報名</span></label>
-        <label class="field"><span>預計結束招生日期</span><input class="input" name="regEnd" type="date"><span class="hint">這天 23:59 後的報名先記為「招生期外」，由管理員決定；可留空、之後可改</span></label>
-        <span></span>
-        <label class="field"><span>營期開始<em>*</em></span><input class="input" name="start" type="date"></label>
-        <label class="field"><span>營期結束<em>*</em></span><input class="input" name="end" type="date"><span class="hint">超過營期後專案自動變成只能瀏覽</span></label>
-        <label class="field"><span>招生人數上限<em>*</em></span><input class="input" name="capacity" type="number" min="1"></label>
-        <label class="field"><span>原價（元）<em>*</em></span><input class="input" name="price" type="number" min="0"></label>
-        <label class="field"><span>團報價（元，選填）</span><input class="input" name="groupPrice" type="number" min="0"></label>
-        <label class="field"><span>早鳥價（元，選填）</span><input class="input" name="earlyPrice" type="number" min="0"></label>
-        <label class="field"><span>早鳥團報價（元，選填）</span><input class="input" name="earlyGroupPrice" type="number" min="0"><span class="hint">早鳥期限內的團報；沒填就在早鳥價與團報價中取較低的</span></label>
-        <label class="field"><span>早鳥期限（有早鳥價才需要）</span><input class="input" name="earlyDeadline" type="date"></label>
-        <div class="field bank-fields" style="grid-column:1/-1"><span>匯款帳號<em>*</em></span><div class="bank-grid">
-          <input class="input" name="bank_bank" placeholder="銀行（例如 台灣銀行）" aria-label="銀行">
-          <input class="input" name="bank_code" placeholder="銀行代碼（例如 004）" aria-label="銀行代碼" inputmode="numeric">
-          <input class="input" name="bank_branch" placeholder="分行（例如 新竹分行）" aria-label="分行">
-          <input class="input" name="bank_name" placeholder="戶名" aria-label="戶名">
-          <input class="input" name="bank_no" placeholder="帳號" aria-label="帳號" inputmode="numeric">
-        </div><span class="hint">銀行、分行、戶名、帳號必填；銀行代碼方便學員用 ATM 轉帳</span></div>
-        <label class="field"><span>匯款期限（報名後幾天）</span><input class="input" name="payDays" type="number" min="0" value="1"><span class="hint">預設 1 = 報名隔天 23:59</span></label>
-        <label class="field"><span>團報預留名額保留時數</span><input class="input" name="holdHours" type="number" min="0" value="72"></label>
-        <label class="field"><span>候補遞補模式</span><select class="input" name="promoteMode"><option>手動</option><option>自動</option></select></label>
-        <label class="field"><span>候補順序</span><select class="input" name="waitOrder"><option>報名時間</option><option>人工</option></select></label>
-        <label class="field"><span>預設小隊數</span><input class="input" name="squads" type="number" min="0" max="40" value="0"><span class="hint">0 = 不分隊；之後可在「分小隊」編輯每位學員的小隊</span></label>
-        <label class="field"><span>限定報名信箱網域</span><input class="input" name="emailDomains" placeholder="例如 gmail.com（可留空）"><span class="hint">不是這個網域的信箱會列入警示；留空只檢查格式與常見打錯</span></label>
-      </div>
-    </section>
-
-    <section class="card card-pad hidden" id="np-step3">
-      <h2>3. 欄位對應</h2>
-      <p class="muted small" style="margin:6px 0 16px">系統已依題目文字自動猜測，請確認或修正。「學員姓名」與「Email」必須指定。</p>
-      <div class="grid-3" id="np-mapping"></div>
-      <h3 style="margin:24px 0 10px">名單顯示欄位</h3>
-      <div id="np-display" style="display:flex;flex-direction:column;gap:8px"></div>
+      <h2 style="margin-bottom:6px">2. 專案設定</h2>
+      <p class="muted small" style="margin:0 0 16px">和建立後的「專案設定」是同一套欄位。標 * 的必填；選填的區塊可以先跳過，之後在專案設定補上，每一區右邊會標示「已設定」或「尚未設定」。</p>
+      <div class="drawer-section"><div class="grid-2">
+        <label class="field"><span>專案代碼（活頁前綴）<em>*</em></span><input class="input" name="prefix" placeholder="例如 2027S"><span class="hint">2–12 個英文或數字，同一屆所有活頁都用這個前綴；建立後不能改</span></label>
+      </div></div>
+      <div class="sf-box" id="np-settings"></div>
     </section>
 
     <section class="card card-pad hidden" id="np-step4">
-      <div class="row"><h2 class="grow">4. 共同管理員</h2><button class="btn sm" type="button" id="np-add-admin">新增一位</button></div>
+      <div class="row"><h2 class="grow">3. 共同管理員</h2><button class="btn sm" type="button" id="np-add-admin">新增一位</button></div>
       <p class="muted small" style="margin:6px 0 16px">共同管理員只能管理這個專案。已是管理員的信箱會直接加入此專案，沿用原本密碼。</p>
       <div id="np-admins" style="display:flex;flex-direction:column;gap:10px"></div>
       <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
@@ -110,6 +79,7 @@
       <div class="row" style="margin-top:20px"><span class="spacer"></span><button class="btn primary" type="button" id="np-submit" style="height:42px;padding:0 24px">建立專案</button></div>
     </section>
   </form>
+  <section class="card card-pad hidden" id="np-done"></section>
 </div>
 <div class="loading" id="page-loading"><div class="spinner"></div>載入中</div>
   </main>
@@ -118,11 +88,10 @@
 <script>
 App.page('newproject', function (root) {
   var form = $('#np-form', root);
-  guardDates(form);
-  var info = null;
+  var info = null, sf = null;
 
   function showStep(n) {
-    for (var i = 2; i <= 4; i++) $('#np-step' + i, root).classList.toggle('hidden', n < 2);
+    for (var i = 2; i <= 4; i++) { var st = $('#np-step' + i, root); if (st) st.classList.toggle('hidden', n < 2); }
     $$('.step', root).forEach(function (s) { s.classList.toggle('on', Number(s.getAttribute('data-step')) <= n); });
   }
 
@@ -137,60 +106,21 @@ App.page('newproject', function (root) {
     var url = form.elements.formUrl.value.trim();
     if (!url) { toast('請貼上表單編輯連結', true); return; }
     withBusy(api('inspectForm', url)).then(function (r) {
+      // 已經填過設定再讀一次表單：保留填好的值，只換題目與欄位對應
+      var kept = sf ? sf.read() : null;
       info = r;
       $('#np-account', root).textContent = '系統帳號：' + r.systemAccount + '（表單編輯權限需分享給此帳號）';
       $('#np-help', root).open = false;
       $('#np-form-info', root).textContent = '已讀取表單「' + r.title + '」：' + r.questions.length + ' 個題目，目前已有 ' + r.responses + ' 筆回覆。';
-      if (!form.elements.name.value) form.elements.name.value = r.title;
-      renderMapping();
-      showStep(4);
+      var start = kept ? Object.assign({}, kept, { mapping: r.mapping, display: r.display, echo: [], hotel: kept.hotel, refund: kept.refund, bank: kept.bank, contacts: kept.contacts }) : {};
+      if (!start.name) start.name = r.title;
+      sf = SettingsForm.build($('#np-settings', root), start, {
+        isNew: true, fieldKeys: r.fieldKeys, questions: r.questions, mapping: r.mapping, display: r.display, name: r.title, footerSystem: r.footerSystem || ''
+      });
+      showStep(3);
       if (!$('#np-admins', root).children.length) addAdmin();
     }).catch(function (e) { toast(e.message, true); });
   });
-
-  function renderMapping() {
-    var box = $('#np-mapping', root);
-    box.innerHTML = '';
-    info.fieldKeys.forEach(function (k) {
-      if (k.multi) {
-        // 共同團報人可能分成好幾題（共同報名人 1、2、3…），全部勾起來
-        var cur = [].concat(info.mapping[k.key] || []);
-        var mb = el('<div class="field multi-map"><span></span><div class="multi-q"></div><span class="hint">可複選：表單把每位同伴分成不同題目時，全部勾起來。</span></div>');
-        $('span', mb).textContent = k.label + '（可複選）';
-        info.questions.forEach(function (q) {
-          var c = el('<label class="check"><input type="checkbox"><span></span></label>');
-          $('input', c).name = 'map_' + k.key; $('input', c).value = q; $('input', c).checked = cur.indexOf(q) >= 0;
-          $('span', c).textContent = q;
-          $('.multi-q', mb).appendChild(c);
-        });
-        box.appendChild(mb);
-        return;
-      }
-      var lab = el('<label class="field"><span></span><select class="input"></select></label>');
-      $('span', lab).innerHTML = esc(k.label) + (k.key === 'name' || k.key === 'email' ? '<em>*</em>' : '');
-      var sel = $('select', lab);
-      sel.name = 'map_' + k.key;
-      sel.appendChild(new Option('（未對應）', ''));
-      info.questions.forEach(function (q) { sel.appendChild(new Option(q, q, false, info.mapping[k.key] === q)); });
-      sel.addEventListener('change', renderDisplayDefaults);
-      box.appendChild(lab);
-    });
-    var disp = $('#np-display', root);
-    disp.innerHTML = '';
-    info.questions.forEach(function (q) {
-      var c = el('<label class="check"><input type="checkbox" name="disp"><span></span></label>');
-      $('input', c).value = q;
-      $('input', c).checked = info.display.indexOf(q) >= 0;
-      $('span', c).textContent = q;
-      disp.appendChild(c);
-    });
-  }
-
-  var DEFAULT_KEYS = ['name', 'parentPhone', 'studentPhone', 'idNumber', 'birth', 'diet', 'specialDiet', 'allergy'];
-  function renderDisplayDefaults() {
-    var chosen = DEFAULT_KEYS.map(function (k) { return form.elements['map_' + k].value; }).filter(String);
-    $$('input[name=disp]', root).forEach(function (i) { if (chosen.indexOf(i.value) >= 0) i.checked = true; });
-  }
 
   function addAdmin() {
     var row = el('<div class="grid-3" style="grid-template-columns:1fr 1.4fr 1fr auto;align-items:end">' +
@@ -203,42 +133,24 @@ App.page('newproject', function (root) {
   }
   $('#np-add-admin', root).addEventListener('click', addAdmin);
 
+  /** 送出的資料：專案設定（與專案設定相同的欄位）＋專案代碼、表單、共同管理員 */
   function collect() {
     var e = form.elements;
-    var mapping = {};
-    info.fieldKeys.forEach(function (k) {
-      if (k.multi) { var arr = $$('input[name=map_' + k.key + ']:checked', root).map(function (i) { return i.value; }); if (arr.length) mapping[k.key] = arr; return; }
-      var v = e['map_' + k.key].value; if (v) mapping[k.key] = v;
-    });
+    var d = sf.collect();
     var admins = $$('#np-admins > div', root).map(function (r) {
       var o = {};
       $$('[data-k]', r).forEach(function (i) { o[i.getAttribute('data-k')] = i.value.trim(); });
       return o;
     }).filter(function (a) { return a.email || a.name || a.password; });
-    return {
-      formUrl: e.formUrl.value.trim(), prefix: e.prefix.value.trim(), name: e.name.value.trim(), signature: e.signature.value.trim(),
-      start: e.start.value, end: e.end.value, regStart: e.regStart.value, regEnd: e.regEnd.value, capacity: e.capacity.value, price: e.price.value,
-      groupPrice: e.groupPrice.value, earlyPrice: e.earlyPrice.value, earlyGroupPrice: e.earlyGroupPrice.value, earlyDeadline: e.earlyDeadline.value,
-      bank: { bank: e.bank_bank.value.trim(), code: e.bank_code.value.trim(), branch: e.bank_branch.value.trim(), name: e.bank_name.value.trim(), no: e.bank_no.value.trim() },
-      payDays: e.payDays.value, holdHours: e.holdHours.value,
-      squads: e.squads.value, emailDomains: e.emailDomains.value.trim(),
-      promoteMode: e.promoteMode.value, waitOrder: e.waitOrder.value, mapping: mapping,
-      display: $$('input[name=disp]:checked', root).map(function (i) { return i.value; }),
-      coAdmins: admins, notifyExisting: e.notifyExisting.checked
-    };
+    d.formUrl = e.formUrl.value.trim();
+    d.prefix = e.prefix.value.trim();
+    d.coAdmins = admins;
+    d.notifyExisting = e.notifyExisting.checked;
+    return d;
   }
 
   function check(d) {
-    if ((Number(d.earlyPrice) > 0 || Number(d.earlyGroupPrice) > 0) && !d.earlyDeadline) return '有填早鳥價時，請填早鳥期限';
-    if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) return '專案代碼需為 2 到 12 個英文或數字';
-    var req = [['name', '營隊名稱'], ['regStart', '開始招生日期'], ['start', '營期開始'], ['end', '營期結束'], ['capacity', '招生人數上限'], ['price', '原價']];
-    for (var i = 0; i < req.length; i++) if (!String(d[req[i][0]]).trim()) return '請填寫「' + req[i][1] + '」';
-    var bankErr = bankError(d.bank);
-    if (bankErr) return bankErr;
-    var dateErr = dateOrderError(d);
-    if (dateErr) return dateErr;
-    if (!d.mapping.name) return '請指定「學員姓名」對應的題目';
-    if (!d.mapping.email && info.questions.indexOf('電子郵件地址') < 0) return '請指定「Email」對應的題目';
+    if (!/^[A-Za-z0-9]{2,12}$/.test(d.prefix)) { form.elements.prefix.focus(); return '專案代碼需為 2 到 12 個英文或數字'; }
     for (var j = 0; j < d.coAdmins.length; j++) {
       var a = d.coAdmins[j];
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email)) return '共同管理員信箱格式不正確：' + (a.email || '(空白)');
@@ -247,9 +159,31 @@ App.page('newproject', function (root) {
     return '';
   }
 
+  /** 建立完成：列出還沒設定的區塊，點了直接打開專案設定的那一區 */
+  function done(d, r) {
+    var miss = SettingsForm.status(d).filter(function (x) { return !x.set; });
+    var box = $('#np-done', root);
+    var base = 'students.html?prefix=' + encodeURIComponent(d.prefix) + '&title=' + encodeURIComponent(d.name);
+    box.innerHTML = '<h2>' + (r.pending ? '已送出核准' : '專案已建立') + '</h2>' +
+      '<p class="muted" style="margin:6px 0 16px">' + esc(r.pending ? '專案「' + d.name + '」目前為「待核准」，總管（或有核准權限的人）會收到通知；核准後開始收報名，並會寄信通知你。'
+        : '專案「' + d.name + '」已開始運作，匯入 ' + r.imported + ' 筆回覆；之後每筆新回覆會即時判斷並自動寄出報名結果。') + '</p>' +
+      (miss.length ? '<h3 style="margin-bottom:8px">還沒設定的項目</h3><p class="hint" style="margin-top:0">' + (r.pending ? '核准後可以在專案設定補上：' : '可以現在補上，也可以之後再到「專案設定」填：') + '</p>' +
+        '<div class="np-miss" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">' + miss.map(function (x) {
+          return '<div class="row" style="gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px"><b class="grow">' + esc(x.title) + '</b><span class="small muted">' + esc(x.text) + '</span>' +
+            (r.pending ? '' : '<a class="btn sm" href="' + base + '&settings=' + x.key + '">去設定</a>') + '</div>';
+        }).join('') + '</div>' : '<p>專案設定的每一區都已設定。</p>') +
+      '<div class="row">' + (r.pending ? '<a class="btn primary" href="menu.html">回到選單</a>' : '<a class="btn primary" href="' + base + '">前往報名與學員管理</a>') + '</div>';
+    form.classList.add('hidden');
+    $('.phone-note', root).classList.add('hidden');
+    box.classList.remove('hidden');
+    showStep(4);
+    window.scrollTo(0, 0);
+  }
+
   $('#np-submit', root).addEventListener('click', function () {
-    if (!info) { toast('請先讀取表單', true); return; }
-    var d = collect();
+    if (!info || !sf) { toast('請先讀取表單', true); return; }
+    var d;
+    try { d = collect(); } catch (err) { toast(err.message, true); return; }
     var err = check(d);
     if (err) { toast(err, true); return; }
     confirmDialog({
@@ -267,14 +201,8 @@ App.page('newproject', function (root) {
     }).then(function (ok) {
       if (!ok) return;
       withBusy(api('createProject', d)).then(function (r) {
-        if (r.pending) {
-          if (r.admins && r.admins.length) toast(r.admins.join('；'));
-          return confirmDialog({ title: '已送出核准', lines: ['專案「' + d.name + '」已建立，目前為「待核准」', '總管（或有核准權限的人）會收到通知；核准後開始收報名，並會寄信通知你'], okLabel: '回到選單', cancelLabel: null })
-            .then(function () { go('menu'); });
-        }
-        toast('專案已建立，匯入 ' + r.imported + ' 筆回覆');
         if (r.admins && r.admins.length) toast(r.admins.join('；'));
-        go('students', { prefix: r.prefix, title: d.name });
+        done(d, r);
       }).catch(function (e) { toast(e.message, true); });
     });
   });
