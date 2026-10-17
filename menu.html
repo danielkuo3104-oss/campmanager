@@ -43,15 +43,23 @@ App.page('menu', function (root) {
   $('#menu-hello', root).textContent = '你好，' + App.user.name;
 
   var sys = $('#menu-system', root);
-  function sysTile(name, desc, onClick) {
-    var t = el('<div class="tile"><div class="tile-name"></div><div class="tile-meta"></div></div>');
+  // 卡片用連結：可以用 Tab 選到、按 Enter 開啟
+  function sysTile(name, desc, href) {
+    var t = el('<a class="tile"><div class="tile-name"></div><div class="tile-meta"></div></a>');
+    t.href = href;
     $('.tile-name', t).textContent = name;
     $('.tile-meta', t).textContent = desc;
-    t.addEventListener('click', onClick);
     sys.appendChild(t);
   }
-  sysTile('操作紀錄', '查詢所有操作與寄信紀錄', function () { go('logs'); });
-  if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' + (App.user.isOwner && !App.user.isChief ? '（協同總管已交給其他人）' : '') : '使用協同總管授予你的管理功能', function () { go('admin'); });
+  sysTile('操作紀錄', '查詢所有操作與寄信紀錄', 'logs.html');
+  if (App.user.adminAccess) sysTile('系統管理', App.user.isRoot ? '管理人員、專案狀態、信件範本、權限與核准' + (App.user.isOwner && !App.user.isChief ? '（協同總管已交給其他人）' : '') : '使用協同總管授予你的管理功能', 'admin.html');
+  function studentsUrl(p, extra) {
+    var q = { prefix: p.prefix, title: p.name };
+    Object.keys(extra || {}).forEach(function (k) { q[k] = extra[k]; });
+    return 'students.html?' + Object.keys(q).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(q[k]); }).join('&');
+  }
+  /** 今日待辦：點了直接進入名單並套用對應篩選 */
+  var TODOS = [['pay', '待確認繳款', false], ['refund', '待退款', true], ['consent', '同意書待審', false], ['warn', '警示', true]];
 
   apiFast('listProjects', function (r, fresh) {
     $$('.menu-approval', root).forEach(function (x) { x.remove(); });
@@ -79,19 +87,34 @@ App.page('menu', function (root) {
       var rpct = p.capacity && p.reserved ? Math.min(100 - pct, Math.round(p.reserved / p.capacity * 100)) : 0;
       var t = el('<div class="tile' + (p.status === '已封存' ? ' archived' : '') + '">' +
         '<div class="tile-top"><span class="tile-meta"></span>' + pill(p.effective) + '</div>' +
-        '<div class="tile-name"></div>' +
+        '<a class="tile-name tile-link"></a>' +
         '<div class="tile-meta"></div>' +
         '<div><div class="row small"><span>已錄取 ' + p.active + (p.reserved ? '<span class="plus-rsv">+' + p.reserved + '</span>' : '') + ' / ' + p.capacity + '</span><span class="spacer"></span><span class="muted">候補 ' + p.waitlist + '</span></div>' +
         '<div class="bar' + (rpct ? ' split' : '') + '"><i style="width:' + pct + '%"></i>' + (rpct ? '<i class="rsv" style="width:' + rpct + '%"></i>' : '') + '</div></div></div>');
       $$('.tile-meta', t)[0].textContent = p.prefix;
       $('.tile-name', t).textContent = p.name;
+      $('.tile-name', t).href = studentsUrl(p);
       $$('.tile-meta', t)[1].textContent = '營期 ' + fmtDate(p.start) + ' – ' + fmtDate(p.end) + (p.reviewNote ? '　·　' + p.reviewNote : p.readOnly ? '　·　僅可瀏覽' : '');
-      t.addEventListener('click', function () { go('students', { prefix: p.prefix, title: p.name }); });
+      if (p.todos) {
+        var td = el('<div class="tile-todos" aria-label="今日待辦"></div>');
+        TODOS.forEach(function (x) {
+          var n = p.todos[x[0]] || 0;
+          if (!n) return;
+          var b = el('<a class="todo-chip' + (x[2] ? ' bad' : '') + '"><span></span><b></b></a>');
+          b.href = studentsUrl(p, { filter: x[0] });
+          $('span', b).textContent = x[1]; $('b', b).textContent = n;
+          b.setAttribute('aria-label', p.name + '：' + x[1] + ' ' + n + ' 位，點了查看名單');
+          b.addEventListener('click', function (e) { e.stopPropagation(); });
+          td.appendChild(b);
+        });
+        if (!td.children.length) td.appendChild(el('<span class="todo-none">今天沒有待辦</span>'));
+        t.appendChild(td);
+      }
+      t.addEventListener('click', function (e) { if (!e.target.closest('a')) go('students', { prefix: p.prefix, title: p.name }); });
       box.appendChild(t);
     });
     if (r.canCreate) {
-      var add = el('<div class="tile add desk-only"><div class="plus">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單' + (r.needsApproval ? '（需總管核准）' : '') + '</div></div>');
-      add.addEventListener('click', function () { go('newproject'); });
+      var add = el('<a class="tile add desk-only" href="newproject.html"><div class="plus" aria-hidden="true">＋</div><div class="tile-name">開始新專案</div><div class="tile-meta">連結舉辦方的 Google 表單' + (r.needsApproval ? '（需總管核准）' : '') + '</div></a>');
       box.appendChild(add);
     }
     if (!r.projects.length && !r.canCreate) {
