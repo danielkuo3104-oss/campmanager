@@ -28,14 +28,14 @@
   </div>
   <div class="card">
     <div class="toolbar">
-      <select class="input" id="lg-project" style="max-width:240px"><option value="">全部專案</option></select>
-      <input class="input" id="lg-q" placeholder="搜尋操作人、動作、對象…" style="max-width:300px">
+      <select class="input" id="lg-project" style="max-width:240px" aria-label="篩選專案"><option value="">全部專案</option></select>
+      <input class="input" id="lg-q" type="search" aria-label="搜尋操作紀錄" placeholder="搜尋操作人、動作、對象…" style="max-width:300px">
       <button class="btn" type="button" id="lg-go">查詢</button>
       <span class="spacer"></span>
       <span class="muted small" id="lg-count"></span>
     </div>
     <div class="table-wrap">
-      <table class="simple">
+      <table class="simple lg-table">
         <thead><tr><th>時間</th><th>操作人</th><th>專案</th><th>動作</th><th>對象</th><th>內容</th><th>結果</th></tr></thead>
         <tbody id="lg-body"></tbody>
       </table>
@@ -49,6 +49,50 @@
 <script>
 App.page('logs', function (root) {
   var loadedProjects = false;
+  /** 紀錄裡的舊值、新值常是 JSON（設定、學員資料）：能解析就逐欄比較 */
+  function parseObj(v) {
+    if (!v || typeof v !== 'string' || !/^\s*[\[{]/.test(v)) return null;
+    try { var o = JSON.parse(v); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; }
+  }
+  function show(v) {
+    if (v === undefined || v === null || v === '') return '（空白）';
+    var t = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return t.length > 120 ? t.slice(0, 120) + '…' : t;
+  }
+  /** 把「內容」做成好讀的樣子：每一行「欄位：舊 → 新」，原始資料收在「原始資料」裡 */
+  function contentCell(td, l) {
+    var bo = parseObj(l.before), ao = parseObj(l.after);
+    var box = el('<div class="lg-diff"></div>');
+    var raw = '';
+    if (bo || ao) {
+      bo = bo || {}; ao = ao || {};
+      var keys = Object.keys(bo).concat(Object.keys(ao).filter(function (k) { return !(k in bo); }));
+      var changed = keys.filter(function (k) { return JSON.stringify(bo[k]) !== JSON.stringify(ao[k]); });
+      changed.slice(0, 30).forEach(function (k) {
+        var row = el('<div><span class="k"></span><del></del><span class="arr"></span><ins></ins></div>');
+        $('.k', row).textContent = k + '：';
+        if (l.before) { $('del', row).textContent = show(bo[k]); $('.arr', row).textContent = ' → '; }
+        $('ins', row).textContent = l.after ? show(ao[k]) : '（刪除）';
+        box.appendChild(row);
+      });
+      if (changed.length > 30) box.appendChild(el('<div class="muted">…另有 ' + (changed.length - 30) + ' 個欄位</div>'));
+      if (!changed.length) box.appendChild(el('<div class="muted">內容沒有變動</div>'));
+      raw = (l.before ? '舊：' + l.before + '\n' : '') + (l.after ? '新：' + l.after : '');
+    } else if (l.before || l.after) {
+      var r = el('<div><del></del><span class="arr"></span><ins></ins></div>');
+      if (l.before) { $('del', r).textContent = show(l.before); $('.arr', r).textContent = ' → '; }
+      $('ins', r).textContent = show(l.after);
+      box.appendChild(r);
+      if (String(l.before).length > 120 || String(l.after).length > 120) raw = (l.before ? '舊：' + l.before + '\n' : '') + '新：' + l.after;
+    }
+    if (l.note) { var n = el('<div></div>'); n.textContent = l.note; box.appendChild(n); }
+    td.appendChild(box);
+    if (raw) {
+      var d = el('<details class="lg-raw"><summary>原始資料</summary><pre></pre></details>');
+      $('pre', d).textContent = raw;
+      td.appendChild(d);
+    }
+  }
   function load() {
     var f = { project: $('#lg-project', root).value, q: $('#lg-q', root).value.trim() };
     $('#lg-body', root).innerHTML = '<tr><td colspan="7"><div class="loading"><div class="spinner"></div>載入中</div></td></tr>';
@@ -62,25 +106,28 @@ App.page('logs', function (root) {
       tb.innerHTML = '';
       if (!r.logs.length) { tb.innerHTML = '<tr><td colspan="7"><div class="empty">沒有紀錄</div></td></tr>'; return; }
       r.logs.forEach(function (l) {
-        var tr = el('<tr><td style="white-space:nowrap"></td><td></td><td></td><td></td><td></td><td class="small"></td><td></td></tr>');
+        var tr = el('<tr><td class="lg-time" style="white-space:nowrap"></td><td></td><td></td><td></td><td></td><td class="small"></td><td></td></tr>');
         var td = $$('td', tr);
         td[0].textContent = fmtTime(l.time);
         td[1].textContent = l.actor;
         td[2].textContent = l.project;
         td[3].textContent = l.action;
         td[4].textContent = l.target;
-        var parts = [];
-        if (l.before || l.after) parts.push((l.before ? l.before + ' → ' : '') + l.after);
-        if (l.note) parts.push(l.note);
-        td[5].textContent = parts.join('\n');
-        td[5].style.whiteSpace = 'pre-wrap';
+        contentCell(td[5], l);
         td[5].style.maxWidth = '420px';
         td[5].style.wordBreak = 'break-all';
         var cls = l.result === '成功' ? 'ok' : (l.result === '已取消' || l.result === '略過') ? 'mute' : 'bad';
         td[6].innerHTML = '<span class="pill ' + cls + '">' + esc(l.result) + '</span>';
         tb.appendChild(tr);
       });
-    }).catch(function (e) { toast(e.message, true); });
+    }).catch(function (e) {
+      // 失敗時不要一直轉圈：顯示原因與重試
+      var tb = $('#lg-body', root);
+      tb.innerHTML = '<tr><td colspan="7"><div class="empty"><div></div><button class="btn sm" type="button">重試</button></div></td></tr>';
+      $('.empty div', tb).textContent = '讀取紀錄失敗：' + e.message;
+      $('.empty button', tb).addEventListener('click', load);
+      toast(e.message, true);
+    });
   }
   $('#lg-go', root).addEventListener('click', load);
   $('#lg-q', root).addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
