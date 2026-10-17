@@ -78,7 +78,7 @@ App.page('students', function (root, params) {
   /** 已繳費的學員填了取消報名表單、還沒處理：回傳最後一筆申請（含退款帳戶），否則 null */
   function refundReq(s) {
     if (['報名取消', '報名失敗'].indexOf(s.status) >= 0) return null;
-    var list = (s.forms || []).filter(function (f) { return f.kind === 'cancel' && f.refund; });
+    var list = (s.forms || []).filter(function (f) { return f.kind === 'cancel' && f.refund && !f.revoked; });
     return list.length ? list[list.length - 1] : null;
   }
   function lastRefundReq(s) {
@@ -414,10 +414,10 @@ App.page('students', function (root, params) {
       });
       issueOrder.forEach(function (k) { tags += '<span class="tag bad" title="' + esc(issueTip[k].join('\n') + '\n報名信已提醒更正') + '">' + k + (issueTip[k].length > 1 ? ' ×' + issueTip[k].length : '') + '</span>'; });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
-      if (refundReq(s)) tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
+      if (refundReq(s) && s.status !== '申請取消') tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
       if (consentWait(s)) tags += '<span class="tag warn" title="學員已簽同意書，點開直接看簽名並審核">同意書待審</span>';
       if (s.room && tierOk(s)) tags += '<span class="tag" title="房間">房 ' + esc(s.room) + '</span>';
-      var deadlineNote = (tier(s) <= 1 && s.deadline) ? '<div class="small muted deadline-note" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
+      var deadlineNote = (tier(s) <= 1 && s.deadline && s.status !== '申請取消') ? '<div class="small muted deadline-note" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
       var html = '<td>' + pill(s.status) + deadlineNote + '</td>';
       cols.forEach(function (c, i) {
@@ -492,7 +492,7 @@ App.page('students', function (root, params) {
         { name: 'reason', label: '異動原因', type: 'textarea', required: true, presets: P('feeChange') }
       ], function (v) { run(s, 'feeChange', v); });
     }, false, 'yes');
-    add('團報同伴填表提醒', !!s.groupIncomplete && D.activeStatuses.indexOf(s.status) >= 0, function () { run(s, 'groupRemind', {}); }, false, 'yes');
+    add('團報同伴填表提醒', !!s.groupIncomplete && D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '申請取消', function () { run(s, 'groupRemind', {}); }, false, 'yes');
     add('寄送特殊訊息…', !!s.email, function () {
       ask('寄送特殊訊息', [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, format: true, presets: P('message'), presetJoin: '\n', hint: '可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數；下一步會看到預覽' }], function (v) { run(s, 'custom', v); });
     }, false, 'yes');
@@ -532,22 +532,111 @@ App.page('students', function (root, params) {
       ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }], function (v) { run(s, 'setStatus', v); });
     });
     items.push({ sep: true });
-    add('取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
+    if (s.status === '申請取消') add('撤銷取消申請…', true, function () { revertCancel(s); });
+    add(s.status === '申請取消' ? '處理退款並取消報名…' : '取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
     popMenu(anchor, items);
   }
 
   function P(key) { return D.presets && D.presets[key] || []; }
 
-  /** 取消報名視窗；學員申請過取消（已繳費）時，原因與退回金額先帶入申請內容與退款規定估算的金額 */
+  /** 依退款規定，今天取消可退幾 %；沒設定時間段時回傳 null（與後端 refundPct_ 相同） */
+  function refundPctToday() {
+    var tiers = (D.project.refund && D.project.refund.tiers) || [];
+    if (!tiers.length) return null;
+    var d = new Date(), day = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    for (var i = 0; i < tiers.length; i++) if (day <= tiers[i].until) return tiers[i].pct;
+    return 0;
+  }
+
+  /**
+   * 取消報名視窗。已繳費的人多一個「退款計算」：原繳費金額扣掉無法退回金額（依規定）、郵匯費與自行增添的項目，
+   * 即時算出實際退款金額；信件「取消報名退款通知」會列出這份明細（0 元的項目不列）。
+   * 學員申請過取消時，原因與退款規定估算的金額先帶入。
+   */
   function cancelDialog(s) {
-    var paidAmt = s.paid !== '' && Number(s.paid) > 0 ? Number(s.paid) : 0, req = refundReq(s);
-    var est = req && req.refund.amount !== '' && req.refund.amount !== undefined && req.refund.amount !== null ? Number(req.refund.amount) : null;
-    var fields = [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel'), value: req ? '學員申請取消：' + (req.reason || '') : '',
-      hint: paidAmt ? '' : '此學員尚未確認繳款，不需退款，取消後只從預計收入扣除。' }];
-    if (paidAmt) fields.push({ name: 'refund', label: '退回金額（元）', type: 'number', required: true, value: est !== null ? Math.min(est, paidAmt) : paidAmt,
-      hint: '已確認繳款 ' + money(paidAmt) + ' 元，' + (est !== null ? '依退款規定可退 ' + req.refund.pct + '%（' + money(est) + ' 元），已先帶入。' : '預設全額退款。') + '請填實際退回的金額，沒退的部分仍計入收入。信件可用 {{退款金額}}。' });
-    fields.push({ name: 'sendMail', label: '寄送取消報名通知給學員', type: 'checkbox', value: true });
-    ask(req ? '處理退款並取消報名' : '取消報名', fields, function (v) { run(s, 'cancel', v); }, true);
+    var paidAmt = s.paid !== '' && Number(s.paid) > 0 ? Number(s.paid) : 0, req = refundReq(s), isReq = s.status === '申請取消';
+    if (!paidAmt && !isReq) {
+      ask('取消報名', [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel') },
+        { name: 'info', type: 'note', html: '此學員尚未確認繳款，不需退款，取消後只從預計收入扣除。' },
+        { name: 'sendMail', label: '寄送「取消報名通知」給學員', type: 'checkbox', value: true }], function (v) { run(s, 'cancel', v); }, true);
+      return;
+    }
+    var base = paidAmt || Number(s.price) || 0;
+    var reqPct = !!(req && req.refund && req.refund.pct !== '' && req.refund.pct !== null && req.refund.pct !== undefined);
+    var pct = reqPct ? Number(req.refund.pct) : refundPctToday();
+    function ruleCut(b) { return pct === null ? 0 : b - Math.round(b * pct / 100); }
+    var body = el('<form class="rc-dlg" onsubmit="return false">' +
+      '<div class="field"><span>取消原因<em>*</em></span><textarea class="input" name="reason" rows="2"></textarea></div>' +
+      '<div class="rc-calc"><div class="rc-title">退款計算</div>' +
+        '<div class="rc-row"><span class="rc-l">原繳費金額</span><span class="rc-op"></span><input class="input rc-n" name="paid" type="number" min="0" step="1"><span class="rc-u">元</span></div>' +
+        '<div class="rc-items"></div>' +
+        '<button class="btn sm ghost rc-add" type="button">＋ 新增扣除項目</button>' +
+        '<div class="rc-row rc-total"><span class="rc-l">實際退款金額</span><span class="rc-op">＝</span><b class="rc-sum"></b><span class="rc-u">元</span></div>' +
+        '<div class="small muted rc-hint"></div>' +
+      '</div>' +
+      '<label class="check"><input type="checkbox" name="sendMail" checked><span>寄送「取消報名退款通知」給學員（附上這份退款明細，0 元的項目不列）</span></label>' +
+      '<div class="small rc-err" style="color:var(--bad);min-height:16px"></div></form>');
+    var ta = body.elements.reason, paidIn = body.elements.paid, list = $('.rc-items', body);
+    ta.value = req ? '學員申請取消：' + (req.reason || '') : '';
+    ta.parentNode.appendChild(presetChips(ta, P('cancel')));
+    paidIn.value = base;
+    paidIn.readOnly = !!paidAmt;   // 已確認繳款的金額不能在這裡改；申請取消時只回報了匯款，填實際收到的金額
+    var labels = P('refundItem');
+    function addRow(label, amount, fixed) {
+      var row = el('<div class="rc-row rc-item"><span class="rc-l"></span><span class="rc-op">−</span><input class="input rc-n" type="number" min="0" step="1"><span class="rc-u">元</span></div>');
+      if (fixed) { $('.rc-l', row).textContent = label; row.setAttribute('data-label', label); }
+      else {
+        var li = el('<input class="input rc-name" type="text" maxlength="40" placeholder="項目名稱" list="rc-presets">');
+        li.value = label || '';
+        $('.rc-l', row).appendChild(li);
+        var x = el('<button class="btn sm ghost rc-del" type="button" title="刪除這一項" aria-label="刪除這一項">✕</button>');
+        x.addEventListener('click', function () { row.remove(); sum(); });
+        row.appendChild(x);
+      }
+      $('.rc-n', row).value = amount || 0;
+      list.appendChild(row);
+      return row;
+    }
+    body.appendChild(el('<datalist id="rc-presets">' + labels.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>'));
+    var ruleRow = addRow('無法退回金額（依規定）', ruleCut(base), true);
+    addRow('郵匯費（手續費）', 0, true);
+    $('.rc-add', body).addEventListener('click', function () { $('.rc-name', addRow('', 0, false)).focus(); });
+    function items() {
+      return $$('.rc-item', body).map(function (r) {
+        return { label: r.getAttribute('data-label') || ($('.rc-name', r) ? $('.rc-name', r).value.trim() : ''), amount: $('.rc-n', r).value };
+      });
+    }
+    function sum() {
+      var b = Number(paidIn.value) || 0, cut = items().reduce(function (a, it) { return a + (Number(it.amount) || 0); }, 0), left = b - cut;
+      $('.rc-sum', body).textContent = money(left);
+      $('.rc-total', body).classList.toggle('bad', left < 0);
+      return left;
+    }
+    paidIn.addEventListener('input', function () { $('.rc-n', ruleRow).value = ruleCut(Number(paidIn.value) || 0); sum(); });
+    body.addEventListener('input', sum);
+    $('.rc-hint', body).textContent = (paidAmt ? '已確認繳款 ' + money(paidAmt) + ' 元。' : '還沒確認繳款，請填實際收到的金額。') +
+      (pct === null ? '這個專案沒有設定退款規定，「無法退回金額」請自行填寫。' : '依退款規定' + (reqPct ? '（學員申請當天）' : '（今天取消）') + '可退 ' + pct + '%，已先算好「無法退回金額」，可以再改。') +
+      '沒退的部分仍計入收入。' + (req ? '學員申請時已經寄過「取消報名通知」。' : '');
+    sum();
+    modal({ title: isReq || req ? '處理退款並取消報名' : '取消報名', desc: s.name + (req ? '　退款帳戶：' + req.refund.bank + ' ' + (req.refund.branch || '') + '，戶名 ' + req.refund.name + '，帳號 ' + req.refund.no : ''), body: body, wide: true,
+      buttons: [{ label: '取消', value: null }, { label: '下一步', cls: 'danger', validate: function () {
+        var err = $('.rc-err', body);
+        if (!ta.value.trim()) { err.textContent = '請填寫「取消原因」'; return false; }
+        if (!(Number(paidIn.value) >= 0) || paidIn.value === '') { err.textContent = '請填正確的原繳費金額'; return false; }
+        var bad = items().filter(function (it) { return Number(it.amount) > 0 && !it.label; });
+        if (bad.length) { err.textContent = '有金額的扣除項目請填名稱'; return false; }
+        if (items().some(function (it) { return it.amount !== '' && !(Number(it.amount) >= 0); })) { err.textContent = '扣除金額請填 0 以上的數字'; return false; }
+        if (sum() < 0) { err.textContent = '扣除的金額超過原繳費金額'; return false; }
+        return true;
+      }, value: function () {
+        return { reason: ta.value.trim(), paidAmount: paidAmt ? '' : paidIn.value, items: items().filter(function (it) { return Number(it.amount) > 0; }), sendMail: body.elements.sendMail.checked };
+      } }]
+    }).then(function (v) { if (v) run(s, 'cancel', v); });
+  }
+
+  function revertCancel(s) {
+    ask('撤銷取消申請', [{ name: 'info', type: 'note', html: '學員改變心意、決定繼續參加時使用：狀態會改回申請取消之前的狀態，報名繼續有效。不會寄信，需要通知學員請用「寄送特殊訊息」。' },
+      { name: 'reason', label: '說明（記在狀態紀錄）', type: 'textarea' }], function (v) { run(s, 'cancelRevert', v); });
   }
 
   /** 專案設定裡的預製表單：開關、連結、改內容／跟著系統預設；每個動作直接存 */
@@ -1044,16 +1133,16 @@ App.page('students', function (root, params) {
     var rq = lastRefundReq(s), rqOpen = !!refundReq(s);
     if (rq) {
       var r = rq.refund;
-      html += '<div class="drawer-section"><div class="rq-card' + (rqOpen ? ' open' : '') + '"><div class="rq-head"><b>' + (rqOpen ? '學員申請取消，待處理退款' : '學員的退款申請（已處理）') + '</b><span class="small muted">' + esc(fmtTime(rq.t)) + '</span></div>' +
+      html += '<div class="drawer-section"><div class="rq-card' + (rqOpen ? ' open' : '') + '"><div class="rq-head"><b>' + (rqOpen ? '學員申請取消，待處理退款' : rq.revoked ? '學員的取消申請（已撤銷）' : '學員的退款申請（已處理）') + '</b><span class="small muted">' + esc(fmtTime(rq.t)) + '</span></div>' +
         '<dl class="kv"><dt>取消原因</dt><dd>' + esc(rq.reason || '—') + '</dd>' +
         (rq.note ? '<dt>備註</dt><dd>' + esc(rq.note) + '</dd>' : '') +
         '<dt>銀行</dt><dd>' + esc(r.bank) + '</dd><dt>分行</dt><dd>' + esc(r.branch || '—') + '</dd><dt>戶名</dt><dd>' + esc(r.name) + '</dd>' +
         '<dt>帳號</dt><dd><b class="rq-no">' + esc(r.no) + '</b></dd>' +
         '<dt>可退金額</dt><dd>' + (r.pct === null || r.pct === undefined || r.pct === '' ? '沒有設定退款規定，請自行判斷' : '依退款規定 ' + esc(r.pct) + '%，' + money(r.amount) + ' 元') + '</dd>' +
-        (s.status === '報名取消' && s.refund !== '' && s.refund !== undefined ? '<dt>實際退回</dt><dd>' + money(s.refund) + ' 元</dd>' : '') + '</dl>' +
+        (s.status === '報名取消' && s.refund !== '' && s.refund !== undefined ? '<dt>實際退回</dt><dd>' + money(s.refund) + ' 元' + (s.refundDetail && s.refundDetail.items && s.refundDetail.items.length ? '（原繳 ' + money(s.refundDetail.paid) + s.refundDetail.items.map(function (it) { return '，扣' + esc(it.label) + ' ' + money(it.amount); }).join('') + '）' : '') + '</dd>' : '') + '</dl>' +
         '<div class="rq-acts"><button class="btn sm" type="button" data-rq="copy">複製退款帳戶</button>' +
         (rqOpen && !D.readOnly ? '<button class="btn sm danger" type="button" data-rq="go">處理退款並取消報名</button>' : '') + '</div>' +
-        (rqOpen ? '<div class="small muted">匯款退回後按「處理退款並取消報名」，填實際退回的金額，系統會取消報名、寄信通知學員，並記下退款金額。在那之前報名仍然有效。</div>' : '') +
+        (rqOpen ? '<div class="small muted">退款匯出後按「處理退款並取消報名」，在退款計算填扣除的項目，系統會取消報名、寄「取消報名退款通知」（附退款明細），並記下退款金額。在那之前名額仍保留。</div>' : '') +
         '</div></div>';
     }
     html += '<div class="drawer-section"><h3>報名資訊</h3><dl class="kv">' +
@@ -1448,7 +1537,7 @@ App.page('students', function (root, params) {
     var body = el('<form style="display:flex;flex-direction:column;gap:14px" onsubmit="return false">' +
       '<div class="field"><span class="small muted">收件對象（依狀態）</span><div class="row wrap" style="gap:14px;margin-top:6px">' +
       statuses.map(function (s) { return '<label class="check"><input type="checkbox" name="st" value="' + esc(s) + '"' + (s === '程序完成' ? ' checked' : '') + '><span>' + esc(s) + '</span></label>'; }).join('') +
-      '</div></div>' +
+      '</div><span class="hint">只寄給勾選的狀態；候補中、申請取消、報名取消預設不勾，要寄給他們才勾。</span></div>' +
       '<label class="field"><span>通知類型</span><select class="input" name="code"><option value="PRE_CAMP">營前通知（使用範本）</option><option value="CUSTOM">特殊訊息（自訂主旨與內容）</option></select></label>' +
       '<div class="field" data-for="PRE_CAMP"><span>通知內容</span><textarea class="input" name="message" placeholder="例如：報到時間、地點、攜帶物品…"></textarea></div>' +
       '<label class="field hidden" data-for="CUSTOM"><span>主旨</span><input class="input" name="subject"></label>' +
@@ -1797,7 +1886,7 @@ App.page('students', function (root, params) {
     openExportDialog({
       prefix: prefix, project: D.project, groups: D.groups || {},
       filtered: sorted(D.students).filter(matches), all: sorted(D.students),
-      filterLabel: (f ? f.label : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
+      filterLabel: (f ? f.label : filter === 'refund' ? '待退款' : filter === 'consent' ? '同意書待審' : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
       displayCols: columns(), squads: D.project.squads || 0, rooms: ((D.project.rooms || {}).rooms || []).filter(function (x) { return x.no; })
     });
   }
