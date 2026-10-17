@@ -188,14 +188,14 @@
     <div class="mn-top-in">
       <button class="mn-btn mn-menu-btn" type="button" id="mn-menu" aria-label="目錄">☰ 目錄</button>
       <div class="mn-logo">營</div>
-      <div class="mn-title">營隊報名管理系統　使用手冊<small>版本 2026.10.17</small></div>
+      <div class="mn-title">營隊報名管理系統　使用手冊<small>版本 2026.10.18</small></div>
       <div class="mn-spacer"></div>
       <input class="mn-search" id="mn-search" type="search" placeholder="搜尋手冊，例如：退款、沒收到信" aria-label="搜尋手冊">
       <a class="mn-btn qrh" href="#troubleshoot">問題快速排除</a>
       <button class="mn-btn primary" type="button" id="mn-print">匯出 PDF</button>
     </div>
   </header>
-  <div class="print-cover"><h1>營隊報名管理系統<br>使用手冊</h1><p>版本 2026.10.17</p><p>© 2026 Daniel GUO. All rights reserved.</p></div>
+  <div class="print-cover"><h1>營隊報名管理系統<br>使用手冊</h1><p>版本 2026.10.18</p><p>© 2026 Daniel GUO. All rights reserved.</p></div>
   <div class="mn-body">
     <nav class="mn-nav" id="mn-nav" aria-label="目錄"><div class="cat">開始使用</div>
 <a href="#quickstart"><span class="n">0</span>如何開始</a>
@@ -2200,13 +2200,14 @@
 
 <h4>建立房間</h4>
 <ol class="steps">
-<li>按<span class="sx-btn">＋ 新增房間</span>一次加一間，或按<span class="sx-btn">一次新增多間…</span>，填起始房號、結束房號，以及類型、每間床位（選填）。已經存在的房號會跳過，一次最多 100 間。</li>
+<li>按<span class="sx-btn">＋ 新增房間</span>一次加一間，或按<span class="sx-btn">一次新增多間…</span>，填起始房號、結束房號，以及類型、性別、每間床位（選填）。已經存在的房號會跳過，一次最多 100 間。</li>
 <li>每間房填：
 <div class="tbl"><table class="t">
 <thead><tr><th>欄位</th><th>說明</th></tr></thead>
 <tbody>
 <tr><td>房號</td><td>必填，不可重複</td></tr>
-<tr><td>類型</td><td>寫「男」或「女」，例如「男生四人房」，自動分配時只放同性別的學員</td></tr>
+<tr><td>類型</td><td>選填，例如「四人房」，學員專區看得到</td></tr>
+<tr><td>性別</td><td>不限、男、女。設定男或女，自動分配時只放同性別的學員，並檢查有沒有混住。舊的房間類型寫了「男」或「女」（例如「男生四人房」）的，打開時會自動帶入性別</td></tr>
 <tr><td>床位</td><td>1 到 50，留空表示不限</td></tr>
 <tr><td>備註（學員看得到）</td><td>例如「加床」、「無障礙房」，會顯示在學員專區</td></tr>
 </tbody>
@@ -2215,9 +2216,13 @@
 
 <h4>分配學員</h4>
 <ol class="steps">
-<li>按<span class="sx-btn">自動分配未分房的人</span>。系統只處理還沒分房的人，會依房間類型對應性別、不超過床位，同團報的人盡量同房，並先補滿已經有同性別學員的房間，再用空房。</li>
+<li>按<span class="sx-btn">自動分配未分房的人</span>。系統只處理還沒分房的人，會依房間的性別放同性別的學員、不超過床位，同團報的人盡量同房，並先補滿已經有同性別學員的房間，再用空房。</li>
 <li>如果出現「有 N 位找不到合適的空床（床位不夠或性別不符），請手動分配」，請新增房間或用每列的選單手動指定。</li>
-<li>摘要會顯示「N 間房，已分 X 人，未分房 Y 人」，超過床位的房間以紅字提醒。選單上也會顯示每間房的已分人數，例如「301 男生四人房（4/4）」。</li>
+<li>摘要會顯示「N 間房，已分 X 人，未分房 Y 人」，超過床位的房間以紅字提醒。選單上也會顯示每間房的已分人數，例如「301 四人房・男（4/4）」。</li>
+<li>系統會一直檢查有沒有混住，有問題時摘要下方用紅字列出，有問題的學員那一列也會變紅：
+<ul><li>「男女混住：301（男 2、女 1）」：同一間房有男有女。</li><li>「性別不符：王小美（女）在 302 男生房」：學員性別跟房間設定的不同。</li></ul>
+都沒有問題時寫「沒有混住」。紅字只是提醒，仍然可以儲存（例如家人同住）。</li>
+<li>學員性別讀的是報名表裡名稱有「性別」的欄位；報名表沒有這個欄位時，會寫「報名表沒有「性別」欄位，無法檢查」。</li>
 <li>按<span class="sx-btn c-primary">儲存</span>，出現「已儲存分房（N 人變更）」。</li>
 </ol>
 <p>想全部重分，按<span class="sx-btn">全部改為未分房</span>。</p>
