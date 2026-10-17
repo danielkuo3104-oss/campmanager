@@ -1957,7 +1957,8 @@ App.page('students', function (root, params) {
   }
 
   /* ---------- 分房：房間清單＋每位學員的房間 ---------- */
-  function roomGender(label) { return /女/.test(label || '') ? '女' : /男/.test(label || '') ? '男' : ''; }
+  /** 房間性別：設定的「性別」優先；舊資料沒有設定時，看類型有沒有寫「男」「女」 */
+  function roomGender(x) { return x.sex || (/女/.test(x.label || '') ? '女' : /男/.test(x.label || '') ? '男' : ''); }
   function openRooms() {
     var ro = RO(), cfg = D.project.rooms || { show: true, mates: true, rooms: [] };
     var list = D.students.filter(function (s) { return tierOk(s); }).sort(function (a, b) { return STROKE(a.name, b.name); });
@@ -1967,23 +1968,24 @@ App.page('students', function (root, params) {
       '<div class="row wrap" style="gap:16px"><label class="check"><input type="checkbox" name="show"' + (cfg.show ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>在學員專區公布房號</span></label>' +
       '<label class="check"><input type="checkbox" name="mates"' + (cfg.mates ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>也公布室友姓名</span></label></div>' +
       '<div class="room-sec"><div class="row wrap" style="gap:8px"><h3 class="grow">房間</h3>' + (ro ? '' : '<button class="btn sm" type="button" data-a="add">＋ 新增房間</button><button class="btn sm ghost" type="button" data-a="batch">一次新增多間…</button>') + '</div>' +
-      '<div class="small muted">類型寫「男」或「女」（例如 男生四人房），自動分配時只會放同性別的學員；床位留空表示不限。</div>' +
-      '<div class="room-head"><span>房號</span><span>類型</span><span>床位</span><span>備註（學員看得到）</span><span></span></div><div class="room-list"></div></div>' +
+      '<div class="small muted">設定房間性別後，自動分配只會放同性別的學員，並檢查有沒有混住；床位留空表示不限。</div>' +
+      '<div class="room-head"><span>房號</span><span>類型</span><span>性別</span><span>床位</span><span>備註（學員看得到）</span><span></span></div><div class="room-list"></div></div>' +
       '<div class="room-sec"><div class="row wrap" style="gap:8px"><h3 class="grow">分配</h3>' + (ro ? '' : '<button class="btn sm" type="button" data-a="auto">自動分配未分房的人</button><button class="btn sm ghost" type="button" data-a="clear">全部改為未分房</button>') + '</div>' +
       '<div class="squad-sum room-sum"></div><div class="squad-list room-assign"></div></div></div>');
     var rl = $('.room-list', body);
     function roomRow(x) {
-      var r = el('<div class="room-row"><input class="input" data-k="no" maxlength="20" placeholder="301"><input class="input" data-k="label" maxlength="20" placeholder="男生四人房"><input class="input" data-k="beds" type="number" min="1" max="50" placeholder="不限"><input class="input" data-k="note" maxlength="200" placeholder="例如：3 樓，靠電梯"><button class="btn sm ghost" type="button" data-a="del"' + (ro ? ' disabled' : '') + '>刪除</button></div>');
-      ['no', 'label', 'beds', 'note'].forEach(function (k) { var i = $('[data-k=' + k + ']', r); i.value = x[k] === undefined || x[k] === null ? '' : x[k]; i.disabled = ro; });
+      var r = el('<div class="room-row"><input class="input" data-k="no" maxlength="20" placeholder="301"><input class="input" data-k="label" maxlength="20" placeholder="四人房"><select class="input" data-k="sex"><option value="">不限</option><option value="男">男</option><option value="女">女</option></select><input class="input" data-k="beds" type="number" min="1" max="50" placeholder="不限"><input class="input" data-k="note" maxlength="200" placeholder="例如：3 樓，靠電梯"><button class="btn sm ghost" type="button" data-a="del"' + (ro ? ' disabled' : '') + '>刪除</button></div>');
+      if (x.no && !x.sex) x.sex = roomGender(x);   // 舊資料：類型寫了男女就帶入性別
+      ['no', 'label', 'sex', 'beds', 'note'].forEach(function (k) { var i = $('[data-k=' + k + ']', r); i.value = x[k] === undefined || x[k] === null ? '' : x[k]; i.disabled = ro; });
       rl.appendChild(r);
       return r;
     }
     function rooms() {
       return $$('.room-row', rl).map(function (r) {
-        var o = {}; ['no', 'label', 'beds', 'note'].forEach(function (k) { o[k] = $('[data-k=' + k + ']', r).value.trim(); });
+        var o = {}; ['no', 'label', 'sex', 'beds', 'note'].forEach(function (k) { o[k] = $('[data-k=' + k + ']', r).value.trim(); });
         o.beds = o.beds === '' ? '' : Number(o.beds);
         return o;
-      }).filter(function (x) { return x.no || x.label || x.note || x.beds !== ''; });
+      }).filter(function (x) { return x.no || x.label || x.note || x.sex || x.beds !== ''; });
     }
     cfg.rooms.forEach(roomRow);
     function draw() {
@@ -1991,7 +1993,7 @@ App.page('students', function (root, params) {
       list.forEach(function (s) { if (cur[s.id]) cnt[cur[s.id]] = (cnt[cur[s.id]] || 0) + 1; });
       var known = {}; rs.forEach(function (x) { known[x.no] = true; });
       var opts = '<option value="">未分房</option>' + rs.map(function (x) {
-        return '<option value="' + esc(x.no) + '">' + esc(x.no) + (x.label ? ' ' + esc(x.label) : '') + '（' + (cnt[x.no] || 0) + (x.beds ? '/' + x.beds : '') + '）</option>';
+        return '<option value="' + esc(x.no) + '">' + esc(x.no) + (x.label ? ' ' + esc(x.label) : '') + (roomGender(x) ? '・' + roomGender(x) : '') + '（' + (cnt[x.no] || 0) + (x.beds ? '/' + x.beds : '') + '）</option>';
       }).join('');
       $('.room-assign', body).innerHTML = list.map(function (s) {
         var lost = cur[s.id] && !known[cur[s.id]] ? '<option value="' + esc(cur[s.id]) + '">' + esc(cur[s.id]) + '（已不在房間清單）</option>' : '';
@@ -2001,8 +2003,20 @@ App.page('students', function (root, params) {
       $$('.squad-row', body).forEach(function (r) { $('select', r).value = cur[r.getAttribute('data-id')]; });
       var full = rs.filter(function (x) { return x.beds && (cnt[x.no] || 0) > x.beds; }).map(function (x) { return x.no; });
       var un = list.filter(function (s) { return !cur[s.id]; }).length;
+      // 混住檢查：同一間有男有女，或學員性別跟房間設定不同
+      var sexOf = {}, mixed = [], wrong = [], bad = {};
+      rs.forEach(function (x) { sexOf[x.no] = roomGender(x); });
+      rs.forEach(function (x) {
+        var m = list.filter(function (s) { return cur[s.id] === x.no; }), b = m.filter(function (s) { return genderOf(s) === '男'; }), g = m.filter(function (s) { return genderOf(s) === '女'; });
+        if (b.length && g.length) { mixed.push(x.no + '（男 ' + b.length + '、女 ' + g.length + '）'); m.forEach(function (s) { if (genderOf(s)) bad[s.id] = true; }); }
+      });
+      list.forEach(function (s) { var rg = sexOf[cur[s.id]]; if (cur[s.id] && rg && genderOf(s) && genderOf(s) !== rg) { wrong.push(s.name + '（' + genderOf(s) + '）在 ' + cur[s.id] + ' ' + rg + '生房'); bad[s.id] = true; } });
+      $$('.squad-row', body).forEach(function (r) { r.style.background = bad[r.getAttribute('data-id')] ? 'var(--bad-soft, #fdecea)' : ''; });
       $('.room-sum', body).innerHTML = esc(rs.length + ' 間房，已分 ' + (list.length - un) + ' 人' + (un ? '，未分房 ' + un + ' 人' : '')) +
-        (full.length ? '　<span style="color:var(--bad)">' + esc('超過床位：' + full.join('、')) + '</span>' : '');
+        (full.length ? '　<span style="color:var(--bad)">' + esc('超過床位：' + full.join('、')) + '</span>' : '') +
+        (mixed.length ? '<div style="color:var(--bad)">' + esc('男女混住：' + mixed.join('、')) + '</div>' : '') +
+        (wrong.length ? '<div style="color:var(--bad)">' + esc('性別不符：' + wrong.join('、')) + '</div>' : '') +
+        (!mixed.length && !wrong.length && list.some(function (s) { return cur[s.id]; }) ? '<div class="small muted">沒有混住' + (list.some(genderOf) ? '' : '（報名表沒有「性別」欄位，無法檢查）') + '</div>' : '');
     }
     body.addEventListener('change', function (e) {
       var r = e.target.closest('.squad-row');
@@ -2015,12 +2029,12 @@ App.page('students', function (root, params) {
       $('[data-a=batch]', body).addEventListener('click', function () {
         formDialog({ title: '一次新增多間房', desc: '房號是數字時，從起始號碼連續新增，例如 301 到 310。', okLabel: '新增',
           fields: [{ name: 'from', label: '起始房號', type: 'number', required: true }, { name: 'to', label: '結束房號', type: 'number', required: true },
-            { name: 'label', label: '類型（選填，例如 男生四人房）' }, { name: 'beds', label: '每間床位（選填）', type: 'number' }],
+            { name: 'label', label: '類型（選填，例如 四人房）' }, { name: 'sex', label: '性別', type: 'select', options: [{ value: '', label: '不限' }, { value: '男', label: '男' }, { value: '女', label: '女' }] }, { name: 'beds', label: '每間床位（選填）', type: 'number' }],
           check: function (v) { var a0 = Number(v.from), z0 = Number(v.to); return a0 > 0 && z0 >= a0 && z0 - a0 < 100 ? '' : { name: 'to', msg: '房號範圍不正確（結束要大於等於起始，一次最多 100 間）' }; } }).then(function (v) {
           if (!v) return;
           var a = Number(v.from), z = Number(v.to);
           var have = {}; rooms().forEach(function (x) { have[x.no] = true; });
-          for (var i = a; i <= z; i++) if (!have[String(i)]) roomRow({ no: String(i), label: v.label || '', beds: v.beds || '' });
+          for (var i = a; i <= z; i++) if (!have[String(i)]) roomRow({ no: String(i), label: v.label || '', sex: v.sex || '', beds: v.beds || '' });
           draw();
         });
       });
@@ -2030,7 +2044,7 @@ App.page('students', function (root, params) {
         if (!rs.length) { toast('請先新增房間', true); return; }
         var cnt = {}, groupRoom = {};
         list.forEach(function (s) { if (cur[s.id]) { cnt[cur[s.id]] = (cnt[cur[s.id]] || 0) + 1; if (s.groupId) groupRoom[s.groupId] = cur[s.id]; } });
-        function fits(x, s) { var g = roomGender(x.label); return (!g || !genderOf(s) || g === genderOf(s)) && (!x.beds || (cnt[x.no] || 0) < x.beds); }
+        function fits(x, s) { var g = roomGender(x); return (!g || !genderOf(s) || g === genderOf(s)) && (!x.beds || (cnt[x.no] || 0) < x.beds); }
         var todo = list.filter(function (s) { return !cur[s.id]; });
         todo.sort(function (a, b) { return (a.groupId ? 0 : 1) - (b.groupId ? 0 : 1) || String(a.groupId).localeCompare(String(b.groupId)) || genderOf(a).localeCompare(genderOf(b)) || STROKE(a.name, b.name); });
         var left = 0;
@@ -2057,7 +2071,7 @@ App.page('students', function (root, params) {
       rows.forEach(function (r) {
         if (bad) return;
         var no = $('[data-k=no]', r).value.trim(), beds = $('[data-k=beds]', r).value.trim();
-        var any = no || $('[data-k=label]', r).value.trim() || $('[data-k=note]', r).value.trim() || beds;
+        var any = no || $('[data-k=label]', r).value.trim() || $('[data-k=note]', r).value.trim() || $('[data-k=sex]', r).value || beds;
         if (!any) return;
         if (!no) bad = [$('[data-k=no]', r), '請填房號'];
         else if (seen[no]) bad = [$('[data-k=no]', r), '房號重複：' + no];
