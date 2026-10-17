@@ -644,10 +644,11 @@ App.page('students', function (root, params) {
       items.push({ sep: true });
     }
     if (s.status === '候補中' && s.groupId) {
-      // 同團還在候補的人數超過剩餘名額才算「名額不足」；名額夠就直接整團遞補，不用超收
+      // 這團要的名額（候補的人＋還沒填表的同伴）超過剩餘名額才算「名額不足」；名額夠就直接整團遞補，不用超收
       var gWait = D.students.filter(function (x) { return x.groupId === s.groupId && x.status === '候補中'; }).length;
-      var short = gWait > D.stats.available;
-      items.push({ header: short ? '團報名額不足（這團候補 ' + gWait + ' 人，剩 ' + D.stats.available + ' 位）' : '團報候補（名額足夠）' });
+      var gi0 = (D.groups || {})[s.groupId], gNeed = Math.max(gWait, gi0 ? gi0.expected - gi0.active : 0);
+      var short = gNeed > D.stats.available;
+      items.push({ header: short ? '團報名額不足（這團要 ' + gNeed + ' 位' + (gNeed > gWait ? '，含還沒填表 ' + (gNeed - gWait) + ' 人' : '') + '，剩 ' + D.stats.available + ' 位）' : '團報候補（名額足夠）' });
       add(short ? '超收（整團直接錄取）…' : '整團遞補錄取（' + gWait + ' 人）…', true, function () {
         ask(short ? '超收' : '整團遞補錄取', [{ name: 'sendMail', label: '寄錄取通知給這團的候補學員（下一步可預覽）', type: 'checkbox', value: true }], function (v) { run(s, 'overAdmit', v); });
       }, false, 'opt');
