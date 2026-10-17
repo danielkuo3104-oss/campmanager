@@ -149,17 +149,28 @@ App.page('admin', function (root, params) {
     modal({
       title: isNew ? '新增共同管理員' : '編輯管理員', body: form,
       buttons: [{ label: '取消', value: null }, {
-        label: '儲存', cls: 'primary', value: function () {
+        label: '儲存', cls: 'primary',
+        // 在視窗內檢查與儲存：錯誤顯示在欄位旁，成功才關閉
+        validate: function () {
+          clearFieldErrors(form);
+          var e = form.elements;
+          if (!e.name.value.trim()) { fieldError(e.name, '請填寫名稱'); return false; }
+          if (isNew && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.email.value.trim())) { fieldError(e.email, '信箱格式不正確'); return false; }
+          if (isNew && e.password.value.length < 8) { fieldError(e.password, '密碼至少 8 個字元'); return false; }
+          return true;
+        },
+        value: function () {
           return {
             isNew: isNew, name: form.elements.name.value.trim(), email: form.elements.email.value.trim(),
             password: isNew ? form.elements.password.value : '',
             projects: $$('input[name=proj]:checked', form).map(function (i) { return i.value; })
           };
-        }
+        },
+        run: function (d) { return api('saveStaff', d).then(function () { return d; }); }
       }]
     }).then(function (d) {
       if (!d) return;
-      withBusy(api('saveStaff', d)).then(function () { toast('已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+      toast('已儲存'); load();
     });
   }
 
@@ -177,27 +188,30 @@ App.page('admin', function (root, params) {
       title: '核准註冊：' + s.name, desc: '核准後此帳號可以登入，只能管理勾選的專案。', body: form,
       buttons: [{ label: '取消', value: null }, { label: '核准', cls: 'primary', value: function () {
         return { name: form.elements.name.value.trim(), projects: $$('input[name=proj]:checked', form).map(function (i) { return i.value; }) };
-      } }]
+      }, run: function (d) { return api('approveStaff', s.email, d.projects, d.name).then(function () { return d; }); } }]
     }).then(function (d) {
       if (!d) return;
-      withBusy(api('approveStaff', s.email, d.projects, d.name)).then(function () { toast('已核准 ' + s.name); load(); }).catch(function (e) { toast(e.message, true); });
+      toast('已核准 ' + s.name); load();
     });
   }
 
   function rejectApply(s) {
     formDialog({ title: '拒絕註冊：' + s.name, desc: s.email + '　拒絕後此帳號不能登入，本人可以重新申請。', okLabel: '拒絕', danger: true,
-      fields: [{ name: 'reason', label: '原因（只記錄在操作紀錄，不會寄給申請人）', type: 'textarea' }] })
+      fields: [{ name: 'reason', label: '原因（只記錄在操作紀錄，不會寄給申請人）', type: 'textarea' }],
+      submit: function (v) { return api('rejectStaff', s.email, v.reason).then(function () {}); } })
       .then(function (v) {
         if (!v) return;
-        withBusy(api('rejectStaff', s.email, v.reason)).then(function () { toast('已拒絕'); load(); }).catch(function (e) { toast(e.message, true); });
+        toast('已拒絕'); load();
       });
   }
 
   function resetPw(s) {
-    formDialog({ title: '重設密碼：' + s.name, okLabel: '重設', fields: [{ name: 'pw', label: '新密碼', type: 'password', required: true, hint: '至少 8 個字元，請另行告知本人；本人登入後會被要求改成自己的密碼' }] })
+    formDialog({ title: '重設密碼：' + s.name, okLabel: '重設', fields: [{ name: 'pw', label: '新密碼', type: 'password', required: true, hint: '至少 8 個字元，請另行告知本人；本人登入後會被要求改成自己的密碼' }],
+      check: function (v) { return v.pw.length < 8 ? { name: 'pw', msg: '密碼至少 8 個字元' } : ''; },
+      submit: function (v) { return api('resetStaffPassword', s.email, v.pw).then(function () {}); } })
       .then(function (v) {
         if (!v) return;
-        withBusy(api('resetStaffPassword', s.email, v.pw)).then(function () { toast('已重設密碼'); }).catch(function (e) { toast(e.message, true); });
+        toast('已重設密碼');
       });
   }
 
@@ -329,10 +343,11 @@ App.page('admin', function (root, params) {
 
   function rejectProj(p) {
     formDialog({ title: '退回新專案：' + p.name, desc: '退回後專案改為「未核准」，建立者會收到通知，可以修改後用同一個代碼重新送出。', okLabel: '退回', danger: true,
-      fields: [{ name: 'reason', label: '原因（會寄給建立者）', type: 'textarea' }] })
+      fields: [{ name: 'reason', label: '原因（會寄給建立者）', type: 'textarea' }],
+      submit: function (v) { return api('rejectProject', p.prefix, v.reason).then(function () {}); } })
       .then(function (v) {
         if (!v) return;
-        withBusy(api('rejectProject', p.prefix, v.reason)).then(function () { toast('已退回'); load(); }).catch(function (e) { toast(e.message, true); });
+        toast('已退回'); load();
       });
   }
 
@@ -357,9 +372,12 @@ App.page('admin', function (root, params) {
   function editTemplate(t) {
     openTemplateEditor(t, {
       headerColor: D.defaultHeaderColor,
-      footer: D.mailFooter, footerWhere: '系統管理 → 信件範本最下方；各專案也可在專案設定改', sigWhere: '各專案可在專案設定 → 信件署名改' }).then(function (v) {
+      footer: D.mailFooter, footerWhere: '系統管理 → 信件範本最下方；各專案也可在專案設定改', sigWhere: '各專案可在專案設定 → 信件署名改',
+      // 在視窗內存檔：失敗時錯誤顯示在視窗裡，內容不會不見
+      onSave: function (v) { return api('saveTemplate', t.code, v.subject, v.body, { footer: v.footer, signature: v.signature, headerColor: v.headerColor }).then(function () {}); }
+    }).then(function (v) {
       if (!v) return;
-      withBusy(api('saveTemplate', t.code, v.subject, v.body, { footer: v.footer, signature: v.signature, headerColor: v.headerColor })).then(function () { toast('範本已儲存'); load(); }).catch(function (e) { toast(e.message, true); });
+      toast('範本已儲存'); load();
     });
   }
 
@@ -546,7 +564,6 @@ App.page('admin', function (root, params) {
 
   function transfer(mode, chief) {
     var OWN = D.ownerTitle || '系統終端';
-    var me = D.staff.filter(function (s) { return s.email === D.me.email; })[0] || { name: '你', email: D.me.email };
     function done(msg) {
       toast(msg);
       if (D.me.isOwner) load(); else setTimeout(function () { go('menu'); }, 1200);
@@ -556,10 +573,11 @@ App.page('admin', function (root, params) {
       formDialog({
         title: '收回協同總管', desc: '收回後你會重新擔任協同總管' + (other ? '，' + other.name + ' 改為共同管理' : '') + '。雙方都會收到通知信。', okLabel: '收回協同總管', danger: true,
         fields: (other ? [{ name: 'keep', label: other.name + ' 改為共同管理後，仍可以管理所有現有專案', type: 'checkbox', value: true }] : [])
-          .concat([{ name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true }])
+          .concat([{ name: 'pw', label: '再輸入一次你的密碼', type: 'password', required: true }]),
+        submit: function (v) { return api('transferRoot', D.me.email, v.pw, !!v.keep).then(function () {}); }
       }).then(function (v) {
         if (!v) return;
-        withBusy(api('transferRoot', D.me.email, v.pw, !!v.keep)).then(function () { done('已收回協同總管'); }).catch(function (e) { toast(e.message, true); });
+        done('已收回協同總管');
       });
       return;
     }
