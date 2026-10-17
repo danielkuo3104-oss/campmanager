@@ -66,6 +66,8 @@
   var q = new URLSearchParams(location.search);
   var prefix = q.get('p') || '', kind = q.get('f') || '';
   var ftok = /^F[0-9a-f]{32}$/.test(q.get('t') || '') ? q.get('t') : '';   // 從學員專區打開：用學員專區的身分，不用再輸入身分證
+  // 從學員專區（已登入）點進來才有「回到學員專區」；從信件連結打開的沒有
+  var backUrl = ftok && /\/portal\.html\?/.test(document.referrer) ? document.referrer : '';
   var body = document.getElementById('pf-body'), head = document.getElementById('pf-camp');
   var F = null, who = null;
 
@@ -202,7 +204,7 @@
         if (!yes) return;
         busy(btn, true, '送出');
         call('publicSubmit', prefix, kind, who.name, who.key, data).then(function (res) {
-          body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="pf-done">' + res.doneHtml + '</div>';
+          body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="pf-done">' + res.doneHtml + '</div>' + (backUrl ? '<div style="margin-top:16px"><a class="btn primary" href="' + esc(backUrl) + '">回到學員專區</a></div>' : '');
           window.scrollTo(0, 0);
         }).catch(function (e2) { err.textContent = e2.message; busy(btn, false, '送出'); });
       });
