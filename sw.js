@@ -2,10 +2,10 @@
 /* 桌面應用程式（PWA）用的 service worker。
  * 只處理同網站的畫面檔案：先抓最新版，連不上才用快取，所以更新程式後不會卡在舊版。
  * 呼叫 Apps Script 的 API 不經過這裡，資料一律即時讀取。 */
-var CACHE = 'camp-admin-v4';
+var CACHE = 'camp-admin-v5';
 var SHELL = [
-  './', 'index.html', 'register.html', 'menu.html', 'students.html', 'newproject.html', 'admin.html', 'logs.html',
-  'assets/style.css', 'assets/app.js', 'assets/export.js', 'assets/config.js', 'manifest.webmanifest',
+  './', 'index.html', 'register.html', 'menu.html', 'students.html', 'newproject.html', 'admin.html', 'logs.html', 'checkin.html',
+  'assets/style.css', 'assets/app.js', 'assets/export.js', 'assets/config.js', 'assets/settings-form.js', 'assets/loading.js', 'assets/jsqr.min.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'
 ];
 
