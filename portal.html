@@ -107,6 +107,32 @@
     .pt-log { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
     .pt-log div { display: flex; gap: 10px; flex-wrap: wrap; }
     .pt-log time { color: var(--text-3); white-space: nowrap; }
+    /* iPhone 點到字級小於 16px 的輸入框會自動放大畫面 */
+    .input { font-size: 16px; }
+    .pt-wrap a.btn { text-decoration: none; }
+    /* 待辦：還沒做的事放在報名進度最上面，用主要按鈕 */
+    .pt-todo { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; background: var(--accent-soft, #e5edfb); }
+    .pt-todo > b { font-size: 14px; color: var(--accent, #2b5fb4); }
+    .pt-todo-item { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+    .pt-todo-item + .pt-todo-item { border-top: 1px solid rgba(43, 95, 180, .15); padding-top: 10px; }
+    .pt-todo-t { line-height: 1.6; }
+    /* 取消報名：放在最下面、次要樣式 */
+    .pt-quiet { border-top: 1px solid var(--line); padding-top: 10px; display: flex; justify-content: flex-end; }
+    .pt-quiet .btn { color: var(--text-3); background: transparent; border-color: transparent; box-shadow: none; font-size: 13px; }
+    .pt-faq { display: flex; flex-direction: column; }
+    .pt-faq details { border-top: 1px solid var(--line); padding: 10px 0; }
+    .pt-faq details:first-child { border-top: 0; padding-top: 0; }
+    .pt-faq summary { cursor: pointer; font-weight: 500; line-height: 1.6; }
+    .pt-faq .pt-rich { margin-top: 6px; color: var(--text-2); }
+    .pt-cal { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .pt-cal .lbl { font-size: 13px; color: var(--text-3); }
+    .pt-edit { display: flex; flex-direction: column; gap: 12px; }
+    .pt-mask { position: fixed; inset: 0; background: rgba(20, 24, 40, .45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+    .pt-dlg { background: var(--surface, #fff); border-radius: 18px; width: 100%; max-width: 480px; padding: 22px; display: flex; flex-direction: column; gap: 14px; max-height: 85vh; overflow: auto; }
+    .pt-dlg h2 { margin: 0; font-size: 18px; }
+    .pt-dlg .input { width: 100%; box-sizing: border-box; }
+    .pt-dlg-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    @media (min-width: 521px) { .pt-mask { align-items: center; } }
     @media (max-width: 520px) { .pt-row { grid-template-columns: 1fr; } .pt-body { padding: 20px 16px; } .pt-blk { padding: 18px 16px; } }
   </style>
 </head>
@@ -214,14 +240,24 @@
       var SYS = {
         countdown: function () { return '<div data-cd></div>'; },
         status: function () {
-          return card('報名進度', '<span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
+          // 按鈕分三種：待辦（最上面、主要按鈕）、一般（已回報、已簽、取消候補）、取消報名（最下面、次要樣式）
+          function btn(a, cls) {
+            var i = d.actions.indexOf(a);
+            // 預覽時按鈕不會開表單，點了只提示
+            return preview ? '<span class="' + cls + '" data-pv>' + esc(a.label) + '</span>' : '<a class="' + cls + '" data-a="' + i + '" href="' + esc(a.url) + '">' + esc(a.label) + (a.done && a.kind === 'pay' ? '（已回報）' : '') + '</a>';
+          }
+          var todo = d.actions.filter(function (a) { return a.todo; }), quiet = d.actions.filter(function (a) { return a.quiet; });
+          var rest = d.actions.filter(function (a) { return !a.todo && !a.quiet; });
+          return card('報名進度',
+            (todo.length ? '<div class="pt-todo"><b>待辦</b>' + todo.map(function (a) {
+              return '<div class="pt-todo-item"><div class="pt-todo-t">' + esc(a.todoText || a.label) + '</div><div class="pt-acts">' + btn(a, 'btn primary') +
+                (a.parentLink ? (preview ? '<span class="btn ghost" data-pv>傳給家長</span>' : '<button class="btn ghost" type="button" data-parent>傳給家長</button>') : '') + '</div></div>';
+            }).join('') + '</div>' : '') +
+            '<span class="pt-status' + (d.gone ? ' gone' : '') + '">' + esc(d.status) + '</span>' +
             (d.steps.length ? '<ol class="pt-steps">' + d.steps.map(function (s) { return '<li class="' + s.state + '">' + (s.state === 'done' ? '<i>✓</i>' : '') + '<span>' + esc(s.label) + '</span>' + '</li>'; }).join('') + '</ol>' : '') +
-            (d.statusText ? '<div class="pt-text"></div>' : '') +
-            (d.actions.length ? '<div class="pt-acts">' + d.actions.map(function (a, i) {
-              // 已回報過匯款的按鈕變灰；預覽時按鈕不會開表單，點了只提示
-              var cls = 'btn ' + (a.kind === 'pay' && !a.done ? 'primary' : a.done ? 'done' : 'ghost');
-              return preview ? '<span class="' + cls + '" data-pv>' + esc(a.label) + '</span>' : '<a class="' + cls + '" data-a="' + i + '" href="' + esc(a.url) + '">' + esc(a.label) + (a.done ? '（已回報）' : '') + '</a>';
-            }).join('') + '</div>' : ''));
+            (d.statusText ? '<div class="pt-text" data-status-text></div>' : '') +
+            (rest.length ? '<div class="pt-acts">' + rest.map(function (a) { return btn(a, 'btn ' + (a.done ? 'done' : 'ghost')); }).join('') + '</div>' : '') +
+            (quiet.length ? '<div class="pt-quiet">' + quiet.map(function (a) { return btn(a, 'btn sm'); }).join('') + '</div>' : ''));
         },
         squad: function () {
           if (!d.squad) return '';
@@ -232,9 +268,12 @@
             }).join('') + '</div>' : ''));
         },
         pay: function () { return d.payHtml ? card('繳費資訊', '<div class="pt-rich">' + d.payHtml + '</div>') : ''; },
-        info: function () { return '<details class="card pt-blk pt-fold"><summary><h2>報名資訊</h2><span class="pt-fold-hint">點開查看</span></summary>' + infoTable(d.info) + '</details>'; },
-        // 報名資料：預設收起來，點標題展開
-        data: function () { return d.dataHtml ? '<details class="card pt-blk pt-fold"><summary><h2>報名資料</h2><span class="pt-fold-hint">點開查看</span></summary><div class="pt-rich">' + d.dataHtml + '</div></details>' : ''; },
+        info: function () { return '<details class="card pt-blk pt-fold"><summary><h2>報名資訊</h2><span class="pt-fold-hint">點開查看</span></summary>' + infoTable(d.info) + (d.calendar ? calRow() : '') + '</details>'; },
+        // 報名資料：預設收起來，點標題展開；有開放自行修改的欄位時多一顆「修改資料」
+        data: function () {
+          if (!d.dataHtml && !editable.length) return '';
+          return '<details class="card pt-blk pt-fold"' + (editOpen ? ' open' : '') + '><summary><h2>報名資料</h2><span class="pt-fold-hint">點開查看</span></summary>' + (d.dataHtml ? '<div class="pt-rich">' + d.dataHtml + '</div>' : '') + editHtml() + '</details>';
+        },
         refund: function () { return d.refundHtml ? card('', '<div class="pt-rich">' + d.refundHtml + '</div>') : ''; },
         reports: function () { return d.reports.length ? card('我送出的表單', '<div class="pt-log">' + d.reports.map(function (r) { return '<div><time>' + esc(r.t) + '</time><span>' + esc(r.what) + '</span></div>'; }).join('') + '</div>') : ''; },
         hotel: function () { return d.hotelHtml ? card('飯店資訊', '<div class="pt-rich">' + d.hotelHtml + '</div>') : ''; },
@@ -247,22 +286,65 @@
         },
         contacts: function () { return I && I.contactsHtml ? card('', '<div class="pt-rich">' + I.contactsHtml + '</div>') : ''; }
       };
-      var h = '';
+      var editable = d.editable || [], editOpen = !!render.editOpen;
+      render.editOpen = false;
+      function editHtml() {
+        if (!editable.length) return '';
+        return '<form class="pt-edit" data-edit><div class="small muted">下面這幾項可以自己修改，送出後籌辦團隊會收到通知。其他資料要修改請洽籌辦團隊。</div>' +
+          editable.map(function (f) { return '<label class="field"><span>' + esc(f.label) + '</span><input class="input" name="' + esc(f.key) + '" maxlength="200" value="' + esc(f.value) + '"' + (/Phone$/.test(f.key) ? ' inputmode="tel" autocomplete="tel"' : '') + (preview ? ' disabled' : '') + '></label>'; }).join('') +
+          '<div class="pt-err"></div><div><button class="btn primary" type="submit"' + (preview ? ' disabled' : '') + '>儲存修改</button></div></form>';
+      }
+      var h = '', hasData = false;
       (d.sections || []).forEach(function (x, i) {
-        if (x.type === 'sys') { h += SYS[x.key] ? SYS[x.key]() : ''; return; }
+        if (x.type === 'sys') { if (x.key === 'data') hasData = true; h += SYS[x.key] ? SYS[x.key]() : ''; return; }
+        if (x.type === 'faq') {
+          h += card(esc(x.title), '<div class="pt-faq">' + x.items.map(function (it) { return '<details><summary>' + esc(it.q) + '</summary><div class="pt-rich">' + it.a + '</div></details>'; }).join('') + '</div>');
+          return;
+        }
         if (x.type === 'checklist') {
           h += card(esc(x.title) + '<span class="pt-cnt" data-i="' + i + '"></span>', '<div class="pt-check">' + x.items.map(function (it, j) {
             return '<label><input type="checkbox" data-s="' + i + '" data-j="' + j + '"' + (preview ? ' disabled' : '') + '><span>' + it + '</span></label>';
           }).join('') + '</div>');
         } else h += card(esc(x.title), '<div class="pt-rich">' + x.html + '</div>');
       });
+      // 管理員把「報名資料」隱藏了：修改資料另外放一張卡片
+      if (!hasData && editable.length) h += card('修改我的資料', editHtml());
+      // 報到 QR code（Checkin.gs）：營期前 3 天起放最上面，之前放最下面
+      if (d.checkin) {
+        var ck = card('營隊報到 QR code', '<div style="line-height:1.8">' + (d.checkin.done ? '你已在 ' + esc(d.checkin.t) + ' 完成報到。' : '報到當天請出示這個 QR code 給工作人員掃描；可以先截圖存在手機裡。') + '</div>' +
+          '<div data-ckqr style="align-self:center;background:#fff;padding:12px;border-radius:12px;line-height:0"></div>');
+        h = d.checkin.soon ? ck + h : h + ck;
+      }
       // 姓名打錯但身分證字號對得上：一樣讓他看，最上方提示請籌辦團隊修改
       if (d.nameNotice) h = '<div class="pt-msg">' + esc(d.nameNotice) + '</div>' + h;
       blocks.innerHTML = h;
+      var ckBox = blocks.querySelector('[data-ckqr]');
+      if (ckBox) {
+        var drawCk = function () { new QRCode(ckBox, { text: d.checkin.code, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M }); };
+        if (window.QRCode) drawCk();
+        else { var qs = document.createElement('script'); qs.src = 'assets/qrcode.min.js'; qs.onload = drawCk; qs.onerror = function () { ckBox.textContent = 'QR code 載入失敗，請重新整理'; }; document.head.appendChild(qs); }
+      }
       blocks.querySelectorAll('[data-pv]').forEach(function (b) { b.addEventListener('click', function () { alert('這是管理員預覽，按鈕不會開啟表單；學員登入後點這裡就會開啟。'); }); });
       blocks.querySelectorAll('a[data-a]').forEach(function (b) {
         var a = d.actions[Number(b.getAttribute('data-a'))];
         if (a && a.warn) b.addEventListener('click', function (e) { if (!confirm(a.warn)) e.preventDefault(); });
+      });
+      blocks.querySelectorAll('[data-parent]').forEach(function (b) { b.addEventListener('click', function () { parentLink(); }); });
+      blocks.querySelectorAll('[data-cal]').forEach(function (b) { b.addEventListener('click', function () { addCalendar(b); }); });
+      var ef = blocks.querySelector('[data-edit]');
+      if (ef && !preview) ef.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var btn = ef.querySelector('button'), err = ef.querySelector('.pt-err'), changes = {}, n = 0;
+        editable.forEach(function (f) { var v = ef.elements[f.key].value.trim(); if (v !== f.value.trim()) { changes[f.key] = v; n++; } });
+        err.textContent = '';
+        if (!n) { err.textContent = '沒有修改任何資料'; return; }
+        btnBusy(btn, true, '儲存修改', '儲存中…');
+        call('portalEdit', getTok(), prefix, key, changes).then(function (r) {
+          render.editOpen = true;
+          render(r.data);
+          var ok = blocks.querySelector('[data-edit] .pt-err');
+          if (ok) { ok.style.color = 'var(--ok, #2e7d4f)'; ok.textContent = '已儲存，籌辦團隊會收到通知'; }
+        }).catch(function (e2) { err.textContent = e2.message; btnBusy(btn, false, '儲存修改'); });
       });
       // 核取方塊（編輯器的「☐ 核取」）：學員可以打勾，只記在這支手機
       blocks.querySelectorAll('.pt-rich [data-cb]').forEach(function (row, n) {
@@ -275,7 +357,7 @@
         row.addEventListener('click', function (e) { if (e.target !== cb && !preview && !e.target.closest('a')) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
       });
       // 營隊倒數放到管理員排的位置；隱藏時留在最上面（不顯示）
-      noCd = !!d.withdrawn;   // 已取消：不顯示營隊倒數
+      noCd = !!(d.withdrawn || d.waiting);   // 已取消、候補中：不顯示營隊倒數
       if (noCd) { if (cdTimer) clearInterval(cdTimer); cdBox.hidden = true; }
       var slot = blocks.querySelector('[data-cd]');
       if (slot) slot.parentNode.replaceChild(cdBox, slot); else top.parentNode.insertBefore(cdBox, top);
@@ -286,7 +368,9 @@
         f.src = 'https://www.google.com/maps?q=' + m.getAttribute('data-map') + '&output=embed';
         m.appendChild(f);
       });
-      if (d.statusText) blocks.querySelector('.pt-text').textContent = d.statusText;
+      // 報名進度的說明：用專用的標記找，區塊順序調換後也不會寫到別張卡片（例如「我的房間」的室友那行）
+      if (d.statusText) blocks.querySelector('[data-status-text]').textContent = d.statusText;
+      if (d.calendar && !preview) calInCountdown();
       // 勾選清單：勾選狀態只存在這支手機（每個區塊依標題記住）
       (d.sections || []).forEach(function (x, i) {
         if (x.type !== 'checklist') return;
@@ -303,6 +387,88 @@
       });
   }
 
+  /* ---------- 加到行事曆：.ics（手機行事曆、Outlook）與 Google 日曆連結 ---------- */
+  function ymd(s) { return String(s || '').replace(/-/g, ''); }
+  function nextDay(s) { var d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10).replace(/-/g, ''); }
+  function gcalUrl() {
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(I.campName) +
+      '&dates=' + ymd(I.startYmd) + '/' + nextDay(I.endYmd || I.startYmd) + '&details=' + encodeURIComponent((I.period ? '營期：' + I.period + '\n' : '') + location.href.split('?')[0] + '?p=' + encodeURIComponent(prefix) + '&k=' + encodeURIComponent(key));
+  }
+  function calRow() {
+    if (!I || !I.startYmd) return '';
+    return '<div class="pt-cal"><span class="lbl">把營期加到行事曆：</span><button class="btn sm" type="button" data-cal>手機行事曆（.ics）</button><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(gcalUrl()) + '">Google 日曆</a></div>';
+  }
+  /** 倒數卡片下面也放一份（營隊開始前才放） */
+  function calInCountdown() {
+    if (!I || !I.startYmd || cdBox.hidden || cdBox.querySelector('.pt-cal') || !(I.startMs > Date.now())) return;
+    var row = document.createElement('div');
+    row.innerHTML = calRow();
+    row = row.firstChild;
+    row.style.justifyContent = 'center';
+    row.querySelector('[data-cal]').addEventListener('click', function () { addCalendar(this); });
+    cdBox.appendChild(row);
+  }
+  function addCalendar(btn) {
+    var esc2 = function (v) { return String(v).replace(/[\\;,]/g, function (c) { return '\\' + c; }).replace(/\n/g, '\\n'); };
+    var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//camp-system//portal//ZH-TW', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+      'UID:' + prefix + '-' + ymd(I.startYmd) + '@camp-system', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ymd(I.startYmd), 'DTEND;VALUE=DATE:' + nextDay(I.endYmd || I.startYmd),
+      'SUMMARY:' + esc2(I.campName), 'DESCRIPTION:' + esc2(I.period ? '營期：' + I.period : ''), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    // LINE、IG 等內建瀏覽器通常不能下載檔案：改顯示「用瀏覽器開啟」的提示
+    var hint = inAppHint('把行事曆檔案加到手機');
+    if (hint) {
+      var row = btn.closest('.pt-cal'), old = row.parentNode.querySelector('.inapp-hint');
+      if (old) old.remove();
+      row.parentNode.insertBefore(hint, row.nextSibling);
+      return;
+    }
+    var url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+    var a = document.createElement('a'); a.href = url; a.download = I.campName + '.ics';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }
+
+  /* ---------- 傳給家長（試辦）：產生只能簽這位學員同意書的連結 ---------- */
+  function parentLink(regen) {
+    var mask = document.createElement('div');
+    mask.className = 'pt-mask';
+    mask.innerHTML = '<div class="pt-dlg" role="dialog" aria-modal="true" aria-labelledby="pl-t"><h2 id="pl-t">傳給家長簽同意書</h2><div class="pl-body"><div class="ld"><div class="ld-spin"></div><div class="ld-msg">產生連結中…</div></div></div>' +
+      '<div class="pt-dlg-btns" style="justify-content:flex-end"><button class="btn ghost" type="button" data-close>關閉</button></div></div>';
+    function close() { mask.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    mask.addEventListener('click', function (e) { if (e.target === mask || e.target.closest('[data-close]')) close(); });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(mask);
+    var box = mask.querySelector('.pl-body');
+    function draw(r) {
+      box.innerHTML = '<div class="pt-text">把這個連結傳給家長（監護人），家長用自己的手機打開就能閱讀並簽名，不用輸入你的身分證字號。這個連結只能簽你的同意書，' + esc(r.days) + ' 天內有效（到 ' + esc(r.exp) + '）。</div>' +
+        '<input class="input" readonly><div class="pt-dlg-btns"><button class="btn primary" type="button" data-share>' + (navigator.share ? '分享（LINE 等）' : '複製連結') + '</button>' +
+        (navigator.share ? '<button class="btn" type="button" data-copy>複製連結</button>' : '') + '<button class="btn ghost" type="button" data-regen>重新產生</button></div>' +
+        '<div class="small muted">重新產生後，舊的連結會失效。你和家長誰先簽都可以，兩位都簽好才算完成。</div>';
+      var inp = box.querySelector('input'); inp.value = r.url;
+      var text = I.campName + '同意書：請家長（監護人）打開連結閱讀並簽名\n' + r.url;
+      box.querySelector('[data-share]').addEventListener('click', function () {
+        var b = this;
+        if (navigator.share) navigator.share({ title: I.campName + '同意書', text: text }).catch(function () {});
+        else copyBtn(b, r.url);
+      });
+      var cp = box.querySelector('[data-copy]');
+      if (cp) cp.addEventListener('click', function () { copyBtn(this, r.url); });
+      box.querySelector('[data-regen]').addEventListener('click', function () {
+        if (!confirm('確定要重新產生連結嗎？舊的連結會立即失效，要把新連結再傳給家長。')) return;
+        load(true);
+      });
+    }
+    function load(re) {
+      showLoading(box, '產生連結中…');
+      call('portalParentLink', getTok(), prefix, key, re === true).then(draw).catch(function (e) {
+        box.innerHTML = '<div class="pt-msg"></div>'; box.firstChild.textContent = e.message;
+        if (/重新登入|過期/.test(e.message)) { close(); setTok(''); login('登入已過期，請重新登入'); }
+      });
+    }
+    load(regen === true);
+  }
+
   /** 營隊倒數：以伺服器時間校正，每秒更新 */
   var cdTimer = null, noCd = false;
   function countdown(info) {
@@ -311,6 +477,9 @@
     if (noCd || !info.startMs || info.countdown === false) { box.hidden = true; return; }
     var skew = info.now ? info.now - Date.now() : 0;
     function pad(n) { return n < 10 ? '0' + n : String(n); }
+    // 倒數的數字寫在 main 裡，下面「加到行事曆」那一列不會每秒被蓋掉
+    box.innerHTML = '<div class="pt-cd-main" style="display:flex;flex-direction:column;gap:10px;align-items:center"></div>';
+    var main = box.firstChild;
     function tick() {
       var now = Date.now() + skew, left = info.startMs - now;
       box.hidden = false;
@@ -318,13 +487,15 @@
         var s = Math.floor(left / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
         // 越接近越醒目：剩一個月內黃、一週內橘、剩一天深橘、不到一天紅
         box.setAttribute('data-lvl', d < 1 ? 'red' : d < 2 ? 'deep' : d < 7 ? 'orange' : d < 30 ? 'yellow' : '');
-        box.innerHTML = '<div class="lbl">距離營隊開始還有</div><div class="nums"><div><b>' + d + '</b><span>天</span></div><div><b>' + pad(h) + '</b><span>時</span></div><div><b>' + pad(m) + '</b><span>分</span></div><div><b>' + pad(sec) + '</b><span>秒</span></div></div>';
+        main.innerHTML = '<div class="lbl">距離營隊開始還有</div><div class="nums"><div><b>' + d + '</b><span>天</span></div><div><b>' + pad(h) + '</b><span>時</span></div><div><b>' + pad(m) + '</b><span>分</span></div><div><b>' + pad(sec) + '</b><span>秒</span></div></div>';
       } else if (info.endMs && now < info.endMs) {
         box.setAttribute('data-lvl', '');
-        box.innerHTML = '<div class="big">營隊進行中</div><div class="lbl">祝大家玩得開心！</div>';
+        main.innerHTML = '<div class="big">營隊進行中</div><div class="lbl">祝大家玩得開心！</div>';
+        var c1 = box.querySelector('.pt-cal'); if (c1) c1.remove();
         clearInterval(cdTimer);
       } else {
-        box.innerHTML = '<div class="big">營隊已圓滿結束</div><div class="lbl">謝謝你的參與，我們下次見！</div>';
+        main.innerHTML = '<div class="big">營隊已圓滿結束</div><div class="lbl">謝謝你的參與，我們下次見！</div>';
+        var c2 = box.querySelector('.pt-cal'); if (c2) c2.remove();
         clearInterval(cdTimer);
       }
     }
