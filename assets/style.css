@@ -599,6 +599,23 @@
   .ps-show { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; }
 
   /* 學員申請取消（已繳費）：退款帳戶卡片 */
+  .rc-dlg { display: flex; flex-direction: column; gap: 14px; }
+  .rc-calc { border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2, #f4f5f3); }
+  .rc-title { font-weight: 700; }
+  .rc-items { display: flex; flex-direction: column; gap: 8px; }
+  .rc-row { display: grid; grid-template-columns: minmax(0, 1fr) 18px 120px 20px 32px; align-items: center; gap: 8px; }
+  .rc-l { min-width: 0; }
+  .rc-op { text-align: center; color: var(--text-3); font-weight: 700; }
+  .rc-item .rc-op { color: var(--bad); }
+  .rc-n { text-align: right; font-variant-numeric: tabular-nums; }
+  .rc-n[readonly] { background: transparent; border-color: transparent; }
+  .rc-u { color: var(--text-3); font-size: 13px; }
+  .rc-name { width: 100%; }
+  .rc-add { align-self: flex-start; }
+  .rc-total { border-top: 2px solid var(--text, #1f2937); padding-top: 8px; font-weight: 700; }
+  .rc-total .rc-sum { text-align: right; font-size: 20px; font-variant-numeric: tabular-nums; padding-right: 12px; }
+  .rc-total.bad .rc-sum { color: var(--bad); }
+  @media (max-width: 520px) { .rc-row { grid-template-columns: minmax(0, 1fr) 14px 96px 18px 28px; gap: 6px; } }
   .rq-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2, #f4f5f3); }
   .rq-card.open { border-color: #efcdc7; background: #fffafa; }
   .rq-card.open .rq-head b { color: var(--bad); }
