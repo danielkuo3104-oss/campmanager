@@ -86,6 +86,7 @@
     .pt-staff a { color: inherit; }
     .pt-staff span { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
     .pt-cd { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+    .pt-cd[hidden] { display: none; }
     .pt-cd .lbl { font-size: 14px; color: var(--text-2); }
     .pt-cd .nums { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     .pt-cd .nums div { min-width: 64px; padding: 10px 6px; border-radius: 12px; background: var(--surface-2, #f4f5f3); display: flex; flex-direction: column; gap: 2px; }
@@ -274,6 +275,8 @@
         row.addEventListener('click', function (e) { if (e.target !== cb && !preview && !e.target.closest('a')) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
       });
       // 營隊倒數放到管理員排的位置；隱藏時留在最上面（不顯示）
+      noCd = !!d.withdrawn;   // 已取消：不顯示營隊倒數
+      if (noCd) { if (cdTimer) clearInterval(cdTimer); cdBox.hidden = true; }
       var slot = blocks.querySelector('[data-cd]');
       if (slot) slot.parentNode.replaceChild(cdBox, slot); else top.parentNode.insertBefore(cdBox, top);
       // 地點卡片下面加上嵌入的 Google 地圖
@@ -301,11 +304,11 @@
   }
 
   /** 營隊倒數：以伺服器時間校正，每秒更新 */
-  var cdTimer = null;
+  var cdTimer = null, noCd = false;
   function countdown(info) {
     var box = document.getElementById('pt-cd');
     if (cdTimer) clearInterval(cdTimer);
-    if (!info.startMs || info.countdown === false) { box.hidden = true; return; }
+    if (noCd || !info.startMs || info.countdown === false) { box.hidden = true; return; }
     var skew = info.now ? info.now - Date.now() : 0;
     function pad(n) { return n < 10 ? '0' + n : String(n); }
     function tick() {
