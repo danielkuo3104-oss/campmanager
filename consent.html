@@ -45,6 +45,12 @@
     @media (max-width: 520px) { .pf-row { grid-template-columns: 1fr; } .pf-body { padding: 20px 16px; } }
 
     [hidden] { display: none !important; }
+    /* iPhone 點到字級小於 16px 的輸入框會自動放大畫面 */
+    .input { font-size: 16px; }
+    /* 送出鍵下方：還缺哪幾項，點一下跳到那一欄 */
+    .cs-miss { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--text-2); }
+    .cs-miss button { border: 0; background: var(--warn-soft); color: var(--warn); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .cs-later { padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line-strong, #cfd6d2); line-height: 1.6; }
     /* 同意書：閱讀框、閱讀進度、簽名板、上傳 */
     .cs-doc { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .cs-doc-head { padding: 12px 16px; background: var(--surface-2, #f4f5f3); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -116,6 +122,8 @@
   var prefix = q.get('p') || '';
   var body = document.getElementById('pf-body'), head = document.getElementById('pf-camp');
   var F = null, who = null, R = null, timer = null;
+  // 從學員專區打開（t=，免輸入身分證）或家長簽署連結（pl=，試辦）：用憑證直接查
+  var ftok = /^[FL][0-9a-f]{32}$/.test(q.get('t') || q.get('pl') || '') ? (q.get('t') || q.get('pl')) : '';
   var PDF_LIBS = [
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
@@ -148,14 +156,26 @@
     body.firstChild.textContent = msg;
   }
 
-  function start() {
+  function startToken() {
+    showLoading(body, ftok.charAt(0) === 'L' ? '正在打開同意書…' : '正在讀取你的報名資料…');
+    who = { name: '', key: ftok };
+    call('consentLookup', prefix, '', ftok).then(function (r) { who.name = r.info[0][1]; R = r; signStep(); })
+      .catch(function (e) {
+        // 家長連結失效：不能改用身分證查（家長沒有），只顯示原因
+        if (ftok.charAt(0) === 'L') { closed(e.message); head.textContent = F.campName; return; }
+        ftok = ''; start(e.message);
+      });
+  }
+
+  function start(msg) {
     if (timer) { clearInterval(timer); timer = null; }
     body.innerHTML =
-      '<h1>' + esc(F.title) + '</h1><div class="pf-intro">' + F.introHtml + '</div>' +
+      '<h1>' + esc(F.title) + '</h1><div class="pf-intro">' + F.introHtml + '</div>' + (typeof msg === 'string' && msg ? '<div class="pf-msg" id="pf-tmsg"></div>' : '') +
       '<form class="pf-steps" id="pf-find" autocomplete="on">' +
       '<div class="pf-row"><label class="field"><span>學員姓名<em>*</em></span><input class="input" name="name" autocomplete="name" required></label>' +
       '<label class="field"><span>' + esc(F.keyLabel) + '<em>*</em></span><input class="input" name="key" required' + (F.keyLabel === '身分證字號' ? ' autocapitalize="characters" maxlength="10"' : ' type="email" autocomplete="email"') + '></label></div>' +
       '<div class="pf-err"></div><div><button class="btn primary" type="submit">查詢我的報名</button></div></form>';
+    if (document.getElementById('pf-tmsg')) document.getElementById('pf-tmsg').textContent = msg;
     var form = document.getElementById('pf-find');
     form.elements.name.value = q.get('n') || '';
     (form.elements.name.value ? form.elements.key : form.elements.name).focus();
@@ -301,24 +321,54 @@
   function signStep() {
     var r = R;
     var info = '<div class="pf-info">' + r.info.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
-    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info;
+    var asParent = !!r.asParent, part = r.part || null;
+    var partParent = !!(part && part.role === 'parent' && !asParent);   // 家長已用連結簽好，學員只要簽自己的
+    var html = '<h1>' + esc(F.title) + (asParent ? '（家長簽名）' : '') + '</h1><div class="small muted">' + (asParent ? '請家長（監護人）確認以下是要簽署的學員' : r.viaPortal ? '從學員專區打開，已帶入你的報名資料' : '請確認以下是你的報名資料') + '</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info;
+    var back = asParent || r.viaPortal ? '' : '<button class="btn ghost" type="button" id="pf-back">不是我，重新查詢</button>';
     if (!r.ok) {
-      body.innerHTML = html + '<div class="pf-msg"></div><div><button class="btn" type="button" id="pf-back">重新查詢</button></div>';
-      body.querySelector('.pf-msg').textContent = r.message;
-      document.getElementById('pf-back').onclick = start;
+      body.innerHTML = html + '<div class="pf-msg" id="cs-block"></div>' + (asParent || r.viaPortal ? '' : '<div><button class="btn" type="button" id="pf-back">重新查詢</button></div>');
+      document.getElementById('cs-block').textContent = r.message;
+      if (document.getElementById('pf-back')) document.getElementById('pf-back').onclick = start;
       return;
     }
-    if (r.signed) html += '<div class="pf-msg">' + (r.signed.redo ? '籌辦團隊請你重新簽署同意書。原因：' + esc(r.signed.redo) : '你在 ' + esc(r.signed.t) + ' 已經簽署過同意書。如需重新簽署，送出後會以新的一份為準。') + '</div>';
-    html += '<div class="pf-est">' + esc(r.ageNote) + '</div>';
-    if (r.mode === 'both') html += '<div class="cs-tabs" role="tablist"><button type="button" data-m="online" class="on">線上簽署</button><button type="button" data-m="upload">下載 PDF 簽好後上傳</button></div>';
+    if (r.signed && !asParent) html += '<div class="pf-msg">' + (r.signed.redo ? '籌辦團隊請你重新簽署同意書。原因：' + esc(r.signed.redo) : '你在 ' + esc(r.signed.t) + ' 已經簽署過同意書。如需重新簽署，送出後會以新的一份為準。') + '</div>';
+    if (asParent) html += '<div class="pf-est">這是學員傳給你的家長簽署連結：請閱讀下面的同意書，填寫你的姓名並簽名。' + (part && part.role === 'student' ? '學員已在 ' + esc(part.t) + ' 簽好名，你簽完就完成了。' : '學員還沒簽名，兩位都簽好才算完成。') + '</div>';
+    else {
+      html += '<div class="pf-est" id="cs-age">' + esc(r.ageNote) + '</div>';
+      if (partParent) html += '<div class="cs-ok">家長（監護人）' + esc(part.name) + ' 已在 ' + esc(part.t) + ' 用家長簽署連結簽名，你只要簽自己的部分。</div>';
+      else if (part && part.role === 'student') html += '<div class="pf-msg">你在 ' + esc(part.t) + ' 已經先簽好，正在等家長用連結簽名。如果家長在身邊，也可以在這裡一起簽（會以這次為準）。</div>';
+    }
+    if (r.mode === 'both' && !asParent) html += '<div class="cs-tabs" role="tablist"><button type="button" data-m="online" class="on">線上簽署</button><button type="button" data-m="upload">下載 PDF 簽好後上傳</button></div>';
     html += '<form class="pf-steps" id="cs-form" novalidate>' +
-      (r.adult ? '' : '<label class="field"><span>家長（監護人）姓名<em>*</em></span><input class="input" name="parentName" maxlength="40" autocomplete="off"></label>') +
+      (r.adult || partParent ? '' : '<label class="field" id="cs-pn"><span>家長（監護人）姓名<em>*</em></span><input class="input" name="parentName" maxlength="40" autocomplete="off"></label>') +
+      (r.birthNeeded ? '<label class="field" id="cs-birth"><span>學員出生日期<em>*</em></span><input class="input" name="birth" type="date" max="' + new Date().toISOString().slice(0, 10) + '"><span class="hint">報名資料上的出生日期看不出是哪一天，請選擇學員的出生日期（用來判斷要不要家長簽名）</span></label>' : '') +
+      (r.later ? '<label class="check cs-later" id="cs-later"><input type="checkbox" name="later"><span>家長不在身邊：我先簽自己的部分，再從學員專區按「傳給家長」，請家長用自己的手機簽</span></label>' : '') +
       '<div id="cs-online" class="pf-steps"></div><div id="cs-upload" class="pf-steps" hidden></div>' +
-      '<div class="pf-err"></div><div class="row" style="gap:8px;display:flex;flex-wrap:wrap"><button class="btn primary" type="submit" disabled>送出同意書</button><button class="btn ghost" type="button" id="pf-back">不是我，重新查詢</button></div></form>';
+      '<div class="pf-err"></div><div class="row" style="gap:8px;display:flex;flex-wrap:wrap"><button class="btn primary" type="submit" disabled>送出同意書</button>' + back + '</div><div class="cs-miss" aria-live="polite"></div></form>';
     body.innerHTML = html;
-    document.getElementById('pf-back').onclick = start;
+    if (document.getElementById('pf-back')) document.getElementById('pf-back').onclick = start;
     var form = document.getElementById('cs-form'), submitBtn = form.querySelector('button[type=submit]');
-    var mode = r.mode === 'upload' ? 'upload' : 'online';
+    var mode = asParent ? 'online' : r.mode === 'upload' ? 'upload' : 'online';
+    /** 這次要簽名的人：家長連結只簽家長；家長已先簽或勾了「我先簽」只簽學員 */
+    function later() { return !!(form.elements.later && form.elements.later.checked && mode === 'online' && !isAdult()); }
+    function roles() {
+      return r.signers.map(function (sg) { return sg.role; }).filter(function (role) {
+        if (asParent) return role === 'parent';
+        if (role === 'parent' && isAdult()) return false;
+        if (partParent || later()) return role === 'student';
+        return true;
+      });
+    }
+    /** 補填的出生日期（報名資料看不懂時）算起來已成年：跟後端一樣只要學員本人簽名 */
+    function typedAdult() {
+      if (!r.birthNeeded || !r.ageRef || !form.elements.birth) return false;
+      var b = String(form.elements.birth.value).split('-').map(Number), ref = String(r.ageRef).split('-').map(Number);
+      if (b.length !== 3 || !b[0]) return false;
+      var age = ref[0] - b[0] - ((ref[1] < b[1] || (ref[1] === b[1] && ref[2] < b[2])) ? 1 : 0);
+      return age >= (r.adultAge || 18) && age < 120;
+    }
+    function isAdult() { return r.adult || typedAdult(); }
+    function needParentName() { return !isAdult() && !partParent && !later(); }
     var onlineBox = document.getElementById('cs-online'), uploadBox = document.getElementById('cs-upload');
     var pads = {}, files = [];
 
@@ -342,6 +392,7 @@
     r.signers.forEach(function (sg) {
       var w = document.createElement('div');
       w.className = 'cs-pad-wrap';
+      w.setAttribute('data-role', sg.role);
       w.innerHTML = '<div class="cs-pad-head"><span></span><button class="btn sm ghost cs-big" type="button">⤢ 放大簽名</button><button class="btn sm ghost cs-clr" type="button">清除重簽</button></div><div class="cs-pad"><div class="ph">請在這裡簽名，或按「放大簽名」' + (window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? '橫向滿版簽' : '在大視窗簽') + '</div></div>';
       w.querySelector('span').textContent = sg.label + '簽名' + (sg.role === 'student' ? '（' + who.name + '）' : '');
       sign.appendChild(w);
@@ -375,10 +426,13 @@
     tick(false);
 
     /* ----- 下載 PDF、簽好後上傳 ----- */
-    uploadBox.innerHTML = '<div class="pf-intro">1. 下載同意書 PDF（已填好學員姓名），列印後由' + (r.adult ? '學員本人' : '學員本人與家長（監護人）') + '親筆簽名。<br>2. 把簽好的每一頁拍照（文字要清楚、四角入鏡），或掃描成 PDF，在下面上傳。</div>' +
+    uploadBox.innerHTML = '<div id="cs-inapp"></div><div class="pf-intro">1. 下載同意書 PDF（已填好學員姓名），列印後由' + (r.adult ? '學員本人' : '學員本人與家長（監護人）') + '親筆簽名。<br>2. 把簽好的每一頁拍照（文字要清楚、四角入鏡），或掃描成 PDF，在下面上傳。</div>' +
       '<div><button class="btn" type="button" id="cs-pdf">下載同意書 PDF</button></div>' +
       '<label class="cs-drop"><input type="file" id="cs-file" accept="image/*,application/pdf" multiple hidden><b>選擇照片或 PDF</b><div class="small muted">最多 ' + r.maxFiles + ' 個檔案，每個不超過 ' + r.maxFileMb + ' MB；照片會自動壓縮</div></label>' +
       '<div class="cs-files" id="cs-files"></div>';
+    // LINE、IG、FB 內建瀏覽器通常不能下載 PDF：提示改用 Safari／Chrome 開啟
+    var hint = inAppHint('下載同意書 PDF');
+    if (hint) document.getElementById('cs-inapp').appendChild(hint);
     document.getElementById('cs-pdf').onclick = function () { downloadPdf(this); };
     document.getElementById('cs-file').addEventListener('change', function (e) {
       var list = Array.prototype.slice.call(e.target.files || []);
@@ -457,13 +511,13 @@
               cuts.forEach(function (c) { if (c > y + room * 0.4 && c <= end && c > best) best = c; });
               if (best) end = best;
             } else end = cv.height;
-            var h = end - y, part = document.createElement('canvas'), off = n ? pad : 0;
-            part.width = cv.width; part.height = pageH;
-            var px = part.getContext('2d'); px.fillStyle = '#fff'; px.fillRect(0, 0, part.width, part.height);
+            var h = end - y, pageCv = document.createElement('canvas'), off = n ? pad : 0;
+            pageCv.width = cv.width; pageCv.height = pageH;
+            var px = pageCv.getContext('2d'); px.fillStyle = '#fff'; px.fillRect(0, 0, pageCv.width, pageCv.height);
             px.drawImage(cv, 0, y, cv.width, h, 0, off, cv.width, h);
             if (!first) doc.addPage('a4', 'portrait');
             first = false;
-            doc.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+            doc.addImage(pageCv.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
             y = end; n++;
           }
           pg.remove();
@@ -478,16 +532,47 @@
       }).catch(function (e) { form.querySelector('.pf-err').textContent = e.message; }).then(function () { busy(btn, false, '下載同意書 PDF'); });
     }
 
-    function ready() {
-      if (!r.adult && !(form.elements.parentName.value.trim())) return '請填寫家長（監護人）姓名';
-      if (mode === 'upload') return files.length ? '' : '請上傳簽好的同意書';
-      if (!state.open) return '請先閱讀完同意書';
-      for (var role in pads) if (!pads[role].pad || !pads[role].pad.inked()) return '還缺簽名';
-      return '';
+    /** 還缺哪幾項：[{text 說明, el 要跳過去的欄位}] */
+    function missing() {
+      var out = [];
+      if (needParentName() && !form.elements.parentName.value.trim()) out.push({ text: '家長（監護人）姓名', el: form.elements.parentName });
+      if (r.birthNeeded && !form.elements.birth.value) out.push({ text: '學員出生日期', el: form.elements.birth });
+      if (mode === 'upload') { if (!files.length) out.push({ text: '上傳簽好的同意書', el: uploadBox.querySelector('.cs-drop') }); return out; }
+      if (!state.open) { out.push({ text: '閱讀完同意書（捲到最底下並停留 ' + mmss(r.readSeconds) + '）', el: sc }); return out; }
+      roles().forEach(function (role) {
+        var pd = pads[role];
+        if (!pd.pad || !pd.pad.inked()) out.push({ text: pd.label, el: pd.box, focus: pd.big });
+      });
+      return out;
     }
-    function updateSubmit() { submitBtn.disabled = !!ready(); }
+    function ready() { var m = missing(); return m.length ? '還差：' + m.map(function (x) { return x.text; }).join('、') : ''; }
+    var missBox = form.querySelector('.cs-miss');
+    function updateSubmit() {
+      var m = missing();
+      submitBtn.disabled = !!m.length;
+      // 家長連結、家長已簽、勾了「我先簽」：不用顯示的欄位藏起來
+      var pn = document.getElementById('cs-pn');
+      if (pn) pn.hidden = !needParentName();
+      Object.keys(pads).forEach(function (role) { var w = sign.querySelector('[data-role="' + role + '"]'); if (w) w.hidden = roles().indexOf(role) < 0; });
+      var lt = document.getElementById('cs-later');
+      if (lt) lt.hidden = mode !== 'online' || isAdult();
+      var ageBox = document.getElementById('cs-age');
+      if (ageBox && r.birthNeeded) ageBox.textContent = typedAdult() ? '依你填的出生日期，營期開始時已滿 ' + (r.adultAge || 18) + ' 歲，學員本人簽名即可。' : r.ageNote;
+      missBox.innerHTML = m.length ? '<span>還差：</span>' : '';
+      m.forEach(function (x) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.textContent = x.text;
+        b.addEventListener('click', function () {
+          x.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          var f = x.focus || x.el;
+          if (f.focus) setTimeout(function () { f.focus({ preventScroll: true }); }, 300);
+        });
+        missBox.appendChild(b);
+      });
+    }
     form.addEventListener('ink', updateSubmit);
     form.addEventListener('input', updateSubmit);
+    form.addEventListener('change', updateSubmit);
     $$tabs();
     function $$tabs() {
       Array.prototype.forEach.call(body.querySelectorAll('.cs-tabs button'), function (b) {
@@ -500,6 +585,7 @@
       });
       onlineBox.hidden = mode !== 'online'; uploadBox.hidden = mode !== 'upload';
     }
+    updateSubmit();
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -507,18 +593,22 @@
       var why = ready();
       if (why) { err.textContent = why; return; }
       err.textContent = '';
-      var data = { mode: mode, parentName: r.adult ? '' : form.elements.parentName.value.trim(), ua: navigator.userAgent };
+      var data = { mode: mode, parentName: needParentName() ? form.elements.parentName.value.trim() : '', ua: navigator.userAgent };
+      if (later()) data.later = true;
+      if (r.birthNeeded) data.birth = form.elements.birth.value;
       if (mode === 'online') {
         data.sigs = {};
-        Object.keys(pads).forEach(function (role) { data.sigs[role] = pads[role].pad.png(); });
+        roles().forEach(function (role) { data.sigs[role] = pads[role].pad.png(); });
       } else data.files = files.map(function (f) { return { name: f.name, data: f.data }; });
       confirmSelf().then(function (yes) {
         if (!yes) return;
         data.confirm = true;
         busy(submitBtn, true, '送出同意書', '上傳中…');
         call('consentSubmit', prefix, who.name, who.key, data).then(function (res) {
+          // 伺服器要求重新確認已閱讀（閱讀時間過期）：保留簽名，顯示原因，讓對方再送一次
+          if (res && res.ok === false) { err.textContent = res.message || '請再確認一次後送出'; busy(submitBtn, false, '送出同意書'); return; }
           if (timer) { clearInterval(timer); timer = null; }
-          body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="cs-ok">已收到你的同意書</div><div class="pf-done">' + res.doneHtml + '</div>';
+          body.innerHTML = '<h1>' + esc(F.title) + '</h1><div class="cs-ok">' + (res.partial ? '已收到你的簽名（還差另一位）' : '已收到你的同意書') + '</div><div class="pf-done">' + res.doneHtml + '</div>';
           window.scrollTo(0, 0);
         }).catch(function (e2) { err.textContent = e2.message; busy(submitBtn, false, '送出同意書'); });
       });
@@ -552,7 +642,7 @@
     head.textContent = f.campName;
     head.style.background = f.headerColor;
     document.getElementById('pf-foot').innerHTML = (f.contactsHtml ? '<div style="text-align:left;margin-bottom:16px">' + f.contactsHtml + '</div>' : '') + f.signatureHtml;
-    start();
+    if (ftok) startToken(); else start();
   }).catch(function (e) { closed(e.message); });
 })();
 </script>
