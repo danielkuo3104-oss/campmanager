@@ -2260,7 +2260,7 @@
 <ol class="steps">
 <li>按 <span class="sx-btn">開始掃描</span>，對準學員出示的 QR code。讀到後畫面會跳出這位學員的卡片，<b>還沒有報到</b>，要你確認。</li>
 <li>看一下卡片上的資料（下圖），有問題就當場處理。</li>
-<li>按 <span class="sx-btn c-primary">報到</span>（試跑時是 <span class="sx-btn c-primary">試跑報到</span>）。出現綠色「報到完成」，手機會震動一下，卡片 2 秒左右自動收起，可以掃下一位。</li>
+<li>按 <span class="sx-btn c-primary">報到</span>（試跑時是 <span class="sx-btn c-primary">試跑報到</span>）。馬上出現綠色「報到完成」，手機會震動一下，卡片 1 秒左右自動收起，可以掃下一位。報到資料會在背景排隊送到後端，不用等它送完（見<a href="#checkin-offline">背景送出與網路不穩</a>）。</li>
 <li>掃錯人就按 <span class="sx-btn">取消</span>，不會留下紀錄。</li>
 </ol>
 <figure class="phone"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="ck-result" alt="報到卡片" loading="lazy"><figcaption>圖：讀到 QR code 後的卡片。<span class="co">1</span> 姓名與狀態；<span class="co">2</span> 小隊、房號；<span class="co">3</span> 過敏、特殊飲食；<span class="co">4</span> 報到；<span class="co">5</span> 取消</figcaption></figure>
@@ -2329,12 +2329,14 @@
 </ol>
 <div class="warn">清除的是<b>整個專案</b>所有人的試跑紀錄，不只你這支手機的。營隊當天大家都在正式報到時就不用再清；營期前演練完、正式報到前清一次就好。</div>
 
-<h3 id="checkin-offline">網路不穩時</h3>
+<h3 id="checkin-offline">背景送出與網路不穩</h3>
 <figure class="phone"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="ck-queue" alt="還沒送出的報到" loading="lazy"><figcaption>圖：<span class="co">1</span> 還沒送出的報到與重送按鈕</figcaption></figure>
 <ul>
-<li>按 <span class="sx-btn c-primary">報到</span> 時網路剛好斷了，卡片會寫「<b>報到沒有送出（網路不穩）。</b>已記在這支手機，網路恢復會自動重送；也可以按上方的「重送」。」，這位學員先算在已到，名單上標「待送出」。</li>
-<li><span class="co">1</span> 上方出現紅框「N 筆報到還沒送出（網路不穩）：姓名」和 <span class="sx-btn">重送</span>。網路恢復後系統會自動重送（每 20 秒試一次），送出後提示「已補送 N 筆報到」；按 <span class="sx-btn">重送</span> 還是連不上會提示「還是連不上，請確認網路後再按重送」。</li>
-<li>重送不會變成重複報到。還沒送出的報到存在<b>這支手機的瀏覽器</b>裡，送出前請不要清除瀏覽器資料或換手機。</li>
+<li>按 <span class="sx-btn c-primary">報到</span> 後，這支手機馬上算他已到，報到資料存在這支手機，在背景一筆一筆送到後端。上方會出現灰色的「背景送出中 N 筆：姓名」，名單上標「送出中」，送完就消失。報到台可以一直掃下一位，不用等。</li>
+<li>點「送出中」的學員，卡片寫「已報到（背景送出中）」。按錯人時按 <span class="sx-btn">取消這筆報到</span>，還沒送出的會直接拿掉，不會寫進紀錄；正好在送出的那一筆會提示「這筆正在送出，請等一下再按取消」，送完再用一般的取消報到。</li>
+<li><span class="co">1</span> 網路斷了，灰框會變成紅框「N 筆報到還沒送出（網路不穩，會自動重送）：姓名」和 <span class="sx-btn">重送</span>。網路恢復後系統會自動重送（每 20 秒試一次）；按 <span class="sx-btn">重送</span> 還是連不上會提示「還是連不上，請確認網路後再按重送」。</li>
+<li>後端退回的報到（例如 QR code 驗證失敗、學員剛好被改成取消），手機會震動並出現紅框「N 筆報到被後端退回，請找本人確認：姓名：原因」，這位學員會回到未到。處理完按 <span class="sx-btn">知道了</span> 收起。</li>
+<li>重送不會變成重複報到；別支手機剛好也幫他報到了，會直接算完成。還沒送出的報到存在<b>這支手機的瀏覽器</b>裡，關掉頁面也不會不見，下次打開報到模式會接著送；送出前請不要清除瀏覽器資料、用無痕視窗或換手機。</li>
 </ul>
 
 <h3 id="checkin-camera">相機開不起來時</h3>
