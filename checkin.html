@@ -45,6 +45,7 @@
     .ck-acts { display: flex; gap: 8px; flex-wrap: wrap; }
     .ck-acts .btn { height: 46px; padding: 0 22px; font-size: 16px; }
     .ck-queue { padding: 12px 14px; border-radius: 12px; background: var(--bad-soft, #fdecea); color: var(--bad, #b3261e); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+    .ck-queue.busy { background: var(--surface-2); color: var(--text-2); }
     .ck-list { display: flex; flex-direction: column; }
     .ck-row { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
     .ck-row:last-child { border-bottom: 0; }
@@ -72,6 +73,7 @@
           <span class="small muted" id="ck-cam-state"></span>
         </div>
         <div class="ck-cam hidden" id="ck-cam"><video playsinline muted></video><div class="ck-aim"></div><div class="ck-tip">把 QR code 對準框內</div></div>
+        <div id="ck-camhelp"></div>
         <div id="ck-res"></div>
         <label class="field"><span>找不到 QR code：輸入姓名或電話</span><input class="input" id="ck-search" placeholder="例如 王小明、0912…" autocomplete="off"></label>
         <div class="ck-list" id="ck-found"></div>
@@ -104,34 +106,54 @@ App.page('checkin', function (root, params) {
   var video = $('#ck-cam video', root);
   var QKEY = 'camp-checkin-queue';
 
-  /* ---------- 送不出去的報到：存在這支手機，網路恢復自動重送 ---------- */
+  /* ---------- 報到先在手機通過，資料存在這支手機排隊，背景一筆一筆送到後端 ----------
+   * 伺服器用 rid 判斷是不是同一筆，重送不會變成重複報到。關掉頁面也不會遺失，下次打開會接著送。 */
+  var PKEY = 'camp-checkin-problems';
   function queue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch (e) { return []; } }
   function setQueue(q) { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch (e) {} drawQueue(); }
+  function problems() { try { return JSON.parse(localStorage.getItem(PKEY) || '[]'); } catch (e) { return []; } }
+  function setProblems(q) { try { localStorage.setItem(PKEY, JSON.stringify(q)); } catch (e) {} drawQueue(); }
+  function dropItem(rid) { setQueue(queue().filter(function (x) { return x.rid !== rid; })); }
+  var netDown = false;          // 上一次送出是網路問題
   function drawQueue() {
     var q = queue().filter(function (x) { return x.prefix === prefix; }), box = $('#ck-queue', root);
-    box.innerHTML = q.length ? '<div class="ck-queue"><b class="grow">' + q.length + ' 筆報到還沒送出（網路不穩）：' + esc(q.map(function (x) { return x.name; }).join('、')) + '</b><button class="btn sm" type="button">重送</button></div>' : '';
-    if (q.length) $('button', box).addEventListener('click', function () { flush(true); });
+    var bad = problems().filter(function (x) { return x.prefix === prefix; });
+    box.innerHTML = (q.length ? '<div class="ck-queue' + (netDown ? '' : ' busy') + '"><b class="grow">' + (netDown ? q.length + ' 筆報到還沒送出（網路不穩，會自動重送）：' : '背景送出中 ' + q.length + ' 筆：') + esc(q.map(function (x) { return x.name; }).join('、')) + '</b>' + (netDown ? '<button class="btn sm" type="button" data-a="resend">重送</button>' : '') + '</div>' : '') +
+      (bad.length ? '<div class="ck-queue"><div class="grow"><b>' + bad.length + ' 筆報到被後端退回，請找本人確認：</b>' + bad.map(function (x) { return '<div>' + esc(x.name + '：' + x.msg) + '</div>'; }).join('') + '</div><button class="btn sm" type="button" data-a="ack">知道了</button></div>' : '');
+    if ($('[data-a=resend]', box)) $('[data-a=resend]', box).addEventListener('click', function () { flush(true); });
+    if ($('[data-a=ack]', box)) $('[data-a=ack]', box).addEventListener('click', function () { setProblems(problems().filter(function (x) { return x.prefix !== prefix; })); });
   }
-  var flushing = false;
+  var flushing = false, sendingRid = '';
+  /** 一次送一筆，送完再拿下一筆（排隊中途新增的也會接著送）；網路不通就停，等網路恢復或 20 秒後再試 */
   function flush(manual) {
-    var all = queue(), mine = all.filter(function (x) { return x.prefix === prefix; });
-    if (flushing || !mine.length) return;
-    flushing = true;
-    var left = all.filter(function (x) { return x.prefix !== prefix; }), sent = 0;
-    mine.reduce(function (pr, it) {
-      return pr.then(function () {
-        return api('checkinScan', it.prefix, it.by, { trial: it.trial, rid: it.rid }).then(function (r) { sent++; apply(r.student); }, function (e) {
-          if (isNetErr(e)) left.push(it); else toast(it.name + '：' + e.message, true);
-        });
-      });
-    }, Promise.resolve()).then(function () {
-      flushing = false;
-      setQueue(left);
-      if (sent) { toast('已補送 ' + sent + ' 筆報到'); render(); }
-      else if (manual && left.length) toast('還是連不上，請確認網路後再按重送', true);
+    if (flushing) return;
+    var it = queue().filter(function (x) { return x.prefix === prefix; })[0];
+    if (!it) { if (netDown) { netDown = false; drawQueue(); } return; }
+    flushing = true; sendingRid = it.rid;
+    api('checkinScan', it.prefix, it.by, { trial: it.trial, rid: it.rid }).then(function (r) {
+      netDown = false;
+      if (r.result === 'blocked') addProblem(it, r.message.replace(/^目前是/, '後端顯示目前是'));
+      else apply(r.student);   // ok 或 dup（已經有人幫他報到）都算完成
+      dropItem(it.rid);
+      return true;
+    }, function (e) {
+      if (isNetErr(e) || isRetry(e)) { netDown = true; drawQueue(); if (manual) toast('還是連不上，請確認網路後再按重送', true); return false; }
+      addProblem(it, e.message);
+      dropItem(it.rid);
+      return true;
+    }).then(function (more) {
+      flushing = false; sendingRid = '';
+      if (D) render();
+      if (more) flush();
     });
   }
+  function addProblem(it, msg) {
+    setProblems(problems().concat([{ prefix: it.prefix, name: it.name, msg: msg, t: Date.now() }]));
+    toast(it.name + ' 的報到被退回：' + msg, true);
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  }
   function isNetErr(e) { return /無法連線|連線失敗/.test(e.message); }
+  function isRetry(e) { return /稍後再試|lock|逾時|timed? ?out|too many/i.test(e.message); }
   window.addEventListener('online', function () { flush(); });
   setInterval(function () { if (navigator.onLine !== false) flush(); }, 20000);
 
@@ -150,7 +172,7 @@ App.page('checkin', function (root, params) {
     $('#ck-body', root).classList.toggle('hidden', !p);
     if (!p) return;
     history.replaceState(null, '', 'checkin.html?prefix=' + encodeURIComponent(p));
-    load(true);
+    load(true).then(function () { flush(); });   // 上次沒送完的接著送
   }
 
   function load(first) {
@@ -222,7 +244,7 @@ App.page('checkin', function (root, params) {
     var r = el('<div class="ck-row"><b></b><span class="small muted"></span></div>');
     $('b', r).textContent = s.name;
     var at = slot(s);
-    $('span', r).textContent = isPend ? '待送出' : at ? fmtTime(at.t).slice(-5) + ' 報到' : [D.project.squads > 0 && grouped ? '' : D.project.squads > 0 ? squadText(s) : '', s.room ? '房 ' + s.room : '', s.warns.length ? '有警示' : ''].filter(String).join('・');
+    $('span', r).textContent = isPend ? '送出中' : at ? fmtTime(at.t).slice(-5) + ' 報到' : [D.project.squads > 0 && grouped ? '' : D.project.squads > 0 ? squadText(s) : '', s.room ? '房 ' + s.room : '', s.warns.length ? '有警示' : ''].filter(String).join('・');
     r.addEventListener('click', function () { show(s); });
     return r;
   }
@@ -272,14 +294,21 @@ App.page('checkin', function (root, params) {
       s.warns.map(function (w) { return '<div class="ck-warn">' + esc(w) + '</div>'; }).join('') +
       s.notes.map(function (w) { return '<div class="ck-note">' + esc(w) + '</div>'; }).join('') +
       (msg ? '<div class="ck-warn">' + esc(msg) + '</div>' : '') +
-      (at ? '<div class="ck-big" style="color:#ef6c00">已經' + (trial ? '試跑' : '') + '報到過：' + esc(fmtTime(at.t)) + '（' + esc(at.name) + '）</div>' : pend ? '<div class="ck-big" style="color:#ef6c00">這筆報到還沒送出，網路恢復後會自動重送</div>' : '') +
-      '<div class="ck-acts">' + (at ? '<button class="btn danger" type="button" data-a="undo">取消這筆報到</button>' : pend ? '' : '<button class="btn primary" type="button" data-a="go">' + (trial ? '試跑報到' : '報到') + '</button>') +
+      (at ? '<div class="ck-big" style="color:#ef6c00">已經' + (trial ? '試跑' : '') + '報到過：' + esc(fmtTime(at.t)) + '（' + esc(at.name) + '）</div>' : pend ? '<div class="ck-big" style="color:#2e7d32">' + (trial ? '已試跑報到' : '已報到') + '（背景送出中）</div>' : '') +
+      '<div class="ck-acts">' + (at ? '<button class="btn danger" type="button" data-a="undo">取消這筆報到</button>' : pend ? '<button class="btn danger" type="button" data-a="unq">取消這筆報到</button>' : '<button class="btn primary" type="button" data-a="go">' + (trial ? '試跑報到' : '報到') + '</button>') +
       '<button class="btn" type="button" data-a="close">' + (at || pend ? '繼續掃描' : '取消') + '</button></div>';
     $('h2', res).textContent = s.name;
     box.innerHTML = ''; box.appendChild(res);
     res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     $('[data-a=close]', res).addEventListener('click', closeRes);
     if ($('[data-a=go]', res)) $('[data-a=go]', res).addEventListener('click', function () { doCheckin(s, by || { id: s.id }, res); });
+    if ($('[data-a=unq]', res)) $('[data-a=unq]', res).addEventListener('click', function () {
+      // 還在排隊：直接從這支手機拿掉；正在送出的那一筆要等送完，再用一般的取消報到
+      var it = queue().filter(function (x) { return x.prefix === prefix && x.id === s.id && x.trial === trial; })[0];
+      if (!it) { closeRes(); render(); return; }
+      if (it.rid === sendingRid) { toast('這筆正在送出，請等一下再按取消', true); return; }
+      dropItem(it.rid); toast('已取消 ' + s.name + ' 的報到（還沒送出，不會寫入紀錄）'); closeRes(); render();
+    });
     if ($('[data-a=undo]', res)) $('[data-a=undo]', res).addEventListener('click', function () {
       confirmDialog({ title: '取消 ' + s.name + ' 的' + (trial ? '試跑' : '') + '報到？', lines: ['掃錯人或按錯時使用', trial ? '只影響試跑紀錄' : '會寫進學員的狀態紀錄'], okLabel: '取消報到', danger: true }).then(function (ok) {
         if (!ok) return;
@@ -289,33 +318,16 @@ App.page('checkin', function (root, params) {
   }
   function closeRes() { $('#ck-res', root).innerHTML = ''; paused = false; lastCode = ''; }
 
+  /** 按下報到：馬上在這支手機算完成，資料排進背景佇列慢慢送（不等後端回應） */
   function doCheckin(s, by, res) {
     var rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    var btn = $('[data-a=go]', res);
-    btnBusy(btn, true, '報到', '送出中…');
-    var opt = { trial: trial, rid: rid };
-    api('checkinScan', prefix, by, opt).then(function (r) {
-      if (r.result === 'blocked') { res.className = 'ck-res bad'; res.querySelector('.ck-acts').innerHTML = '<div class="ck-warn">' + esc(r.student.name + r.message) + '</div><button class="btn" type="button">繼續掃描</button>'; $('.ck-acts .btn', res).addEventListener('click', closeRes); return; }
-      apply(r.student);
-      if (r.result === 'dup') { show(r.student, by, '剛剛已經有人幫他報到了（' + fmtTime(r.at) + '，' + r.byName + '）'); render(); return; }
-      res.className = 'ck-res ok';
-      res.querySelector('.ck-acts').innerHTML = '<div class="ck-big" style="color:#2e7d32">' + (trial ? '試跑報到完成' : '報到完成') + '</div>';
-      if (navigator.vibrate) navigator.vibrate(60);
-      render();
-      setTimeout(function () { if ($('#ck-res .ck-res.ok', root) === res) closeRes(); }, 1800);
-    }).catch(function (e) {
-      if (isNetErr(e)) {
-        // 網路斷了：存起來，網路恢復自動重送（伺服器用 rid 判斷是不是同一筆，不會變成重複報到）
-        setQueue(queue().concat([{ prefix: prefix, by: by, id: s.id, name: s.name, trial: trial, rid: rid, t: Date.now() }]));
-        res.className = 'ck-res bad';
-        res.querySelector('.ck-acts').innerHTML = '<div class="ck-warn"><b>報到沒有送出（網路不穩）。</b>已記在這支手機，網路恢復會自動重送；也可以按上方的「重送」。</div><button class="btn" type="button">繼續掃描</button>';
-        $('.ck-acts .btn', res).addEventListener('click', closeRes);
-        render();
-        return;
-      }
-      btnBusy(btn, false, trial ? '試跑報到' : '報到');
-      toast(e.message, true);
-    });
+    setQueue(queue().concat([{ prefix: prefix, by: by, id: s.id, name: s.name, trial: trial, rid: rid, t: Date.now() }]));
+    res.className = 'ck-res ok';
+    res.querySelector('.ck-acts').innerHTML = '<div class="ck-big" style="color:#2e7d32">' + (trial ? '試跑報到完成' : '報到完成') + '</div>';
+    if (navigator.vibrate) navigator.vibrate(60);
+    render();
+    setTimeout(function () { if ($('#ck-res .ck-res.ok', root) === res) closeRes(); }, 900);
+    flush();
   }
 
   /** 掃到的內容：CK1.專案代碼.學員ID.簽章（簽章由伺服器驗證） */
@@ -395,14 +407,29 @@ App.page('checkin', function (root, params) {
       return video.play();
     }).then(function () {
       $('#ck-cam', root).classList.remove('hidden');
+      $('#ck-camhelp', root).innerHTML = '';
       $('#ck-cam-btn', root).textContent = '停止掃描';
       $('#ck-cam-state', root).textContent = detector ? '' : '（使用內附解碼器）';
       timer = setInterval(tick, 200);
     }).catch(function (e) {
       stopCam();
-      toast(/Permission|NotAllowed/i.test(e.name || e.message) ? '沒有相機權限：請在瀏覽器設定允許使用相機，或用姓名搜尋' : '無法開啟相機：' + e.message, true);
+      var denied = /Permission|NotAllowed/i.test(e.name || e.message);
+      toast(denied ? '沒有相機權限，請看下方說明' : '無法開啟相機：' + e.message, true);
+      if (denied) camHelp();
     });
   });
+  /** 沒有相機權限時的說明；從主畫面捷徑或 LINE 打開時，相機權限跟瀏覽器分開，改用瀏覽器開最穩 */
+  function camHelp() {
+    var box = $('#ck-camhelp', root), app = inAppBrowser();
+    var standalone = window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+    var why = app ? '你正在用 ' + app + ' 的內建瀏覽器，它通常不能用相機。請點右上角選「用瀏覽器開啟」，或複製網址貼到 Safari／Chrome。'
+      : standalone ? '從主畫面捷徑打開時，iPhone 用的是獨立的網頁 App，Safari／Chrome 的相機設定管不到它。請複製網址，貼到 Safari 或 Chrome 打開，跳出詢問時按「允許」。想繼續用捷徑的話，刪掉捷徑重新加入，再按「開始掃描」時選「允許」。'
+      : '請在瀏覽器的網站設定把「相機」改成允許（Safari：網址列左邊的「ㄚA」→ 網站設定 → 相機），再重新整理。';
+    box.innerHTML = '<div class="small" style="padding:12px 14px;border-radius:12px;background:var(--warn-soft,#fdf3dc);line-height:1.7;display:flex;flex-direction:column;gap:8px;align-items:flex-start">' +
+      '<span></span><button class="btn sm" type="button">複製報到頁網址</button><span class="muted">也可以直接用下方的姓名或電話搜尋報到。</span></div>';
+    box.querySelector('span').textContent = why;
+    box.querySelector('button').addEventListener('click', function () { copyBtn(this, location.origin + location.pathname + (prefix ? '?prefix=' + encodeURIComponent(prefix) : '')); });
+  }
   document.addEventListener('visibilitychange', function () { if (document.hidden && stream) stopCam(); });
 });
 </script>
