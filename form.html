@@ -41,6 +41,14 @@
     .pf-dlg h2 { margin: 0; font-size: 18px; }
     .pf-dlg .pf-info div { grid-template-columns: 96px 1fr; }
     .pf-dlg-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    /* iPhone 點到字級小於 16px 的輸入框會自動放大畫面 */
+    .input { font-size: 16px; }
+    /* 匯款回報：匯款帳戶與應繳金額，各附複製鍵 */
+    .pf-pay { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .pf-pay > b { display: block; padding: 10px 14px; background: var(--surface-2, #f4f5f3); font-size: 14px; }
+    .pf-pay div { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+    .pf-pay div span:first-child { color: var(--text-2); }
+    .pf-pay div strong { min-width: 0; overflow-wrap: anywhere; letter-spacing: .3px; }
     @media (min-width: 521px) { .pf-mask { align-items: center; } }
     @media (max-width: 520px) { .pf-row { grid-template-columns: 1fr; } .pf-body { padding: 20px 16px; } }
   </style>
@@ -57,6 +65,7 @@
 (function () {
   var q = new URLSearchParams(location.search);
   var prefix = q.get('p') || '', kind = q.get('f') || '';
+  var ftok = /^F[0-9a-f]{32}$/.test(q.get('t') || '') ? q.get('t') : '';   // 從學員專區打開：用學員專區的身分，不用再輸入身分證
   var body = document.getElementById('pf-body'), head = document.getElementById('pf-camp');
   var F = null, who = null;
 
@@ -95,13 +104,22 @@
     body.firstChild.textContent = msg;
   }
 
-  function start() {
+  /** 從學員專區打開（網址有 t=）：直接查，不用輸入姓名與身分證；憑證過期時改回一般查詢 */
+  function startToken() {
+    showLoading(body, '正在讀取你的報名資料…');
+    who = { name: '', key: ftok };
+    call('publicLookup', prefix, kind, '', ftok).then(function (r) { who.name = r.info[0][1]; confirmStep(r); })
+      .catch(function (e) { ftok = ''; start(e.message); });
+  }
+
+  function start(msg) {
     body.innerHTML =
-      '<h1>' + esc(F.title) + '</h1><div class="pf-intro">' + F.introHtml + '</div>' +
+      '<h1>' + esc(F.title) + '</h1><div class="pf-intro">' + F.introHtml + '</div>' + (typeof msg === 'string' && msg ? '<div class="pf-msg" id="pf-tmsg"></div>' : '') +
       '<form class="pf-steps" id="pf-find" autocomplete="on">' +
       '<div class="pf-row"><label class="field"><span>學員姓名<em>*</em></span><input class="input" name="name" autocomplete="name" required></label>' +
       '<label class="field"><span>' + esc(F.keyLabel) + '<em>*</em></span><input class="input" name="key" required' + (F.keyLabel === '身分證字號' ? ' autocapitalize="characters" maxlength="10"' : ' type="email" autocomplete="email"') + '></label></div>' +
       '<div class="pf-err"></div><div><button class="btn primary" type="submit">查詢我的報名</button></div></form>';
+    if (document.getElementById('pf-tmsg')) document.getElementById('pf-tmsg').textContent = msg;
     var form = document.getElementById('pf-find');
     form.elements.name.value = q.get('n') || '';
     (form.elements.name.value ? form.elements.key : form.elements.name).focus();
@@ -118,26 +136,30 @@
 
   function confirmStep(r) {
     var info = '<div class="pf-info">' + r.info.map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + esc(x[1]) + '</span></div>'; }).join('') + '</div>';
-    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">請確認以下是你的報名資料</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info +
+    var html = '<h1>' + esc(F.title) + '</h1><div class="small muted">' + (r.viaPortal ? '從學員專區打開，已帶入你的報名資料' : '請確認以下是你的報名資料') + '</div>' + (r.nameNotice ? '<div class="pf-msg">' + esc(r.nameNotice) + '</div>' : '') + info +
       (kind === 'pay' && r.info.some(function (x) { return x[0] === '上次回報'; }) ? '<div class="pf-msg">你已經回報過匯款了，籌辦團隊查帳後會寄確認信。只有補匯差額或上次填錯時才需要再回報一次。</div>' : '');
     if (!r.ok) {
-      body.innerHTML = html + '<div class="pf-msg"></div><div><button class="btn" type="button" id="pf-back">重新查詢</button></div>';
-      body.querySelector('.pf-msg').textContent = r.message;
-      document.getElementById('pf-back').onclick = start;
+      body.innerHTML = html + '<div class="pf-msg" id="pf-block"></div>' + (r.viaPortal ? '' : '<div><button class="btn" type="button" id="pf-back">重新查詢</button></div>');
+      document.getElementById('pf-block').textContent = r.message;
+      if (!r.viaPortal) document.getElementById('pf-back').onclick = start;
       return;
     }
     var fields = '';
     if (kind === 'pay') {
-      fields = '<label class="field"><span>匯款帳號後五碼<em>*</em></span><input class="input" name="last5" inputmode="numeric" maxlength="5" pattern="\\d{5}" required placeholder="例如 12345"><span class="hint">轉出帳號（或無摺存款單上）的最後 5 碼，籌辦團隊用來查帳</span></label>' +
-        '<div class="pf-row"><label class="field"><span>匯款金額（元）</span><input class="input" name="amount" inputmode="numeric" value="' + esc(r.price) + '"></label>' +
-        '<label class="field"><span>匯款日期</span><input class="input" name="date" type="date" value="' + esc(r.today) + '"></label></div>';
+      if (r.payRows && r.payRows.length) fields += '<div class="pf-pay"><b>匯款資訊</b>' + r.payRows.map(function (x, i) {
+        return '<div><span>' + esc(x[0]) + '</span><strong>' + esc(x[1]) + '</strong>' + (x[2] ? '<button class="btn sm ghost" type="button" data-copy="' + i + '">複製' + (x[0] === '應繳金額' ? '金額' : x[0] === '帳號' ? '帳號' : x[0] === '銀行' ? '代碼' : '') + '</button>' : '<span></span>') + '</div>';
+      }).join('') + '</div>';
+      fields += '<label class="field"><span>匯款帳號後五碼<em>*</em></span><input class="input" name="last5" inputmode="numeric" maxlength="5" pattern="\\d{5}" required placeholder="例如 12345"><span class="hint">轉出帳號（或無摺存款單上）的最後 5 碼，籌辦團隊用來查帳</span></label>' +
+        '<div class="pf-row"><label class="field"><span>匯款金額（元）</span><input class="input" name="amount" inputmode="numeric" maxlength="9" value="' + esc(r.price) + '"><span class="hint">只填數字，例如 6000</span></label>' +
+        '<label class="field"><span>匯款日期</span><input class="input" name="date" type="date" value="' + esc(r.today) + '"></label></div>' +
+        '<label class="field"><span>匯款人姓名</span><input class="input" name="payer" maxlength="40" autocomplete="off" placeholder="選填，例如 王媽媽"><span class="hint">用家長或其他人的帳戶匯款時請填，方便籌辦團隊對帳</span></label>';
     } else {
       if (r.refundHtml) fields += '<div class="pf-policy">' + r.refundHtml + '</div>';
       fields += '<label class="field"><span>取消原因<em>*</em></span><textarea class="input" name="reason" rows="2" maxlength="500" required></textarea></label>';
       if (r.paid) {
         var est = r.refund || {};
         fields += '<div class="pf-msg">你已經繳費。送出後報名不會馬上取消，籌辦團隊核對後會退款到下面的帳戶並寄信通知。</div>' +
-          (est.pct !== null && est.pct !== undefined ? '<div class="pf-est">依退款規定，今天申請可退還 <b>' + esc(est.pct) + '%</b>' + (est.amount !== '' ? '，約 <b>' + esc(Number(est.amount).toLocaleString('en-US')) + ' 元</b>' : '') + '（實際金額以籌辦團隊核對為準）</div>' : '') +
+          (est.pct !== null && est.pct !== undefined ? '<div class="pf-est">依退款規定，今天申請可退還 <b>' + esc(est.pct) + '%</b>' + (est.amount !== '' ? '，約 <b>' + esc(Number(est.amount).toLocaleString('en-US')) + ' 元</b>' + (est.fee ? '（已扣郵匯費 ' + esc(Number(est.fee).toLocaleString('en-US')) + ' 元）' : '') : '') + '。' + esc(est.note || '實際金額以籌辦團隊核對為準') + '</div>' : '') +
           '<div class="pf-sec">退款帳戶</div>' +
           '<div class="pf-row"><label class="field"><span>銀行<em>*</em></span><input class="input" name="r_bank" required maxlength="60" placeholder="例如 台灣銀行（004）"></label>' +
           '<label class="field"><span>分行<em>*</em></span><input class="input" name="r_branch" required maxlength="60" placeholder="例如 新竹分行"></label></div>' +
@@ -149,20 +171,27 @@
     var danger = kind !== 'pay';
     body.innerHTML = html + '<form class="pf-steps" id="pf-send">' + fields +
       '<label class="check"><input type="checkbox" name="me" required><span>以上是我的報名資料' + (danger && !r.paid ? '，確定要取消（無法復原）' : '') + '</span></label>' +
-      '<div class="pf-err"></div><div class="row" style="gap:8px;display:flex;flex-wrap:wrap"><button class="btn ' + (danger ? 'danger' : 'primary') + '" type="submit">送出</button><button class="btn ghost" type="button" id="pf-back">不是我，重新查詢</button></div></form>';
-    document.getElementById('pf-back').onclick = start;
+      '<div class="pf-err"></div><div class="row" style="gap:8px;display:flex;flex-wrap:wrap"><button class="btn ' + (danger ? 'danger' : 'primary') + '" type="submit">送出</button>' + (r.viaPortal ? '' : '<button class="btn ghost" type="button" id="pf-back">不是我，重新查詢</button>') + '</div></form>';
+    if (!r.viaPortal) document.getElementById('pf-back').onclick = start;
     var form = document.getElementById('pf-send');
+    Array.prototype.forEach.call(form.querySelectorAll('[data-copy]'), function (b) { b.addEventListener('click', function () { copyBtn(b, r.payRows[Number(b.getAttribute('data-copy'))][2]); }); });
+    // 匯款金額只收數字：全形轉半形，其他字（例如「六千」、「元」）輸入時就拿掉
+    if (form.elements.amount) form.elements.amount.addEventListener('input', function () {
+      var el = this, v = el.value.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^\d]/g, '');
+      if (v !== el.value) el.value = v;
+    });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var btn = form.querySelector('button[type=submit]'), err = form.querySelector('.pf-err');
       err.textContent = '';
       var data = {};
-      ['last5', 'amount', 'date', 'reason', 'note', 'r_bank', 'r_branch', 'r_no', 'r_name'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value.trim(); });
-      if (kind === 'pay' && !/^\d{5}$/.test(data.last5)) { err.textContent = '匯款帳號後五碼請填 5 位數字'; return; }
+      ['last5', 'amount', 'date', 'payer', 'reason', 'note', 'r_bank', 'r_branch', 'r_no', 'r_name'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value.trim(); });
+      if (kind === 'pay' && !/^\d{5}$/.test(data.last5)) { err.textContent = '匯款帳號後五碼請填 5 位數字'; form.elements.last5.focus(); return; }
+      if (kind === 'pay' && data.amount && !/^\d{1,9}$/.test(data.amount.replace(/,/g, ''))) { err.textContent = '匯款金額請填數字，例如 6000'; form.elements.amount.focus(); return; }
       if (data.r_no !== undefined && !/^[\d\s-]{6,30}$/.test(data.r_no)) { err.textContent = '退款帳號請填數字（可含 - 或空白）'; return; }
       // 送出前再確認一次
       var rows = [['學員姓名', who.name]];
-      if (kind === 'pay') rows.push(['後五碼', data.last5], ['匯款金額', data.amount ? data.amount + ' 元' : '（未填）'], ['匯款日期', data.date || '（未填）']);
+      if (kind === 'pay') rows.push(['後五碼', data.last5], ['匯款金額', data.amount ? Number(data.amount.replace(/,/g, '')).toLocaleString('en-US') + ' 元' : '（未填）'], ['匯款日期', data.date || '（未填）'], ['匯款人姓名', data.payer || '（未填）']);
       else rows.push(['取消原因', data.reason]);
       if (data.r_bank !== undefined) rows.push(['退款銀行', data.r_bank + ' ' + data.r_branch], ['退款帳號', data.r_no], ['戶名', data.r_name]);
       if (data.note) rows.push([F.noteLabel, data.note]);
@@ -189,7 +218,7 @@
     head.textContent = f.campName;
     head.style.background = f.headerColor;
     document.getElementById('pf-foot').innerHTML = (f.contactsHtml ? '<div style="text-align:left;margin-bottom:16px">' + f.contactsHtml + '</div>' : '') + f.signatureHtml;
-    start();
+    if (ftok) startToken(); else start();
   }).catch(function (e) { closed(e.message); });
 })();
 </script>
