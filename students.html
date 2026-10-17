@@ -17,6 +17,7 @@
   <script src="assets/config.js"></script>
   <script src="assets/app.js"></script>
   <script src="assets/export.js"></script>
+  <script src="assets/settings-form.js"></script>
 </head>
 <body>
   <main id="app">
@@ -34,6 +35,7 @@
       <button class="btn desk-only" type="button" id="st-tpl">信件範本</button>
       <button class="btn desk-only" type="button" id="st-forms">預製表單</button>
       <button class="btn" type="button" id="st-portal">學員專區</button>
+      <button class="btn" type="button" id="st-checkin">報到模式</button>
       <button class="btn desk-only" type="button" id="st-squad">分小隊</button>
       <button class="btn desk-only" type="button" id="st-room">分房</button>
       <button class="btn primary" type="button" id="st-settings">專案設定</button>
@@ -43,11 +45,18 @@
   </div>
   <div id="st-banner"></div>
   <div class="stats" id="st-stats"></div>
+  <div class="trend-box">
+    <button class="btn sm ghost" type="button" id="st-trend-toggle" aria-expanded="false" aria-controls="st-trend">報名趨勢圖</button>
+    <div class="card card-pad trend-card hidden" id="st-trend"></div>
+  </div>
+  <div class="batch-bar hidden" id="st-batch" role="region" aria-label="批次操作"></div>
   <div class="card">
     <div class="toolbar">
-      <input class="input" id="st-search" placeholder="搜尋姓名、電話、身分證…" style="max-width:260px">
+      <input class="input" id="st-search" type="search" placeholder="搜尋姓名、電話、身分證…" aria-label="搜尋學員" style="max-width:260px">
       <div class="chips" id="st-chips"></div>
-      <select class="input squad-filter hidden" id="st-squad-filter" aria-label="依小隊篩選"></select>
+      <button class="chip chip-drop hidden" type="button" id="st-consent-filter" aria-haspopup="menu" aria-expanded="false"></button>
+      <button class="chip chip-drop hidden" type="button" id="st-squad-filter" aria-haspopup="menu" aria-expanded="false"></button>
+      <button class="btn sm ghost" type="button" id="st-saved" aria-haspopup="menu">常用篩選</button>
       <span class="spacer"></span>
       <div class="seg seg-sm" id="st-density" role="radiogroup" aria-label="列表檢視">
         <label><input type="radio" name="density" value=""><span>預設</span></label>
@@ -56,8 +65,9 @@
       <button class="btn sm ghost desk-only" type="button" id="st-cols">顯示欄位</button>
       <span class="muted small" id="st-count"></span>
     </div>
-    <div class="table-wrap">
-      <table class="list"><thead id="st-head"></thead><tbody id="st-body"></tbody></table>
+    <div class="active-filter hidden" id="st-active" aria-live="polite"></div>
+    <div class="table-wrap cards">
+      <table class="list cards"><thead id="st-head"></thead><tbody id="st-body"></tbody></table>
     </div>
   </div>
 </div>
@@ -69,12 +79,32 @@
 App.page('students', function (root, params) {
   var prefix = params.prefix;
   var D = null;               // 伺服器回傳的專案資料
-  var filter = 'all';
+  var fset = {};              // 狀態類篩選（可複選，彼此是「或」）；空的代表全部
   var search = '';
-  var squadFilter = '';       // '' 全部、'0' 未分隊、'1'… 第幾隊
-  var ISSUE_TAG = { id: '身分證有誤', email: '信箱有誤', phone: '電話有誤' };
+  var squadSet = {};          // 小隊（可複選）：'0' 未分隊、'1'… 第幾隊；空的代表全部
+  var selected = {};          // 勾選的學員 {學員ID: true}（批次操作）
+  var shownList = [];         // 目前篩選後顯示的學員
+  var consentSet = {};        // 同意書（可複選），見 CONSENT_FILTERS；空的代表全部
+  /** 'a,b' → {a: true, b: true}（網址參數、常用篩選都用逗號分隔） */
+  function toSet(str) {
+    var o = {};
+    String(str || '').split(',').forEach(function (k) { k = k.trim(); if (k && k !== 'all') o[k] = true; });
+    return o;
+  }
+  function keysOf(o) { return Object.keys(o).filter(function (k) { return o[k]; }); }
+  // 主選單的今日待辦、其他頁面的連結：直接套用對應篩選（filter、consent、squad 都可用逗號複選）
+  fset = toSet(params.filter); consentSet = toSet(params.consent); squadSet = toSet(params.squad);
+  var ISSUE_TAG = { id: '身分證有誤', email: '信箱有誤', phone: '電話有誤', dup: '可能重複', group: '團報超過上限', mail: '信件寄不出' };
+  /** 標籤滑過時，說明之後怎麼處理（各種問題不一樣） */
+  var ISSUE_HINT = { id: '報名信已提醒更正', email: '報名信已提醒更正', phone: '報名信已提醒更正', dup: '請點開比對，確認是不是同一人報名兩次', group: '超過的人沒有保留名額，請和團報聯絡人確認', mail: '請確認信箱正確後，從「操作」補寄' };
   var STROKE = (window.Intl && Intl.Collator) ? new Intl.Collator('zh-Hant-TW').compare : function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   function hasIssue(s) { return !!(s.issues && s.issues.length) && tier(s) < 4; }
+  /** 警示（統計卡、篩選、主選單待辦同一個規則）：警示狀態、待退款、報名資料有誤，且沒有取消 */
+  function isWarn(s) { return tierOk(s) && (D.warningStatuses.indexOf(s.status) >= 0 || !!refundReq(s) || hasIssue(s)); }
+  /** 已過期（營期結束、未封存）：仍可寄信與處理退款，只有封存後才完全唯讀 */
+  function expired() { return !!D.intakeClosed || D.effective === '已過期'; }
+  /** 唯讀：已停止、已封存等（舊版後端在已過期時也回傳 readOnly，這裡一律以封存才唯讀為準） */
+  function RO() { return !!D.readOnly && D.effective !== '已過期'; }
   /** 已繳費的學員填了取消報名表單、還沒處理：回傳最後一筆申請（含退款帳戶），否則 null */
   function refundReq(s) {
     if (['報名取消', '報名失敗'].indexOf(s.status) >= 0) return null;
@@ -88,12 +118,47 @@ App.page('students', function (root, params) {
 
   var FILTERS = [
     { key: 'all', label: '全部' },
-    { key: 'warn', label: '警示' },
-    { key: 'todo', label: '待繳款／核對' },
-    { key: 'done', label: '程序完成' },
-    { key: 'wait', label: '候補中' },
-    { key: 'gone', label: '取消／失敗' }
+    { key: 'warn', label: '警示', count: isWarn },
+    { key: 'todo', label: '待繳款／核對', count: function (s) { return tier(s) <= 1; } },
+    { key: 'done', label: '程序完成', count: function (s) { return tier(s) === 2; } },
+    { key: 'wait', label: '候補中', count: function (s) { return tier(s) === 3; } },
+    { key: 'gone', label: '取消／失敗', count: function (s) { return tier(s) >= 4; } }
   ];
+  var FILTER_NAMES = { pay: '待確認繳款', refund: '待退款', consent: '同意書待審', nocheckin: '未報到' };
+  /** 狀態類篩選的判斷（勾多個時符合任一個就顯示） */
+  var STATUS_TEST = {
+    warn: function (s) { return isWarn(s); },
+    todo: function (s) { return tier(s) <= 1; },
+    done: function (s) { return tier(s) === 2; },
+    wait: function (s) { return tier(s) === 3; },
+    gone: function (s) { return tier(s) >= 4; },
+    pay: function (s) { return s.status === '繳款待核覆'; },
+    refund: function (s) { return refundReq(s); },
+    consent: function (s) { return consentWait(s); },
+    nocheckin: function (s) { return noCheckin(s); }
+  };
+  function statusLabel(k) {
+    var f = FILTERS.filter(function (x) { return x.key === k; })[0];
+    return f ? f.label : FILTER_NAMES[k] || k;
+  }
+  function consentLabel(k) {
+    var c = CONSENT_FILTERS.filter(function (x) { return x[0] === k; })[0];
+    return c ? c[1] : k;
+  }
+  function squadLabel(k) { return k === '0' ? '未分隊' : '第 ' + k + ' 隊'; }
+  /** 目前的篩選組合，用文字說明（名單上方、匯出 PDF、存常用篩選都用這個）；沒有任何篩選時回傳 '' */
+  function describeFilter(rawSearch) {
+    var parts = [];
+    var ks = keysOf(fset).filter(function (k) { return STATUS_TEST[k]; });
+    if (ks.length) parts.push(ks.map(statusLabel).join(' 或 '));
+    var cs = keysOf(consentSet);
+    if (cs.length) parts.push(cs.map(consentLabel).join(' 或 '));
+    var qs = keysOf(squadSet).sort(function (a, b) { return (a === '0' ? 999 : +a) - (b === '0' ? 999 : +b); });
+    if (qs.length && D && D.project.squads > 0) parts.push(qs.map(squadLabel).join('、'));
+    var q = rawSearch === undefined ? $('#st-search', root).value.trim() : rawSearch;
+    if (q) parts.push('搜尋「' + q + '」');
+    return parts.join('＋');
+  }
 
   function load() {
     return apiFast('getProjectData', prefix, function (d, fresh) {
@@ -144,16 +209,22 @@ App.page('students', function (root, params) {
     });
   }
 
+  /** 報到（checkin.html）：有效錄取但還沒正式報到的人 */
+  function noCheckin(s) { return D.activeStatuses.indexOf(s.status) >= 0 && s.status !== '申請取消' && !(s.checkin && s.checkin.real); }
+  function checkinPeriod() {
+    if (D.students.some(function (s) { return s.checkin && s.checkin.real; })) return true;
+    var st = Date.parse(D.project.start + 'T00:00:00+08:00'), en = Date.parse(D.project.end + 'T23:59:59+08:00');
+    return !isNaN(st) && Date.now() >= st - 86400000 && !(Date.now() > en);
+  }
+
   function matches(s) {
-    var t = tier(s);
-    if (filter === 'warn' && t !== 0 && !hasIssue(s)) return false;
-    if (filter === 'refund' && !refundReq(s)) return false;
-    if (filter === 'consent' && !consentWait(s)) return false;
-    if (squadFilter !== '' && D.project.squads > 0 && String(s.squad === '' ? 0 : s.squad) !== squadFilter) return false;
-    if (filter === 'todo' && t !== 1 && t !== 0) return false;
-    if (filter === 'done' && t !== 2) return false;
-    if (filter === 'wait' && t !== 3) return false;
-    if (filter === 'gone' && t < 4) return false;
+    // 同一類（狀態、同意書、小隊）之內是「或」，不同類之間是「且」
+    var ks = keysOf(fset).filter(function (k) { return STATUS_TEST[k]; });
+    if (ks.length && !ks.some(function (k) { return STATUS_TEST[k](s); })) return false;
+    var cs = keysOf(consentSet);
+    if (cs.length && cs.indexOf(consentState(s)) < 0) return false;
+    var qs = keysOf(squadSet);
+    if (qs.length && D.project.squads > 0 && qs.indexOf(String(s.squad === '' ? 0 : s.squad)) < 0) return false;
     if (search) {
       var hay = (s.name + ' ' + s.email + ' ' + Object.keys(s.data).map(function (k) { return s.data[k]; }).join(' ')).toLowerCase();
       if (hay.indexOf(search) < 0) return false;
@@ -172,14 +243,19 @@ App.page('students', function (root, params) {
 
     var banner = $('#st-banner', root);
     banner.className = ''; banner.textContent = '';
-    if (D.readOnly) {
+    if (RO()) {
       banner.className = 'banner bad';
       banner.textContent = '此專案目前為「' + D.effective + '」，只能瀏覽，不能寄信或修改資料。';
+    } else if (expired()) {
+      banner.className = 'banner warn';
+      banner.textContent = '營期已結束：仍可寄信與處理學員，封存後才完全唯讀。已不再接收新的報名，學員表單與學員專區也已關閉。';
     } else if (p.status === '系統維護') {
       banner.className = 'banner warn';
       banner.textContent = '系統維護中：所有寄出的信件會改寄到 ' + p.maintBy + '，不會寄給學員。';
     }
-    ['#st-sync', '#st-bulk'].forEach(function (id) { $(id, root).disabled = D.readOnly; });
+    $('#st-bulk', root).disabled = RO();
+    $('#st-sync', root).disabled = RO() || expired();
+    $('#st-sync', root).title = expired() ? '營期已結束，不再接收報名' : '';
     var ls = D.lastSync;
     $('#st-synced', root).textContent = ls && ls.t ? '上次同步 ' + fmtTime(ls.t) + (/^系統/.test(ls.by) ? '（自動）' : '') : '尚未同步';
     $('#st-synced', root).title = ls && ls.t ? '由 ' + ls.by + ' 同步' : '';
@@ -194,7 +270,7 @@ App.page('students', function (root, params) {
       stat('完成度', st.completion + '<small>%</small>', '程序完成 ' + st.done + ' 人', st.completion) +
       stat('預計收入', money(st.expectedIncome) + '<small>元</small>', '已錄取者應繳合計') +
       stat('已確認繳款', money(st.confirmedIncome) + '<small>元</small>', st.refunded || st.retained ? '含取消後保留 ' + money(st.retained) + '（已退 ' + money(st.refunded) + '）' : '程序完成者合計', paidPct(st)) +
-      stat('警示', st.warnings + '<small>人</small>', warnFoot(st)) +
+      stat('警示', D.students.filter(isWarn).length + '<small>人</small>', warnFoot(st)) +
       stat('候補中', st.waitlist + '<small>人</small>', '取消 ' + st.cancelled + '　失敗 ' + st.failed);
     $$('#st-stats .stat', root).forEach(function (card, i) {
       var kind = ['count', 'done', 'income', 'paid', 'warn', 'wait'][i];
@@ -208,23 +284,40 @@ App.page('students', function (root, params) {
     chips.innerHTML = '';
     var nRefund = D.students.filter(refundReq).length;
     var nConsent = D.students.filter(consentWait).length;
-    if (filter === 'refund' && !nRefund) filter = 'all';
-    if (filter === 'consent' && !nConsent) filter = 'all';
-    FILTERS.concat(nRefund ? [{ key: 'refund', label: '待退款 ' + nRefund, bad: true }] : [], nConsent ? [{ key: 'consent', label: '同意書待審 ' + nConsent }] : []).forEach(function (f) {
-      var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + '' + (filter === f.key ? ' on' : '') + '" type="button"></button>');
-      c.textContent = f.label;
-      c.addEventListener('click', function () { filter = f.key; render(); });
+    var nPay = D.students.filter(function (x) { return x.status === '繳款待核覆'; }).length;
+    // 待確認繳款、待退款、同意書待審：有人才出現（已勾選的保留，才能取消）
+    var extra = [];
+    if (nPay || fset.pay) extra.push({ key: 'pay', label: '待確認繳款 ' + nPay });
+    if (nRefund || fset.refund) extra.push({ key: 'refund', label: '待退款 ' + nRefund, bad: true });
+    if (nConsent || fset.consent) extra.push({ key: 'consent', label: '同意書待審 ' + nConsent });
+    var ckOn = checkinPeriod();   // 報到期間（營期前一天起，或已經有人報到）才顯示「未報到」
+    if (!ckOn) delete fset.nocheckin;
+    if (ckOn) extra.push({ key: 'nocheckin', label: '未報到 ' + D.students.filter(noCheckin).length });
+    var noStatus = !keysOf(fset).length;
+    FILTERS.concat(extra).forEach(function (f) {
+      var on = f.key === 'all' ? noStatus : !!fset[f.key];
+      var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + (on ? ' on' : '') + '" type="button"></button>');
+      c.textContent = f.label + (f.count ? ' ' + D.students.filter(f.count).length : '');
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+      c.title = f.key === 'all' ? '清除狀態篩選' : '可複選：符合任一個勾選的狀態就顯示';
+      c.addEventListener('click', function () {
+        if (f.key === 'all') fset = {};
+        else if (fset[f.key]) delete fset[f.key];
+        else fset[f.key] = true;
+        render();
+        var again = $$('#st-chips .chip', root).filter(function (x) { return x.textContent === c.textContent; })[0];
+        if (again) again.focus();
+      });
       chips.appendChild(c);
     });
-    var sf = $('#st-squad-filter', root);
-    sf.classList.toggle('hidden', !(p.squads > 0));
-    if (p.squads > 0) {
-      if (Number(squadFilter) > p.squads) squadFilter = '';
-      var opts = '<option value="">全部小隊</option>';
-      for (var q = 1; q <= p.squads; q++) opts += '<option value="' + q + '">第 ' + q + ' 隊（' + D.students.filter(function (x) { return x.squad === q && tier(x) < 4; }).length + '）</option>';
-      opts += '<option value="0">未分隊（' + D.students.filter(function (x) { return x.squad === '' && tier(x) < 4; }).length + '）</option>';
-      sf.innerHTML = opts; sf.value = squadFilter;
-    } else squadFilter = '';
+    if (!(p.squads > 0)) squadSet = {};
+    else keysOf(squadSet).forEach(function (k) { if (Number(k) > p.squads) delete squadSet[k]; });
+    // 同意書：有開線上同意書、或已經有人簽過時才出現
+    var csOn = (p.forms || []).some(function (x) { return x.kind === 'consent' && x.open; }) || D.students.some(function (x) { return x.consent; });
+    if (!csOn) consentSet = {};
+    $('#st-consent-filter', root).classList.toggle('hidden', !csOn);
+    $('#st-squad-filter', root).classList.toggle('hidden', !(p.squads > 0));
+    if (!$('#st-trend', root).classList.contains('hidden')) renderTrend();
     renderTable();
   }
 
@@ -281,12 +374,12 @@ App.page('students', function (root, params) {
         .filter(function (r) { return !/^0 /.test(r[1]); });
       if (!rows.length) rows = [['目前沒有警示', '']];
       if (D.students.filter(refundReq).length) rows.unshift(['申請取消待退款', D.students.filter(refundReq).length + ' 人']);
-      list = all.filter(function (s) { return refundReq(s) || D.warningStatuses.indexOf(s.status) >= 0 || (tierOk(s) && (s.issues || []).length); });
+      list = all.filter(isWarn);
       cols = function (s) {
         var why = [];
         if (refundReq(s)) why.push('申請取消待退款');
         if (D.warningStatuses.indexOf(s.status) >= 0) why.push(s.status);
-        (s.issues || []).forEach(function (x) { why.push(ISSUE_TAG[x.key] + '：' + x.value); });
+        (s.issues || []).forEach(function (x) { why.push((ISSUE_TAG[x.key] || '資料待確認') + '：' + x.value); });
         return [why.join('、')];
       };
       filterKey = 'warn';
@@ -311,16 +404,18 @@ App.page('students', function (root, params) {
         var it = el('<button type="button" class="sd-item"><b></b><span class="sd-cols"></span></button>');
         $('b', it).textContent = s.name;
         $('.sd-cols', it).textContent = cols(s, i).filter(String).join('　·　');
-        it.addEventListener('click', function () { var ov = it.closest('.overlay'); if (ov) ov.remove(); openDetail(s); });
+        it.addEventListener('click', function () { if (statCtl) statCtl.close(null); openDetail(s); });
         box.appendChild(it);
       });
       if (list.length > 200) box.appendChild(el('<div class="small muted">只列出前 200 位，其餘請用名單篩選</div>'));
     }
     var buttons = [{ label: '關閉', value: null }];
     if (filterKey) buttons.push({ label: '在名單中篩選', cls: 'primary', value: filterKey });
-    modal({ title: title, body: body, buttons: buttons }).then(function (v) {
+    var statCtl = null;
+    modal({ title: title, body: body, buttons: buttons, onOpen: function (ov, c) { statCtl = c; } }).then(function (v) {
       if (!v) return;
-      filter = v; render();
+      fset = {}; if (v !== 'all') fset[v] = true;
+      render();
       var t = $('#st-chips', root); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
@@ -330,10 +425,16 @@ App.page('students', function (root, params) {
     if (st.outside) parts.push('招生期外 ' + st.outside);
     var pay = (st.statusWarnings || 0) - (st.outside || 0);
     if (pay) parts.push('匯款逾期／異常 ' + pay);
+    var nr = D.students.filter(refundReq).length;
+    if (nr) parts.push('待退款 ' + nr);
     if (st.idInvalid) parts.push('身分證有誤 ' + st.idInvalid);
     if (st.emailInvalid) parts.push('信箱有誤 ' + st.emailInvalid);
     if (st.phoneInvalid) parts.push('電話有誤 ' + st.phoneInvalid);
-    return parts.length ? parts.join('、') + (st.warnings < parts.length ? '（同一人可能有多項）' : '') : '招生期外、匯款逾期異常、資料有誤';
+    ['dup', 'group', 'mail'].forEach(function (k) {
+      var n = D.students.filter(function (s) { return tierOk(s) && (s.issues || []).some(function (x) { return x.key === k; }); }).length;
+      if (n) parts.push(ISSUE_TAG[k] + ' ' + n);
+    });
+    return parts.length ? parts.join('、') + (D.students.filter(isWarn).length < parts.length ? '（同一人可能有多項）' : '') : '招生期外、匯款逾期異常、待退款、資料有誤、可能重複';
   }
 
   /** 收款進度：已確認繳款佔預計收入的比例 */
@@ -367,11 +468,59 @@ App.page('students', function (root, params) {
     return esc(s);
   }
 
+  /** 同意書、小隊兩個複選按鈕的文字，以及名單上方「目前篩選」那一行 */
+  function renderFilterBits() {
+    var cs = keysOf(consentSet), qs = keysOf(squadSet);
+    var cb = $('#st-consent-filter', root), qb = $('#st-squad-filter', root);
+    cb.textContent = '同意書：' + (cs.length ? cs.map(consentLabel).join('、') : '全部') + ' ▾';
+    cb.classList.toggle('on', !!cs.length);
+    cb.setAttribute('aria-label', '依同意書篩選（可複選），目前：' + (cs.length ? cs.map(consentLabel).join('、') : '全部'));
+    var qsSorted = qs.slice().sort(function (a, b) { return (a === '0' ? 999 : +a) - (b === '0' ? 999 : +b); });
+    qb.textContent = '小隊：' + (qs.length ? (qs.length > 2 ? qs.length + ' 個' : qsSorted.map(squadLabel).join('、')) : '全部') + ' ▾';
+    qb.classList.toggle('on', !!qs.length);
+    qb.setAttribute('aria-label', '依小隊篩選（可複選），目前：' + (qs.length ? qsSorted.map(squadLabel).join('、') : '全部'));
+    var box = $('#st-active', root);
+    var d = describeFilter();
+    box.classList.toggle('hidden', !d);
+    if (!d) { box.innerHTML = ''; return; }
+    box.innerHTML = '<span>目前篩選：</span><b></b><button class="btn sm ghost" type="button">清除全部篩選</button>';
+    $('b', box).textContent = d;
+    $('button', box).addEventListener('click', clearFilters);
+  }
+  function clearFilters() {
+    fset = {}; consentSet = {}; squadSet = {}; search = '';
+    $('#st-search', root).value = '';
+    render();
+  }
+  function openConsentMenu() {
+    var live = D.students.filter(function (x) { return tier(x) < 4; });
+    var items = [{ header: '同意書（可複選，符合任一個就顯示）' }];
+    CONSENT_FILTERS.forEach(function (c) {
+      items.push({ label: c[1] + '（' + live.filter(function (x) { return consentState(x) === c[0]; }).length + '）', checked: !!consentSet[c[0]],
+        onClick: function (on) { if (on) consentSet[c[0]] = true; else delete consentSet[c[0]]; renderTable(); } });
+    });
+    items.push({ sep: true }, { label: '清除同意書篩選', onClick: function () { consentSet = {}; renderTable(); } });
+    popMenu($('#st-consent-filter', root), items);
+  }
+  function openSquadMenu() {
+    var n = D.project.squads || 0;
+    var live = D.students.filter(function (x) { return tier(x) < 4; });
+    var items = [{ header: '小隊（可複選，符合任一個就顯示）' }];
+    function add(k, label, cnt) {
+      items.push({ label: label + '（' + cnt + '）', checked: !!squadSet[k], onClick: function (on) { if (on) squadSet[k] = true; else delete squadSet[k]; renderTable(); } });
+    }
+    for (var q = 1; q <= n; q++) add(String(q), '第 ' + q + ' 隊', live.filter(function (x) { return String(x.squad) === String(q); }).length);
+    add('0', '未分隊', live.filter(function (x) { return x.squad === ''; }).length);
+    items.push({ sep: true }, { label: '清除小隊篩選', onClick: function () { squadSet = {}; renderTable(); } });
+    popMenu($('#st-squad-filter', root), items);
+  }
+
   function renderTable() {
+    renderFilterBits();
     var cols = columns();
     var hl = D.project.highlight || {};
     var sq = D.project.squads > 0;
-    $('#st-head', root).innerHTML = '<tr><th>狀態</th>' + cols.map(function (c, i) { return '<th class="' + (i === 0 ? 'th-name' : 'th-clip') + '" title="' + esc(c) + '">' + esc(c) + '</th>' + (i === 0 && sq ? '<th>小隊</th>' : ''); }).join('') + '<th>備註（狀態紀錄）</th><th></th></tr>';
+    $('#st-head', root).innerHTML = '<tr><th class="th-check"><input type="checkbox" id="st-all" aria-label="全選目前篩選結果"></th><th>狀態</th>' + cols.map(function (c, i) { return '<th class="' + (i === 0 ? 'th-name' : 'th-clip') + '" title="' + esc(c) + '">' + esc(c) + '</th>' + (i === 0 && sq ? '<th>小隊</th>' : ''); }).join('') + '<th>備註（狀態紀錄）</th><th><span class="sr-only">操作</span></th></tr>';
     // 團報側邊條：每組固定一種柔和的顏色（依團報代號決定），和上一組同色時換下一個
     var GROUP_COLORS = ['#a7bfa9', '#a3b6cc', '#bfa9c4', '#d4b994', '#c9a6a0', '#94bcb8', '#bab88f', '#adadcf'];
     function groupColor(id, avoid) {
@@ -381,11 +530,21 @@ App.page('students', function (root, params) {
       return i === avoid ? (i + 1) % GROUP_COLORS.length : i;
     }
     var list = sorted(D.students).filter(matches);
-    $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 筆';
+    shownList = list;
+    $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 位';
+    var allBox = $('#st-all', root);
+    allBox.disabled = RO() || !list.length;
+    allBox.checked = list.length > 0 && list.every(function (x) { return selected[x.id]; });
+    allBox.indeterminate = !allBox.checked && list.some(function (x) { return selected[x.id]; });
+    allBox.addEventListener('change', function () {
+      list.forEach(function (x) { if (allBox.checked) selected[x.id] = true; else delete selected[x.id]; });
+      renderTable();
+    });
+    renderBatchBar();
     var body = $('#st-body', root);
     body.innerHTML = '';
     if (!list.length) {
-      body.innerHTML = '<tr><td colspan="' + (cols.length + 3 + (sq ? 1 : 0)) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
+      body.innerHTML = '<tr><td colspan="' + (cols.length + 4 + (sq ? 1 : 0)) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
       return;
     }
     var prevGroup = null, prevColor = -1;
@@ -406,36 +565,51 @@ App.page('students', function (root, params) {
       }
       if (/早鳥/.test(s.priceType || '') && tier(s) < 4) tags += '<span class="tag early" title="' + esc(s.priceType) + '">早鳥</span>';
       // 同一種問題（例如兩個電話都有誤）只標一次，滑過可看全部
-      var issueTip = {}, issueOrder = [];
+      var issueTip = {}, issueOrder = [], issueKey = {};
       (s.issues || []).forEach(function (x) {
-        var k = ISSUE_TAG[x.key];
-        if (!issueTip[k]) { issueTip[k] = []; issueOrder.push(k); }
+        var k = ISSUE_TAG[x.key] || '資料待確認';
+        if (!issueTip[k]) { issueTip[k] = []; issueOrder.push(k); issueKey[k] = x.key; }
         issueTip[k].push(x.field + '「' + x.value + '」' + x.msg);
       });
-      issueOrder.forEach(function (k) { tags += '<span class="tag bad" title="' + esc(issueTip[k].join('\n') + '\n報名信已提醒更正') + '">' + k + (issueTip[k].length > 1 ? ' ×' + issueTip[k].length : '') + '</span>'; });
+      issueOrder.forEach(function (k) {
+        var tail = ISSUE_HINT[issueKey[k]] ? '\n' + ISSUE_HINT[issueKey[k]] : '';
+        tags += '<span class="tag bad" title="' + esc(issueTip[k].join('\n') + tail) + '">' + k + (issueTip[k].length > 1 ? ' ×' + issueTip[k].length : '') + '</span>';
+      });
       if (s.status === '候補中' && s.rank !== '') tags += '<span class="tag">候補 ' + esc(s.rank) + '</span>';
       if (refundReq(s) && s.status !== '申請取消') tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
       if (consentWait(s)) tags += '<span class="tag warn" title="學員已簽同意書，點開直接看簽名並審核">同意書待審</span>';
       if (s.room && tierOk(s)) tags += '<span class="tag" title="房間">房 ' + esc(s.room) + '</span>';
+      if (s.notes && s.notes.length) { var ln = s.notes[s.notes.length - 1]; tags += '<span class="tag note" title="' + esc('最新備註（' + fmtTime(ln.t) + ' ' + (ln.name || ln.by) + '）：' + ln.text) + '">備註 ' + s.notes.length + '</span>'; }
       var deadlineNote = (tier(s) <= 1 && s.deadline && s.status !== '申請取消') ? '<div class="small muted deadline-note" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
-      var html = '<td>' + pill(s.status) + deadlineNote + '</td>';
+      var html = '<td class="cell-check"><input type="checkbox" aria-label="勾選 ' + esc(s.name) + '"' + (selected[s.id] ? ' checked' : '') + (RO() ? ' disabled' : '') + '></td>' +
+        '<td class="cell-status">' + pill(s.status) + deadlineNote + '</td>';
       cols.forEach(function (c, i) {
         // 欄寬固定、過長以「…」截斷；完整內容滑過看提示，或點該列看詳細資料
         var raw = String(s.data[c] === undefined || s.data[c] === null ? '' : s.data[c]);
         var tip = /^https?:\/\//i.test(raw) ? '' : ' title="' + esc(raw) + '"';
         if (i === 0) {
-          html += '<td class="cell-name"><div class="clip-1 name-strong"' + tip + '>' + valueHtml(s.data[c] || s.name) + '</div>' + (tags ? '<div class="name-tags">' + tags + '</div>' : '') + '</td>';
+          html += '<td class="cell-name"><button type="button" class="name-btn clip-1 name-strong"' + tip + ' aria-label="查看 ' + esc(s.name) + ' 的詳細資料">' + esc(s.data[c] || s.name || '(未填姓名)') + '</button>' + (tags ? '<div class="name-tags">' + tags + '</div>' : '') + '</td>';
           if (sq) html += '<td class="cell-squad">' + (s.squad === '' ? '<span class="muted">—</span>' : esc(s.squad)) + '</td>';
         }
         else html += '<td class="cell-clip' + (highlightHit(hl[c], raw) ? ' hl' : '') + '"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
       });
       var last = s.history && s.history.length ? s.history[s.history.length - 1] : null;
       html += '<td class="note-cell">' + (last ? '<div class="last">' + esc(last.msg) + '</div><div class="small" style="color:var(--text-3)">' + esc(fmtTime(last.t)) + '　·　共 ' + s.history.length + ' 筆</div>' : '') + '</td>';
-      html += '<td style="text-align:right"><button class="btn ghost icon" type="button" aria-label="操作">⋯</button></td>';
+      html += '<td class="cell-act" style="text-align:right"><button class="btn ghost icon act-btn" type="button" aria-haspopup="menu" aria-label="操作：' + esc(s.name) + '" title="操作">⋯</button></td>';
       tr.innerHTML = html;
-      $('button', tr).addEventListener('click', function (e) { e.stopPropagation(); openActions(this, s); });
-      tr.addEventListener('click', function () { openDetail(s); });
+      if (selected[s.id]) tr.classList.add('picked');
+      $('.act-btn', tr).addEventListener('click', function (e) { e.stopPropagation(); openActions(this, s); });
+      var cb = $('.cell-check input', tr);
+      $('.cell-check', tr).addEventListener('click', function (e) { e.stopPropagation(); if (e.target !== cb && !cb.disabled) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change')); } });
+      cb.addEventListener('change', function () {
+        if (cb.checked) selected[s.id] = true; else delete selected[s.id];
+        tr.classList.toggle('picked', cb.checked);
+        allBox.checked = list.every(function (x) { return selected[x.id]; });
+        allBox.indeterminate = !allBox.checked && list.some(function (x) { return selected[x.id]; });
+        renderBatchBar();
+      });
+      tr.addEventListener('click', function (e) { if (e.target.closest('a')) return; openDetail(s); });
       body.appendChild(tr);
     });
   }
@@ -445,7 +619,7 @@ App.page('students', function (root, params) {
   var ACTIVE_NOT_DONE = ['已報名', '繳款待核覆', '匯款逾期', '匯款異常'];
 
   function openActions(anchor, s) {
-    var ro = D.readOnly;
+    var ro = RO();
     var items = [{ header: s.name }];
     function add(label, ok, fn, danger, mail) { items.push({ label: label, disabled: ro || !ok, onClick: fn, danger: danger, mail: mail }); }
     if (s.status === '招生期外') {
@@ -497,9 +671,7 @@ App.page('students', function (root, params) {
       ask('寄送特殊訊息', [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, format: true, presets: P('message'), presetJoin: '\n', hint: '可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數；下一步會看到預覽' }], function (v) { run(s, 'custom', v); });
     }, false, 'yes');
     items.push({ sep: true }, { header: '報名狀態' });
-    add('確認繳款…', has(s, ACTIVE_NOT_DONE), function () {
-      ask('確認繳款', [{ name: 'info', type: 'note', html: payCheckHtml(s) }, { name: 'amount', label: '核對到的匯款金額（元）', type: 'number', required: true, value: s.price, hint: '應繳 ' + money(s.price) + ' 元；金額一致才會標為程序完成並寄出確認信' }], function (v) { run(s, 'confirmPaid', v); });
-    }, false, 'yes');
+    add('確認繳款…', has(s, ACTIVE_NOT_DONE), function () { confirmPaidQuick(s); }, false, 'yes');
     add('標記繳款待核覆', has(s, ['已報名', '匯款逾期', '匯款異常']), function () { run(s, 'markPending', {}); });
     add('遞補錄取', s.status === '候補中', function () { run(s, 'promote', {}); }, false, 'yes');
     add('調整候補順位…', s.status === '候補中', function () {
@@ -513,7 +685,7 @@ App.page('students', function (root, params) {
       for (var q = 1; q <= D.project.squads; q++) opts.push({ value: String(q), label: '第 ' + q + ' 隊' });
       ask('調整小隊', [{ name: 'squad', label: s.name + '　目前：' + squadText(s), type: 'select', options: opts, value: s.squad === '' ? '' : String(s.squad) }], function (v) {
         var a = {}; a[s.id] = v.squad;
-        withBusy(api('setSquads', prefix, a)).then(function () { toast('已調整小隊'); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
+        withBusy(api('setSquads', prefix, a)).then(function () { toast('已調整小隊'); return load().then(function () { refreshDetail(s.id); }); }).catch(function (e) { toast(e.message, true); });
       });
     });
     var rmList = (D.project.rooms && D.project.rooms.rooms) || [];
@@ -524,16 +696,18 @@ App.page('students', function (root, params) {
       }));
       ask('調整房間', [{ name: 'room', label: s.name + '　目前：' + (s.room || '未分房'), type: 'select', options: opts, value: s.room || '' }], function (v) {
         var a = {}; a[s.id] = v.room;
-        withBusy(api('setRooms', prefix, a)).then(function () { toast('已調整房間'); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
+        withBusy(api('setRooms', prefix, a)).then(function () { toast('已調整房間'); return load().then(function () { refreshDetail(s.id); }); }).catch(function (e) { toast(e.message, true); });
       });
     });
     add('手動變更狀態…', true, function () {
       var opts = Object.keys(D.statuses).map(function (k) { return D.statuses[k]; }).filter(function (x) { return x !== s.status; });
-      ask('手動變更狀態', [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true }, { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }], function (v) { run(s, 'setStatus', v); });
+      ask('手動變更狀態', statusFields(opts), function (v) { run(s, 'setStatus', v); }, false, statusMore);
     });
     items.push({ sep: true });
-    if (s.status === '申請取消') add('撤銷取消申請…', true, function () { revertCancel(s); });
-    add(s.status === '申請取消' ? '處理退款並取消報名…' : '取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
+    // 有未處理的退款申請（學員已繳費並填了取消表單）：不論目前狀態，都可以處理退款或撤銷申請
+    var hasReq = s.status === '申請取消' || !!refundReq(s);
+    if (hasReq) add('撤銷取消申請…', true, function () { revertCancel(s); });
+    add(hasReq ? '處理退款並取消報名…' : '取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
     popMenu(anchor, items);
   }
 
@@ -599,7 +773,7 @@ App.page('students', function (root, params) {
     }
     body.appendChild(el('<datalist id="rc-presets">' + labels.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist>'));
     var ruleRow = addRow('無法退回金額（依規定）', ruleCut(base), true);
-    addRow('郵匯費（手續費）', 0, true);
+    addRow('郵匯費（手續費）', D.project.refundFee || 0, true);
     $('.rc-add', body).addEventListener('click', function () { $('.rc-name', addRow('', 0, false)).focus(); });
     function items() {
       return $$('.rc-item', body).map(function (r) {
@@ -641,7 +815,7 @@ App.page('students', function (root, params) {
 
   /** 專案設定裡的預製表單：開關、連結、改內容／跟著系統預設；每個動作直接存 */
   function renderFormSettings(box) {
-    var ro = D.readOnly, list = D.project.forms || [];
+    var ro = RO(), list = D.project.forms || [];
     function saveForms(mut, msg) {
       var out = {};
       list.forEach(function (f) {
@@ -713,14 +887,14 @@ App.page('students', function (root, params) {
 
   /** 預製表單：獨立的抽屜，開關、連結、內容都在這裡 */
   function openForms() {
-    var d = drawer({ title: '預製表單', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+    var d = drawer({ title: '預製表單', sub: esc(D.project.prefix + '　·　' + D.project.name), guard: false });   // 每個改動都立即儲存
     d.body.innerHTML = '<div class="drawer-section"><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填，只會查到、寫回這個專案的報名資料。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}}、{{簽署同意書按鈕}} 會出現置中的按鈕。「線上同意書」預設關閉，請先確認兩份同意書的文字再打開；簽名與上傳的檔案存在系統帳號的 Google 雲端硬碟。內容沒改的跟著系統預設（系統管理 → 預製表單）；改動會立即儲存，只影響這個專案。</p><div class="pf-list"></div></div>';
     renderFormSettings($('.pf-list', d.body));
   }
 
   /** 各小隊的專輔、隨輔：預設每隊 2 位專輔、2 位隨輔，可增減；聯絡方式選填 */
   function openSquadStaff() {
-    var n = D.project.squads || 0, ro = D.readOnly;
+    var n = D.project.squads || 0, ro = RO();
     if (!(n > 0)) { toast('請先在專案設定填小隊數', true); return; }
     function fmtMobile(v) {   // 與後端 fmtMobile_ 相同：手機號碼寫成 0900-000-000
       v = String(v || '').trim();
@@ -750,15 +924,23 @@ App.page('students', function (root, params) {
       $('.ss-list', body).appendChild(box);
     }
     modal({ title: '小隊專輔與隨輔', desc: '姓名必填、聯絡方式選填；沒填姓名的空白列不會儲存。', body: body, wide: true,
-      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
-      if (!ok) return;
-      var out = { show: $('[name=ssShow]', body).checked, squads: {} };
-      $$('.ss-squad', body).forEach(function (b) {
-        out.squads[b.getAttribute('data-q')] = $$('.ss-row', b).map(function (r) { var ins = $$('input', r); return { role: $('select', r).value, name: ins[0].value.trim(), contact: ins[1].value.trim() }; })
-          .filter(function (x) { return x.name || x.contact; });
-      });
-      withBusy(api('updateProjectSettings', prefix, { squadStaff: out })).then(function () { toast('已儲存小隊專輔與隨輔'); cacheClear(); return load(); }).catch(function (e) { toast(e.message, true); });
-    });
+      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, {
+        label: '儲存', cls: 'primary', value: true,
+        validate: function () {
+          clearFieldErrors(body);
+          var bad = $$('.ss-row', body).filter(function (r) { var ins = $$('input', r); return !ins[0].value.trim() && ins[1].value.trim(); })[0];
+          if (bad) { fieldError($$('input', bad)[0], '有填聯絡方式的列請填姓名'); return false; }
+          return true;
+        },
+        run: function () {
+          var out = { show: $('[name=ssShow]', body).checked, squads: {} };
+          $$('.ss-squad', body).forEach(function (b) {
+            out.squads[b.getAttribute('data-q')] = $$('.ss-row', b).map(function (r) { var ins = $$('input', r); return { role: $('select', r).value, name: ins[0].value.trim(), contact: ins[1].value.trim() }; })
+              .filter(function (x) { return x.name || x.contact; });
+          });
+          return api('updateProjectSettings', prefix, { squadStaff: out }).then(function () { toast('已儲存小隊專輔與隨輔'); cacheClear(); return load(); }).then(function () { return true; });
+        }
+      }] });
   }
 
   /** 學員專區網址的 QR Code：可下載成圖片放在 IG、海報；QR 程式用到時才載入 */
@@ -799,9 +981,18 @@ App.page('students', function (root, params) {
       '<div class="drawer-section desk-only"><h3>區塊與順序</h3><p class="hint" style="margin-top:0">學員專區由上到下照這個順序顯示，每個區塊是一張圓角卡片。標「系統」的區塊內容由系統產生，可以調整位置或取消顯示；自訂區塊可以放行前準備清單、行前須知、飯店資訊、交通資訊等，按「編輯」展開內容。可以用信件的格式與變數；「勾選清單」每行一項，學員可以在自己的手機上打勾（只存在學員自己的手機）。沒有內容的區塊不會顯示。</p>' +
       '<div class="ps-list"></div>' +
       (ro ? '' : '<div class="row wrap" style="gap:6px;margin-top:10px"><span class="small muted">新增：</span>' +
-        [['行前準備清單', 'checklist'], ['行前須知', 'text'], ['飯店資訊', 'text'], ['交通資訊', 'text'], ['', 'text']].map(function (x) {
+        [['行前準備清單', 'checklist'], ['行前須知', 'text'], ['飯店資訊', 'text'], ['交通資訊', 'text'], ['常見問題', 'faq'], ['', 'text']].map(function (x) {
           return '<button class="btn sm ghost" type="button" data-add="' + esc(x[0]) + '" data-type="' + x[1] + '">＋ ' + esc(x[0] || '自訂區塊') + '</button>';
-        }).join('') + '</div><div style="margin-top:14px"><button class="btn primary" type="button" id="pt-save">儲存區塊與順序</button></div>') + '</div>';
+        }).join('') + '</div><div style="margin-top:14px"><button class="btn primary" type="button" id="pt-save">儲存區塊與順序</button></div>') + '</div>' +
+      // 學員可以自己做的事：傳同意書給家長簽（試辦）、自行修改部分資料
+      '<div class="drawer-section"><h3>學員可以自己做的事</h3>' +
+      '<label class="check"><input type="checkbox" name="ptParent"' + (pt.parentLink ? ' checked' : '') + (ro ? ' disabled' : '') + '><span><b>允許學員把同意書傳給家長簽（試辦）</b></span></label>' +
+      '<p class="hint" style="margin:4px 0 12px 26px">開啟後，未成年學員的同意書旁會有「傳給家長」：產生一個只能簽這位學員同意書的連結（7 天有效，學員可以重新產生讓舊連結失效），家長用自己的手機打開就能簽，不用輸入學員的身分證字號。學員和家長誰先簽都可以，兩位都簽好才算完成。同意書要開放線上簽署才會出現。</p>' +
+      '<div class="field"><span>學員可以自行修改的欄位</span><div class="row wrap" style="gap:14px;margin-top:6px">' +
+      (pt.editChoices || []).map(function (c) {
+        return '<label class="check"><input type="checkbox" name="ptEdit" value="' + esc(c.key) + '"' + ((pt.editable || []).indexOf(c.key) >= 0 ? ' checked' : '') + (ro || !c.title ? ' disabled' : '') + '><span>' + esc(c.label) + (c.title ? '' : '（沒有對應的題目）') + '</span></label>';
+      }).join('') + '</div><span class="hint">勾選的欄位，學員可以在學員專區的「報名資料」自己修改；改了會寫進學員資料、狀態紀錄記下「學員自行修改：欄位 舊→新」，並在右上角鈴鐺通知。姓名、身分證字號、Email、團報等不開放。</span></div>' +
+      (ro ? '' : '<div style="margin-top:12px"><button class="btn primary" type="button" id="pt-self">儲存</button></div>') + '</div>';
     var urlBox = $('.pt-url', d.body);
     function drawUrl() {
       urlBox.innerHTML = '';
@@ -824,6 +1015,7 @@ App.page('students', function (root, params) {
     function save(v, msg) {
       return withBusy(api('updateProjectSettings', prefix, { portal: v })).then(function () {
         toast(msg); cacheClear();
+        if (d.markClean) d.markClean();   // 存好了：關抽屜時不用再問要不要放棄修改
         return load().then(function () { pt = D.project.portal; $('[name=ptOn]', d.body).checked = pt.on; drawUrl(); });
       }).catch(function (e) { toast(e.message, true); $('[name=ptOn]', d.body).checked = pt.on; });
     }
@@ -836,6 +1028,7 @@ App.page('students', function (root, params) {
     // 內容區塊：標題、類型（文字／勾選清單）、內容，可上下移動與刪除
     var psList = $('.ps-list', d.body);
     var SYS_NAMES = { countdown: '營隊倒數', status: '報名進度', squad: '我的小隊', pay: '繳費資訊', info: '報名資訊', data: '報名資料', refund: '退款規定', reports: '我送出的表單', contacts: '聯絡人員', hotel: '飯店資訊', room: '我的房間' };
+    var SYS_HINT_FAQ = '每組一個問題與回答，學員點問題展開回答；回答可以用信件的格式與變數';
     var SYS_HINT = { countdown: '距離營隊開始的天、時、分、秒', status: '狀態、進度與表單按鈕（一定顯示）', squad: '分好小隊後才會出現', pay: '還沒繳費時才會出現', info: '營期、報名時間、應繳金額', data: '信件「報名資料」勾選的題目', refund: '專案設定的退款規定', reports: '送出過的匯款回報、取消申請', contacts: '專案設定的聯絡人員', hotel: '專案設定的飯店資訊（含地圖）', room: '分房後才會出現，可設定是否公布室友' };
     function moveBtns() { return ro ? '' : '<button class="btn sm ghost" type="button" data-m="up" aria-label="上移">↑</button><button class="btn sm ghost" type="button" data-m="down" aria-label="下移">↓</button>'; }
     function bindMove(b) {
@@ -863,12 +1056,31 @@ App.page('students', function (root, params) {
     function block(x, at, open) {
       if (x.type === 'sys') return sysRow(x, at);
       var b = el('<div class="ps-block' + (open ? '' : ' folded') + '"><div class="ps-top"><input class="input" placeholder="標題（例如 交通資訊）" maxlength="30" aria-label="區塊標題">' +
-        '<select class="input" aria-label="類型"><option value="text">文字</option><option value="checklist">勾選清單</option></select>' +
+        '<select class="input" aria-label="類型"><option value="text">文字</option><option value="checklist">勾選清單</option><option value="faq">常見問題</option></select>' +
         moveBtns() + (ro ? '' : '<button class="btn sm ghost" type="button" data-m="fold">' + (open ? '收合' : '編輯') + '</button><button class="btn sm ghost" type="button" data-m="del">刪除</button>') +
-        '</div><div class="ps-edit"><textarea class="input" rows="5" maxlength="5000"></textarea></div></div>');
-      var ins = $('input', b), sel = $('select', b), t = $('textarea', b);
-      ins.value = x.title || ''; sel.value = x.type === 'checklist' ? 'checklist' : 'text'; t.value = x.body || '';
-      function ph() { t.placeholder = sel.value === 'checklist' ? '每行一項，例如：\n健保卡\n換洗衣物\n水壺' : '例如：集合時間 08:30，地點 清華大學校門口'; }
+        '</div><div class="ps-edit"><div class="ps-txt"><textarea class="input" rows="5" maxlength="5000"></textarea></div>' +
+        '<div class="ps-faq" hidden><div class="small muted">' + SYS_HINT_FAQ + '</div><div class="ps-qa-list" style="display:flex;flex-direction:column;gap:10px"></div>' +
+        (ro ? '' : '<div><button class="btn sm ghost" type="button" data-qa-add>＋ 新增一組問答</button></div>') + '</div></div></div>');
+      var ins = $('input', b), sel = $('select', b), t = $('textarea', b), qaList = $('.ps-qa-list', b);
+      ins.value = x.title || ''; sel.value = x.type === 'checklist' || x.type === 'faq' ? x.type : 'text'; t.value = x.body || '';
+      // 常見問題：一組一組的問與答
+      function qaRow(it) {
+        var r = el('<div class="ps-qa" style="display:flex;flex-direction:column;gap:6px;padding:10px;border:1px dashed var(--line-strong);border-radius:10px">' +
+          '<div class="row" style="gap:6px"><input class="input grow" placeholder="問題，例如：可以帶手機嗎？" maxlength="200" aria-label="問題">' + (ro ? '' : '<button class="btn sm ghost" type="button" aria-label="刪除這組問答">刪除</button>') + '</div>' +
+          '<textarea class="input" rows="2" maxlength="2000" placeholder="回答" aria-label="回答"></textarea></div>');
+        $('input', r).value = it.q || ''; $('textarea', r).value = it.a || '';
+        $$('input, textarea', r).forEach(function (i) { i.disabled = ro; });
+        if (!ro) $('button', r).addEventListener('click', function () { r.remove(); });
+        qaList.appendChild(r);
+        return r;
+      }
+      (x.items || []).forEach(qaRow);
+      if (!ro) $('[data-qa-add]', b).addEventListener('click', function () { $('input', qaRow({})).focus(); });
+      function ph() {
+        t.placeholder = sel.value === 'checklist' ? '每行一項，例如：\n健保卡\n換洗衣物\n水壺' : '例如：集合時間 08:30，地點 清華大學校門口';
+        $('.ps-txt', b).hidden = sel.value === 'faq'; $('.ps-faq', b).hidden = sel.value !== 'faq';
+        if (sel.value === 'faq' && !$$('.ps-qa', b).length && !ro) qaRow({});
+      }
       ph(); sel.addEventListener('change', ph);
       [ins, sel, t].forEach(function (i) { i.disabled = ro; });
       psList.insertBefore(b, at || null);
@@ -884,8 +1096,10 @@ App.page('students', function (root, params) {
       return $$('.ps-block', psList).map(function (b) {
         var k = b.getAttribute('data-sys');
         if (k) { var cb = $('.ps-show input', b); return { type: 'sys', key: k, hidden: cb ? !cb.checked : false }; }
-        return { title: $('input', b).value.trim(), type: $('select', b).value, body: $('textarea', b).value.trim() };
-      }).filter(function (x) { return x.type === 'sys' || x.title || x.body; });
+        var type = $('select', b).value;
+        if (type === 'faq') return { title: $('input', b).value.trim(), type: 'faq', items: $$('.ps-qa', b).map(function (r) { return { q: $('input', r).value.trim(), a: $('textarea', r).value.trim() }; }).filter(function (it) { return it.q || it.a; }) };
+        return { title: $('input', b).value.trim(), type: type, body: $('.ps-txt textarea', b).value.trim() };
+      }).filter(function (x) { return x.type === 'sys' || x.title || x.body || (x.items && x.items.length); });
     }
     // 新增的區塊放在最後一個自訂區塊後面；還沒有自訂區塊時放在「報名資訊」後面
     function addSpot() {
@@ -905,9 +1119,13 @@ App.page('students', function (root, params) {
       $('[name=ptOn]', d.body).addEventListener('change', function (e) {
         save({ on: e.target.checked }, e.target.checked ? '已開放學員專區' : '已關閉學員專區');
       });
+      $('#pt-self', d.body).addEventListener('click', function () {
+        save({ on: pt.on, parentLink: $('[name=ptParent]', d.body).checked, editable: $$('[name=ptEdit]:checked', d.body).map(function (i) { return i.value; }) }, '已儲存學員可以自己做的事');
+      });
       $('#pt-save', d.body).addEventListener('click', function () {
         var list = sections();
         if (list.some(function (x) { return x.type !== 'sys' && !x.title; })) { toast('每個區塊都要有標題', true); return; }
+        if (list.some(function (x) { return x.type === 'faq' && x.items.some(function (it) { return !it.q; }); })) { toast('常見問題的每一組都要有問題', true); return; }
         save({ on: pt.on, sections: list }, '已儲存學員專區內容');
       });
     }
@@ -928,7 +1146,7 @@ App.page('students', function (root, params) {
     pays.forEach(function (f, i) {
       rows.push('<div class="pc-row' + (i ? ' old' : '') + '"><b class="pc-l5">' + esc(f.last5 || '—') + '</b><span>' +
         (f.amount !== '' && f.amount !== undefined && f.amount !== null ? money(f.amount) + ' 元' : '未填金額') +
-        (f.date ? '・匯款日 ' + esc(String(f.date).slice(0, 10)) : '') + '</span><small>' + (i ? '較早的回報・' : '匯款回報・') + esc(fmtTime(f.t)) + '</small></div>');
+        (f.date ? '・匯款日 ' + esc(String(f.date).slice(0, 10)) : '') + (f.payer ? '・匯款人 ' + esc(f.payer) : '') + '</span><small>' + (i ? '較早的回報・' : '匯款回報・') + esc(fmtTime(f.t)) + '</small></div>');
     });
     var col = D.project.mapping.last5, v = col && s.data[col] ? String(s.data[col]).trim() : '';
     if (v) rows.push('<div class="pc-row"><b class="pc-l5">' + esc(v) + '</b><span>報名表填的後五碼</span></div>');
@@ -936,9 +1154,33 @@ App.page('students', function (root, params) {
     return '<div class="pc-title">對帳用：匯款帳號後五碼</div>' + rows.join('');
   }
 
-  function ask(title, fields, then, danger) {
-    formDialog({ title: title, fields: fields, danger: danger }).then(function (v) { if (v) then(v); });
+  function ask(title, fields, then, danger, more) {
+    more = more || {};
+    formDialog({ title: title, fields: fields, danger: danger, onOpen: more.onOpen, check: more.check }).then(function (v) { if (v) then(v); });
   }
+
+  /** 手動變更狀態的欄位：改成「已報名」時多一個匯款期限（留空＝今天起算 payDays 天） */
+  function statusFields(opts) {
+    return [{ name: 'status', label: '新狀態', type: 'select', options: opts, required: true },
+      { name: 'deadline', label: '匯款期限', type: 'date', hint: '改成「已報名」時才需要；留空則從今天起算 ' + (D.project.payDays || 0) + ' 天' },
+      { name: 'reason', label: '變更原因', type: 'textarea', required: true, presets: P('status') }];
+  }
+  var statusMore = {
+    onOpen: function (ov) {
+      var stSel = $('[name=status]', ov), dl = $('[name=deadline]', ov);
+      var t = new Date();
+      dl.min = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+      function syncDl() { (dl.closest('.field') || dl.parentNode).classList.toggle('hidden', stSel.value !== '已報名'); if (stSel.value !== '已報名') dl.value = ''; }
+      stSel.addEventListener('change', syncDl); syncDl();
+    },
+    check: function (v) {
+      if (v.status === '已報名' && v.deadline) {
+        var t = new Date(), today = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+        if (v.deadline < today) return { name: 'deadline', msg: '匯款期限不能早於今天' };
+      }
+      return '';
+    }
+  };
 
   /**
    * 專案價格調整後（原價、團報價、早鳥價、早鳥團報價、早鳥期限）：列出應繳金額會變的學員，
@@ -948,14 +1190,14 @@ App.page('students', function (root, params) {
     return withBusy(api('previewPriceReview', prefix)).then(function (r) {
       if (!r.items.length) { if (r.paid.length) toast('價格已更新；有 ' + r.paid.length + ' 位已確認繳款的學員金額不同，請視需要個別處理'); return; }
       var body = el('<div class="pr-dlg"><div class="row wrap" style="gap:12px"><label class="check"><input type="checkbox" data-all="apply" checked><span>全部套用</span></label>' +
-        '<label class="check"><input type="checkbox" data-all="mail" checked><span>全部寄通知</span></label><span class="grow"></span><span class="small muted pr-sum"></span></div>' +
+        '<label class="check"><input type="checkbox" data-all="mail"' + (r.items.some(function (it) { return it.status === '候補中' && it.hasEmail; }) ? '' : ' checked') + '><span>全部寄通知</span></label><span class="grow"></span><span class="small muted pr-sum"></span></div>' +
         '<div class="pr-list"></div>' +
         (r.paid.length ? '<div class="small muted">另有 ' + r.paid.length + ' 位已確認繳款（' + esc(r.paid.map(function (x) { return x.name; }).join('、')) + '）金額會不同，系統不會自動改，需要時請個別用「報名費用異動通知」。</div>' : '') + '</div>');
       var list = $('.pr-list', body);
       r.items.forEach(function (it) {
         var row = el('<div class="pr-row"><label class="check"><input type="checkbox" data-k="apply" checked><span></span></label>' +
           '<div class="grow"><b></b> <span class="small muted"></span><div class="pr-price"></div></div>' +
-          '<label class="check pr-mail"><input type="checkbox" data-k="mail"' + (it.hasEmail ? ' checked' : ' disabled') + '><span>' + (it.hasEmail ? '寄通知' : '沒有信箱') + '</span></label></div>');
+          '<label class="check pr-mail"><input type="checkbox" data-k="mail"' + (!it.hasEmail ? ' disabled' : it.status === '候補中' ? '' : ' checked') + '><span>' + (it.hasEmail ? '寄通知' : '沒有信箱') + '</span></label></div>');
         row.setAttribute('data-id', it.id);
         $('b', row).textContent = it.name;
         $('.small', row).textContent = it.status + (it.group ? '・團報' : '');
@@ -977,7 +1219,7 @@ App.page('students', function (root, params) {
         sync();
       });
       sync();
-      return modal({ title: '價格已調整：要更新這些學員的應繳金額嗎？', desc: '下面是依新價格重新計算後金額會改變的學員（尚未確認繳款、價格由系統計算）。勾選「寄通知」的會寄「報名費用異動通知」，沒勾的只改金額。',
+      return modal({ title: '價格已調整：要更新這些學員的應繳金額嗎？', desc: '下面是依新價格重新計算後金額會改變的學員（尚未確認繳款、價格由系統計算）。勾選「寄通知」的會寄「報名費用異動通知」，沒勾的只改金額；候補中的學員預設不寄。',
         body: body, wide: true, buttons: [{ label: '先不要', value: null }, { label: '套用', cls: 'primary', value: true }] }).then(function (ok) {
         if (!ok) return;
         var picks = $$('.pr-row', body).filter(function (rw) { return $('[data-k=apply]', rw).checked; }).map(function (rw) {
@@ -993,11 +1235,26 @@ App.page('students', function (root, params) {
     }).catch(function (e) { toast(e.message, true); });
   }
 
+  /** 依報名時間算團報的價格（跟後端 computePrice_ 一樣取最低價；早鳥期限內含早鳥價、早鳥團報價）；沒有團報價時回傳 null */
+  function groupPriceFor(s) {
+    var p = D.project;
+    if (!(p.groupPrice > 0) && !(p.earlyGroupPrice > 0)) return null;
+    var t = s.time ? new Date(s.time) : new Date();
+    var early = p.earlyDeadline && t <= new Date(String(p.earlyDeadline).slice(0, 10) + 'T23:59:59+08:00');
+    var opts = [{ type: '原價', price: Number(p.price) }];
+    if (p.groupPrice > 0) opts.push({ type: '團報價', price: Number(p.groupPrice) });
+    if (early && p.earlyPrice > 0) opts.push({ type: '早鳥價', price: Number(p.earlyPrice) });
+    if (early && p.earlyGroupPrice > 0) opts.push({ type: '早鳥團報價', price: Number(p.earlyGroupPrice) });
+    opts.sort(function (a, b) { return a.price - b.price; });
+    return opts[0];
+  }
+
   /** 改為個人報名：價格依報名時間、團報價或自訂；候補中的人沒有空位時可以超收 */
   function askIndividual(s) {
     var p = D.project;
     var opts = [{ value: 'auto', label: '依報名時間（早鳥價或原價，系統自動判斷）' }];
-    if (p.groupPrice > 0) opts.push({ value: 'group', label: '維持團報價 ' + money(p.groupPrice) + ' 元' });
+    var gp = groupPriceFor(s);
+    if (gp) opts.push({ value: 'group', label: '維持' + gp.type + ' ' + money(gp.price) + ' 元' });
     opts.push({ value: 'manual', label: '自訂金額' });
     var fields = [
       { name: 'priceMode', label: '價格', type: 'select', options: opts, value: 'auto' },
@@ -1030,20 +1287,67 @@ App.page('students', function (root, params) {
   function run(s, action, extra) {
     withBusy(api('previewAction', prefix, s.id, action, extra)).then(function (pv) {
       return mailConfirm(pv).then(function (ok) {
-        if (!ok) { api('cancelAction', prefix, s.id, action); return; }
+        if (!ok) { api('cancelAction', prefix, s.id, action).catch(function () {}); return; }
         return withBusy(api('runAction', prefix, s.id, action, extra)).then(function (r) {
-          if (r.note) toast(r.note, true); else toast('已完成：' + pv.label);
-          if (r.promoted && r.promoted.length) toast('已自動遞補：' + r.promoted.join('、'));
-          closeDetail();
-          return load();
+          afterAction(s, r, pv.label);
         });
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+  /** 操作完成：重新載入名單；學員詳細資料開著就留在同一位學員並更新內容 */
+  function afterAction(s, r, label) {
+    if (r.note) toast(r.note, true); else toast('已完成：' + label);
+    if (r.promoted && r.promoted.length) toast('已自動遞補：' + r.promoted.join('、'));
+    return load().then(function () { refreshDetail(s.id); });
+  }
+  /** 詳細資料開著的是這位學員：用最新資料重畫 */
+  function refreshDetail(id) {
+    if (!detail || detailId !== id || !D) return;
+    var fresh = D.students.filter(function (x) { return x.id === id; })[0];
+    if (fresh) openDetail(fresh); else closeDetail();
+  }
+
+  /**
+   * 確認繳款（兩步）：選單點「確認繳款…」→ 這個視窗核對金額、看信件預覽，按「確認繳款並寄出」就完成。
+   * 金額與應繳不同時後端會擋下，錯誤顯示在視窗內。
+   */
+  function confirmPaidQuick(s) {
+    withBusy(api('previewAction', prefix, s.id, 'confirmPaid', { amount: s.price })).then(function (pv) {
+      var m = pv.mail;
+      var body = el('<form class="cp-dlg" onsubmit="return false"><div class="dlg-note">' + payCheckHtml(s) + '</div>' +
+        '<label class="field"><span>核對到的匯款金額（元）<em>*</em></span><input class="input" name="amount" type="number" step="any"><span class="hint">應繳 ' + money(s.price) + ' 元；金額一致才會標為程序完成並寄出確認信。不一致請改用「匯款異常通知」或「報名費用異動通知」。</span></label>' +
+        (m ? '<dl class="kv"><dt>收件人</dt><dd></dd><dt>主旨</dt><dd></dd><dt>今日剩餘額度</dt><dd></dd></dl>' +
+          (m.redirectedFrom ? '<div class="redirect-note">此專案為「系統維護」模式，信件會改寄到設定維護的管理員信箱。</div>' : '') +
+          '<details class="cp-preview"><summary>信件預覽「' + esc(m.templateName) + '」</summary><iframe class="mail-frame" sandbox="" title="信件預覽"></iframe></details>' : '') + '</form>');
+      body.elements.amount.value = s.price;
+      if (m) {
+        var dds = $$('dd', body); dds[0].textContent = m.to; dds[1].textContent = m.subject; dds[2].textContent = pv.quota + ' 封';
+        $('iframe', body).srcdoc = m.html;
+      }
+      return modal({
+        title: '確認繳款：' + s.name, body: body, wide: true,
+        buttons: [{ label: '取消', value: null }, {
+          label: m ? '確認繳款並寄出' : '確認繳款', cls: 'primary',
+          validate: function () {
+            clearFieldErrors(body);
+            var v = body.elements.amount.value;
+            if (v === '' || isNaN(Number(v))) { fieldError(body.elements.amount, '請填核對到的匯款金額'); return false; }
+            if (Number(v) !== Number(s.price)) { fieldError(body.elements.amount, '金額 ' + money(v) + ' 與應繳 ' + money(s.price) + ' 元不符，請改用「匯款異常通知」或「報名費用異動通知」'); return false; }
+            return true;
+          },
+          value: function () { return { amount: body.elements.amount.value }; },
+          run: function (v) { return api('runAction', prefix, s.id, 'confirmPaid', v); }
+        }]
+      }).then(function (r) {
+        if (!r) { api('cancelAction', prefix, s.id, 'confirmPaid').catch(function () {}); return; }
+        return afterAction(s, r, '確認繳款');
       });
     }).catch(function (e) { toast(e.message, true); });
   }
 
   /* ---------- 學員詳細資料 ---------- */
-  var detail = null;
-  function closeDetail() { if (detail) { detail.close(); detail = null; } }
+  var detail = null, detailId = null, detailS = null;
+  function closeDetail() { if (detail) { detail.close(); detail = null; detailId = null; } }
 
   /** 同意書的簽名圖片、上傳檔案、簽署紀錄：從雲端硬碟讀回來顯示（查看會記錄在操作紀錄） */
   function showConsentFile(s, f) {
@@ -1063,7 +1367,16 @@ App.page('students', function (root, params) {
     }).catch(function (e) { toast(e.message, true); });
   }
 
+  function consentOpen() { return (D.project.forms || []).some(function (f) { return f.kind === 'consent' && f.open; }); }
   function consentWait(s) { return !!(s.consent && !s.consent.review); }
+  var CONSENT_FILTERS = [['none', '同意書未簽'], ['wait', '同意書待審'], ['redo', '退回重簽'], ['ok', '同意書已通過']];
+  /** 同意書狀態：none 未簽、wait 已簽待審、redo 審核不通過等重簽、ok 審核通過 */
+  function consentState(s) {
+    var c = s.consent;
+    if (!c) return 'none';
+    if (!c.review) return 'wait';
+    return c.review.ok ? 'ok' : 'redo';
+  }
 
   /** 待審核的同意書直接攤開：簽名圖片與上傳的照片直接顯示，PDF 與簽署紀錄點按鈕看 */
   function showConsentInline(s, box) {
@@ -1108,13 +1421,25 @@ App.page('students', function (root, params) {
   }
 
   function openDetail(s) {
-    closeDetail();
     var p = D.project;
-    detail = drawer({ title: s.name || '(未填姓名)', sub: pill(s.status) + '　' + esc(s.email), onClose: function () { detail = null; } });
-    var head = $('.drawer-head', detail.el);
-    var actBtn = el('<button class="btn sm" type="button">操作</button>');
-    actBtn.addEventListener('click', function (e) { e.stopPropagation(); openActions(actBtn, s); });
-    head.insertBefore(actBtn, head.lastElementChild);
+    detailS = s;
+    if (detail && detailId === s.id) {
+      // 同一位學員：沿用抽屜、更新內容（操作完成後不關閉，捲動位置也保留）
+      detail.setTitle(s.name || '(未填姓名)', pill(s.status) + '　' + esc(s.email));
+    } else {
+      closeDetail();
+      detail = drawer({ title: s.name || '(未填姓名)', sub: pill(s.status) + '　' + esc(s.email), guard: false, dirty: function () { var ta = detail && $('.note-add textarea', detail.body); return !!(ta && ta.value.trim()); }, onClose: function () { detail = null; detailId = null; } });
+      detailId = s.id;
+      var head = $('.drawer-head', detail.el);
+      var payBtn = el('<button class="btn sm primary hidden" type="button" data-pay>確認繳款…</button>');
+      payBtn.addEventListener('click', function (e) { e.stopPropagation(); confirmPaidQuick(detailS); });
+      head.insertBefore(payBtn, head.lastElementChild);
+      var actBtn = el('<button class="btn sm" type="button" aria-haspopup="menu">操作</button>');
+      actBtn.addEventListener('click', function (e) { e.stopPropagation(); openActions(actBtn, detailS); });
+      head.insertBefore(actBtn, head.lastElementChild);
+    }
+    $('[data-pay]', detail.el).classList.toggle('hidden', RO() || ACTIVE_NOT_DONE.indexOf(s.status) < 0);
+    var keepScroll = detail.body.scrollTop;
 
     var g = s.groupId ? D.groups[s.groupId] : null;
     var sys = [
@@ -1132,21 +1457,21 @@ App.page('students', function (root, params) {
     var html = '';
     var rq = lastRefundReq(s), rqOpen = !!refundReq(s);
     if (rq) {
-      var r = rq.refund;
+      var rf = rq.refund;
       html += '<div class="drawer-section"><div class="rq-card' + (rqOpen ? ' open' : '') + '"><div class="rq-head"><b>' + (rqOpen ? '學員申請取消，待處理退款' : rq.revoked ? '學員的取消申請（已撤銷）' : '學員的退款申請（已處理）') + '</b><span class="small muted">' + esc(fmtTime(rq.t)) + '</span></div>' +
         '<dl class="kv"><dt>取消原因</dt><dd>' + esc(rq.reason || '—') + '</dd>' +
         (rq.note ? '<dt>備註</dt><dd>' + esc(rq.note) + '</dd>' : '') +
-        '<dt>銀行</dt><dd>' + esc(r.bank) + '</dd><dt>分行</dt><dd>' + esc(r.branch || '—') + '</dd><dt>戶名</dt><dd>' + esc(r.name) + '</dd>' +
-        '<dt>帳號</dt><dd><b class="rq-no">' + esc(r.no) + '</b></dd>' +
-        '<dt>可退金額</dt><dd>' + (r.pct === null || r.pct === undefined || r.pct === '' ? '沒有設定退款規定，請自行判斷' : '依退款規定 ' + esc(r.pct) + '%，' + money(r.amount) + ' 元') + '</dd>' +
+        '<dt>銀行</dt><dd>' + esc(rf.bank) + '</dd><dt>分行</dt><dd>' + esc(rf.branch || '—') + '</dd><dt>戶名</dt><dd>' + esc(rf.name) + '</dd>' +
+        '<dt>帳號</dt><dd><b class="rq-no">' + esc(rf.no) + '</b></dd>' +
+        '<dt>可退金額</dt><dd>' + (rf.pct === null || rf.pct === undefined || rf.pct === '' ? '沒有設定退款規定，請自行判斷' : '依退款規定 ' + esc(rf.pct) + '%，' + money(rf.amount) + ' 元') + '</dd>' +
         (s.status === '報名取消' && s.refund !== '' && s.refund !== undefined ? '<dt>實際退回</dt><dd>' + money(s.refund) + ' 元' + (s.refundDetail && s.refundDetail.items && s.refundDetail.items.length ? '（原繳 ' + money(s.refundDetail.paid) + s.refundDetail.items.map(function (it) { return '，扣' + esc(it.label) + ' ' + money(it.amount); }).join('') + '）' : '') + '</dd>' : '') + '</dl>' +
         '<div class="rq-acts"><button class="btn sm" type="button" data-rq="copy">複製退款帳戶</button>' +
-        (rqOpen && !D.readOnly ? '<button class="btn sm danger" type="button" data-rq="go">處理退款並取消報名</button>' : '') + '</div>' +
+        (rqOpen && !RO() ? '<button class="btn sm danger" type="button" data-rq="go">處理退款並取消報名</button>' : '') + '</div>' +
         (rqOpen ? '<div class="small muted">退款匯出後按「處理退款並取消報名」，在退款計算填扣除的項目，系統會取消報名、寄「取消報名退款通知」（附退款明細），並記下退款金額。在那之前名額仍保留。</div>' : '') +
         '</div></div>';
     }
     html += '<div class="drawer-section"><h3>報名資訊</h3><dl class="kv">' +
-      sys.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('') + '</dl></div>';
+      sys.map(function (row) { return '<dt>' + esc(row[0]) + '</dt><dd>' + esc(row[1]) + '</dd>'; }).join('') + '</dl></div>';
 
     // 同意書：專案有開放或學員簽過時顯示。待審核時直接攤開簽名與檔案，按「審核通過」收起來，「不通過」寄重簽通知
     var cf = (p.forms || []).filter(function (x) { return x.kind === 'consent'; })[0], cs = s.consent;
@@ -1160,7 +1485,7 @@ App.page('students', function (root, params) {
           '<div class="small muted">' + esc((cs.docs || []).map(function (d) { return d.title; }).join('、')) + '</div>' +
           '<div class="small">' + esc((cs.signers || []).join('；')) + (cs.age !== null && cs.age !== undefined ? '　（營期開始時 ' + cs.age + ' 歲）' : '　（沒有出生日期，依未成年辦理）') + '</div>' +
           (!rv && !(cf && cf.purged) ? '<div class="consent-inline" id="cs-inline"></div>' +
-            (D.readOnly ? '' : '<div class="row wrap" style="gap:8px"><button class="btn primary sm" type="button" data-cr="pass">審核通過</button><button class="btn sm" type="button" data-cr="redo">不通過，寄重簽通知</button></div>')
+            (RO() ? '' : '<div class="row wrap" style="gap:8px"><button class="btn primary sm" type="button" data-cr="pass">審核通過</button><button class="btn sm" type="button" data-cr="redo">不通過，寄重簽通知</button></div>')
           : cf && cf.purged ? '<div class="small muted">簽名與檔案已於 ' + esc(fmtTime(cf.purged)) + ' 依保存期限刪除</div>'
           : rv.ok ? '<div class="small muted">' + esc(fmtTime(rv.t)) + '・' + esc(rv.by) + ' 審核通過</div><details class="consent-more"><summary>查看簽名與檔案</summary><div class="consent-files">' + files + '</div></details>'
           : '<div class="small">不通過原因：' + esc(rv.reason) + '</div><div class="small muted">' + esc(fmtTime(rv.t)) + '・' + esc(rv.by) + ' 已寄重簽通知，等學員重新簽署</div><div class="consent-files">' + files + '</div>') +
@@ -1173,17 +1498,51 @@ App.page('students', function (root, params) {
     Object.keys(s.data).forEach(function (k) { if (titles.indexOf(k) < 0) titles.push(k); });
     html += '<div class="drawer-section"><h3>表單資料</h3>' + titles.map(function (t, i) {
       return '<div class="field-row"><div class="k">' + esc(t) + '</div><div class="v">' + valueHtml(s.data[t]) + '</div>' +
-        (D.readOnly ? '<span></span>' : '<button class="btn ghost sm" type="button" data-edit="' + i + '">修改</button>') + '</div>';
+        (RO() ? '<span></span>' : '<button class="btn ghost sm" type="button" data-edit="' + i + '">修改</button>') + '</div>';
     }).join('') + '</div>';
+
+    // 備註：管理員可以新增（不能修改或刪除），記錄時間與作者
+    var notes = (s.notes || []).slice().reverse();
+    html += '<div class="drawer-section note-sec"><h3>備註 <span class="small muted">' + (notes.length ? notes.length + ' 則' : '') + '</span></h3>' +
+      (RO() ? '' : '<div class="note-add"><textarea class="input" rows="2" maxlength="2000" aria-label="新增備註" placeholder="例如：家長來電說會晚到。只有管理員看得到，新增後不能修改或刪除"></textarea>' +
+        '<div class="row" style="gap:8px"><span class="small muted grow note-left"></span><button class="btn sm primary" type="button" data-note-add>新增備註</button></div></div>') +
+      (notes.length ? '<ul class="timeline note-list">' + notes.map(function (n) {
+        return '<li><div class="note-text">' + esc(n.text) + '</div><div class="t">' + esc(fmtTime(n.t)) + '　·　' + esc(n.name || n.by) + '</div></li>';
+      }).join('') + '</ul>' : '<div class="small muted">還沒有備註</div>') + '</div>';
 
     var hist = (s.history || []).slice().reverse();
     html += '<div class="drawer-section"><h3>狀態紀錄</h3><ul class="timeline">' + hist.map(function (h) {
       return '<li><div>' + esc(h.msg) + '</div><div class="t">' + esc(fmtTime(h.t)) + '　·　' + esc(h.by) + '</div></li>';
     }).join('') + '</ul></div>';
     detail.body.innerHTML = html;
+    detail.body.scrollTop = keepScroll;
+    var noteBtn = $('[data-note-add]', detail.body);
+    if (noteBtn) {
+      var noteTa = $('.note-add textarea', detail.body);
+      noteTa.addEventListener('input', function () {
+        var n = noteTa.value.length;
+        $('.note-left', detail.body).textContent = n > 1800 ? '已輸入 ' + n + ' / 2000 字' : '';
+      });
+      noteBtn.addEventListener('click', function () {
+        clearFieldErrors(detail.body);
+        var t = noteTa.value.trim();
+        if (!t) { fieldError(noteTa, '請輸入備註內容'); return; }
+        noteBtn.disabled = true; noteBtn.classList.add('is-busy');
+        api('addNote', prefix, s.id, t).then(function (r) {
+          s.notes = r.notes;
+          toast('已新增備註' + (r.left < 5000 ? '（這位學員的備註快到上限，還能寫約 ' + Math.max(0, r.left) + ' 字）' : ''));
+          openDetail(s);
+          renderTable();
+          load();
+        }).catch(function (e) {
+          noteBtn.disabled = false; noteBtn.classList.remove('is-busy');
+          fieldError(noteTa, e.message);
+        });
+      });
+    }
     if (rq) {
       $('[data-rq=copy]', detail.body).addEventListener('click', function () {
-        var r = rq.refund, txt = '戶名：' + r.name + '\n銀行：' + r.bank + (r.branch ? ' ' + r.branch : '') + '\n帳號：' + r.no + (r.amount !== '' && r.amount !== null && r.amount !== undefined ? '\n金額：' + money(r.amount) + ' 元' : '');
+        var acc = rq.refund, txt = '戶名：' + acc.name + '\n銀行：' + acc.bank + (acc.branch ? ' ' + acc.branch : '') + '\n帳號：' + acc.no + (acc.amount !== '' && acc.amount !== null && acc.amount !== undefined ? '\n金額：' + money(acc.amount) + ' 元' : '');
         (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('已複製退款帳戶'); }).catch(function () { toast('複製失敗，請手動選取帳號', true); });
       });
       var go = $('[data-rq=go]', detail.body);
@@ -1204,16 +1563,12 @@ App.page('students', function (root, params) {
         var t = titles[Number(b.getAttribute('data-edit'))];
         formDialog({
           title: '修改資料', desc: '修改會記錄在狀態紀錄與操作紀錄中', okLabel: '儲存',
-          fields: [{ name: 'value', label: t, type: 'textarea', value: s.data[t] || '' }]
+          fields: [{ name: 'value', label: t, type: 'textarea', value: s.data[t] || '' }],
+          submit: function (v) { return api('updateStudentField', prefix, s.id, t, v.value); }
         }).then(function (v) {
           if (!v) return;
-          withBusy(api('updateStudentField', prefix, s.id, t, v.value)).then(function () {
-            toast('已修改「' + t + '」');
-            return load().then(function () {
-              var fresh = D.students.filter(function (x) { return x.id === s.id; })[0];
-              if (fresh) openDetail(fresh);
-            });
-          }).catch(function (e) { toast(e.message, true); });
+          toast('已修改「' + t + '」');
+          return load().then(function () { refreshDetail(s.id); });
         });
       });
     });
@@ -1222,9 +1577,9 @@ App.page('students', function (root, params) {
   /* ---------- 專案設定 ---------- */
   /* ---------- 本專案信件範本 ---------- */
   function openProjectTemplates() {
-    var ro = D.readOnly;
+    var ro = RO();
     withBusy(api('getProjectTemplates', prefix)).then(function (T) {
-      var d = drawer({ title: '信件範本', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+      var d = drawer({ title: '信件範本', sub: esc(D.project.prefix + '　·　' + D.project.name), guard: false });
       d.body.innerHTML =
         '<div class="drawer-section"><h3>通知範本</h3><p class="hint" style="margin-top:0">預設使用系統範本（總管在系統管理維護）。可以直接把飯店、總召、集合地點等資訊打進信裡；修改只影響這個專案，隨時可恢復系統預設。</p>' +
         '<div class="tpl-list"></div></div>';
@@ -1241,15 +1596,17 @@ App.page('students', function (root, params) {
             footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
             headerColor: D.project.headerColor,
             contacts: D.project.contacts || [], refund: D.project.refund, hotel: D.project.hotel, portalUrl: (D.project.portal && D.project.portal.url) || '', portalKeyLabel: D.project.portal && D.project.portal.keyLabel, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
-            onSaveEcho: ro ? null : function (list) { return api('updateProjectSettings', prefix, { echo: list }).then(function () { D.project.echo = list; }); },
+            onSaveEcho: ro ? null : function (picked) { return api('updateProjectSettings', prefix, { echo: picked }).then(function () { D.project.echo = picked; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
-            resetLabel: t.custom && !ro ? '恢復系統預設' : null
+            resetLabel: t.custom && !ro ? '恢復系統預設' : null,
+            readOnly: ro,
+            // 在範本視窗內存檔，成功才關閉；失敗時內容都還在
+            onSave: function (v) {
+              return v.reset ? api('saveProjectTemplate', prefix, t.code, null) : api('saveProjectTemplate', prefix, t.code, v.subject, v.body, { footer: v.footer, signature: v.signature, headerColor: v.headerColor });
+            }
           }).then(function (v) {
             if (!v || ro) return;
-            var call = v.reset ? api('saveProjectTemplate', prefix, t.code, null) : api('saveProjectTemplate', prefix, t.code, v.subject, v.body, { footer: v.footer, signature: v.signature, headerColor: v.headerColor });
-            withBusy(call).then(function () {
-              toast(v.reset ? '已恢復系統預設' : '已儲存本專案範本'); d.close(); openProjectTemplates();
-            }).catch(function (e) { toast(e.message, true); });
+            toast(v.reset ? '已恢復系統預設' : '已儲存本專案範本'); d.close(); openProjectTemplates();
           });
         });
         list.appendChild(r);
@@ -1257,93 +1614,26 @@ App.page('students', function (root, params) {
     }).catch(function (e) { toast(e.message, true); });
   }
 
-  function openSettings() {
+  /** 專案設定：欄位、分區與檢查和「開始新專案」共用（assets/settings-form.js）；focusKey 是要捲到的那一區 */
+  function openSettings(focusKey) {
     var p = D.project;
     var d = drawer({ title: '專案設定', sub: esc(p.prefix + '　·　' + p.name) });
     var ro = D.readOnly;
-    var fk = D.fieldKeys;
-    var qOpts = function (sel) {
-      return '<option value="">（未對應）</option>' + (p.questions || []).map(function (q) {
-        return '<option value="' + esc(q) + '"' + (q === sel ? ' selected' : '') + '>' + esc(q) + '</option>';
-      }).join('');
-    };
     d.body.innerHTML =
       '<div class="drawer-section"><h3>系統維護</h3><div class="row"><button class="switch' + (p.status === '系統維護' ? ' on' : '') + '" type="button" id="set-maint"' + (ro ? ' disabled' : '') + '></button>' +
       '<span class="small muted">開啟後，所有寄出的信件改寄給你（設定者），不會寄給學員。</span></div></div>' +
-      '<form id="set-form"><div class="drawer-section"><h3>名額與遞補</h3><div class="grid-2">' +
-      f('capacity', '招生人數上限', 'number', p.capacity, '目前已錄取 ' + D.stats.active + ' 人，只能設為 ' + D.stats.active + ' 以上；要更低請先取消特定學員報名') +
-      f('holdHours', '團報預留名額保留時數', 'number', p.holdHours) +
-      sel('promoteMode', '遞補模式', ['手動', '自動'], p.promoteMode) +
-      sel('waitOrder', '候補順序', ['報名時間', '人工'], p.waitOrder) +
-      '</div></div><div class="drawer-section"><h3>費用與匯款</h3><div class="grid-2">' +
-      f('price', '原價', 'number', p.price) + f('groupPrice', '團報價（選填）', 'number', p.groupPrice) +
-      f('earlyPrice', '早鳥價（選填）', 'number', p.earlyPrice) + f('earlyGroupPrice', '早鳥團報價（選填）', 'number', p.earlyGroupPrice) + f('earlyDeadline', '早鳥期限（有早鳥價才需要）', 'date', p.earlyDeadline) +
-      f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays) +
-      '<div class="field"><span>匯款期限鄰近通知</span><label class="check" style="min-height:38px"><input type="checkbox" name="remindOn"' + (p.remind && p.remind.on ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>自動寄給還沒匯款的人</span></label></div>' +
-      '<div class="field"><span>期限前幾小時寄</span><input class="input" name="remindHours" type="number" min="1" max="336" value="' + esc(p.remind ? p.remind.hours : 24) + '"' + (ro ? ' disabled' : '') + '><span class="hint">例如 24 是期限前一天、72 是前三天；每人每個期限只寄一次</span></div>' +
-      '</div><div class="field bank-fields" style="margin-top:10px"><span>匯款帳號</span><div class="bank-grid">' +
-      [['bank', '銀行（例如 台灣銀行）'], ['code', '銀行代碼（例如 004）'], ['branch', '分行（例如 新竹分行）'], ['name', '戶名'], ['no', '帳號']].map(function (x) {
-        return '<input class="input" name="bank_' + x[0] + '" placeholder="' + esc(x[1]) + '" aria-label="' + esc(x[1]) + '" value="' + esc(p.bank ? p.bank[x[0]] || '' : '') + '"' + (ro ? ' disabled' : '') + '>';
-      }).join('') + '</div><span class="hint">' + (p.bank ? '信件裡的 {{匯款帳號}} 會顯示：' + esc(p.account) : '目前是舊格式：「' + esc(p.account) + '」，請改填銀行、分行、戶名、帳號') + '</span></div>' +
-      '<div class="hint" style="margin-top:8px">價格變更只影響之後的報名；已報名學員的金額請用「報名費用異動通知」。</div></div>' +
-      '<div class="drawer-section"><div class="row"><h3 class="grow">退款規定</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="rf-add">＋ 新增時間段</button>') + '</div>' +
-      '<p class="hint" style="margin-top:0">每一段是「這天（含）前取消，退還幾 %」，日期可以設到營隊開始前一天；最後一段之後取消不退費。信件放 {{退款規定}} 會變成表格，取消報名表單也會顯示；已繳費的人取消時會看到依今天日期估算的退款金額。</p>' +
-      '<div class="rf-list"></div>' +
-      '<label class="field" style="margin-top:10px"><span>其他說明</span><textarea class="input" name="refundNote" rows="2" maxlength="1000" placeholder="例如：自行取消報名者，需自行負擔衍生費用（郵匯費、手續費等）"' + (ro ? ' disabled' : '') + '></textarea><span class="hint">可以用信件的格式（粗體、顏色…）</span></label></div>' +
-      '<div class="drawer-section"><h3>營隊資訊</h3><div class="grid-2">' +
-      f('name', '營隊名稱', 'text', p.name) + '<div class="field set-sig" style="grid-column:1 / -1"><span>信件署名（每封信最後置中顯示）</span><input class="input" name="signature" placeholder="' + esc((p.name || '營隊名稱') + ' 籌辦團隊 敬上') + '"' + (ro ? ' disabled' : '') + '><span class="hint">留空時用「' + esc(p.name || '營隊名稱') + ' 籌辦團隊 敬上」；選取文字後按上方按鈕加粗體、顏色、螢光、字級</span></div>' + f('regStart', '開始招生日期', 'date', p.regStart, '這天 00:00 起受理報名') + f('regEnd', '預計結束招生日期', 'date', p.regEnd, '這天 23:59 後的報名會先記為「招生期外」') +
-      f('start', '營期開始', 'date', p.start) + f('end', '營期結束', 'date', p.end) +
-      '<div class="field"><span>信件標頭預設顏色</span>' + hexField('set-head', p.headerColor || '#2f5d62') + '<span class="hint">沒自訂顏色的信都用這個（原本是墨綠 #2f5d62）；每種信可在「信件範本」各自改顏色來區分</span></div>' +
-      '</div></div>' +
-      '<div class="drawer-section"><h3>飯店資訊</h3><p class="hint" style="margin-top:0">有住宿時填寫，名稱、地址、電話必填；不需要住宿就全部留空。信件可用 {{飯店資訊}}（整張卡片）、{{飯店名稱}}、{{飯店地址}}、{{飯店電話}}，學員專區會自動顯示（含地圖）。分房請用上方的「分房」按鈕，信件可用 {{房號}}。</p><div class="grid-2">' +
-      f('h_name', '飯店名稱 *', 'text', (p.hotel || {}).name) + f('h_phone', '電話 *', 'text', (p.hotel || {}).phone) +
-      '<div style="grid-column:1 / -1">' + f('h_address', '地址 *', 'text', (p.hotel || {}).address) + '</div>' +
-      f('h_checkin', '入住時間（選填）', 'text', (p.hotel || {}).checkin, '例如 7/1 15:00 後') + f('h_checkout', '退房時間（選填）', 'text', (p.hotel || {}).checkout, '例如 7/3 11:00 前') +
-      '<div style="grid-column:1 / -1">' + f('h_url', '飯店網站（選填）', 'text', (p.hotel || {}).url, 'https:// 開頭') + '</div>' +
-      '<label class="field" style="grid-column:1 / -1"><span>其他說明（選填）</span><textarea class="input" name="h_note" rows="3" maxlength="2000" placeholder="例如：停車資訊、早餐時間、需自備盥洗用品"' + (ro ? ' disabled' : '') + '></textarea></label>' +
-      '</div></div>' +
-      '<div class="drawer-section"><div class="row"><h3 class="grow">聯絡人員</h3>' + (ro ? '' : '<button class="btn sm" type="button" id="ct-add">＋ 新增聯絡人</button>') + '</div>' +
-      '<p class="hint" style="margin-top:0">報名者有疑問時的聯絡窗口。第一格填職稱（總召）或官方帳號名稱（例如 醫工營 IG），官方帳號可以不填姓名；電話、信箱、IG、LINE、連結至少填一項。範本或附註可放 {{聯絡人員}} 指定位置。</p>' +
-      '<div class="ct-list"></div>' +
-      '<label class="check" style="margin-top:10px"><input type="checkbox" name="contactsInMail"' + (p.contactsInMail !== false ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>每封信結尾自動附上聯絡人員（附註上方）</span></label></div>' +
-      '<div class="drawer-section"><div class="row"><h3 class="grow">信件附註</h3>' + (ro ? '' : '<button class="btn sm ghost" type="button" id="set-foot-reset">恢復系統預設</button>') + '</div>' +
-      '<p class="hint" style="margin-top:0">每封信內容之後、署名之前，以分隔線隔開的灰色小字。<span id="set-foot-state"></span>清空表示這個專案不加附註。</p>' +
-      '<div class="field"><textarea class="input" name="footer" rows="5"' + (ro ? ' disabled' : '') + '></textarea></div></div>' +
-      '<div class="drawer-section"><h3>小隊與資料檢查</h3><div class="grid-2">' +
-      f('squads', '預設小隊數', 'number', p.squads || 0, '0 = 不分隊；設定後可用「分小隊」安排，匯出時可依小隊排序') +
-      f('emailDomains', '限定報名信箱網域', 'text', p.emailDomains || '', '例如 gmail.com，多個用逗號分開；留空只檢查格式與常見打錯（gmial.com 等）') +
-      '</div><div class="row wrap" style="gap:8px;margin-top:10px"><button class="btn sm" type="button" id="set-squad-staff">小隊專輔與隨輔…</button><span class="small muted">每個小隊預設 2 位專輔、2 位隨輔，可增減；學員專區會顯示自己的小隊與專隨輔</span></div>' +
-      '<div class="hint" style="margin-top:8px">電話一律檢查是否為 0 開頭的 10 碼；身分證檢查檢查碼。有誤的人會標示並列入警示。</div></div>' +
-      '<div class="drawer-section"><h3>表單欄位對應</h3><p class="hint" style="margin-top:0">系統用關鍵字找欄位，找錯或找不到時請手動指定。</p><div class="grid-2">' +
-      fk.map(function (k) {
-        if (k.multi) {
-          var cur = [].concat(p.mapping[k.key] || []);
-          return '<div class="field multi-map"><span>' + esc(k.label) + '（可複選）</span><div class="multi-q">' + (p.questions || []).map(function (q) {
-            return '<label class="check"><input type="checkbox" name="map_' + k.key + '" value="' + esc(q) + '"' + (cur.indexOf(q) >= 0 ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>' + esc(q) + '</span></label>';
-          }).join('') + '</div><span class="hint">表單把每位同伴分成不同題目時，全部勾起來。</span></div>';
-        }
-        return '<label class="field"><span>' + esc(k.label) + '</span><select class="input" name="map_' + k.key + '">' + qOpts(p.mapping[k.key]) + '</select>' +
-          (k.key === 'lowIncome' ? '<span class="hint">指定後，答「低收／中低收」的報名者先列為「資格審核中」，只寄「報名資訊核對」（信中不提身分、不含匯款），審核通過再寄繳費通知。這題不會出現在任何寄出的信裡。</span>' : '') + '</label>';
-      }).join('') +
-      '</div></div>' +
-      '<div class="drawer-section"><div class="row"><h3 class="grow">名單顯示欄位</h3><button class="btn sm" type="button" id="set-refresh"' + (ro ? ' disabled' : '') + '>重新讀取表單題目</button></div>' +
-      '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' + (p.questions || []).map(function (q) {
-        return '<label class="check"><input type="checkbox" name="disp" value="' + esc(q) + '"' + (p.display.indexOf(q) >= 0 ? ' checked' : '') + '><span>' + esc(q) + '</span></label>';
-      }).join('') + '</div></div>' +
-      '<div class="drawer-section"><h3>報名結果信附上的回覆內容</h3><p class="hint" style="margin-top:0">勾選的題目會以表格附在報名成功、候補、遞補錄取通知最後，讓報名者確認自己的資料。其他範本可放 {{回覆內容}} 指定位置。</p>' +
-      '<label class="check" style="margin-bottom:10px"><input type="checkbox" name="echoMask"' + (p.echoMask ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>身分證字號部分遮蔽（例如 A12****789）。預設不遮蔽，讓報名者確認保險用的完整號碼</span></label>' +
-      '<div class="multi-q">' + mailQuestions().map(function (q) {
-        return '<label class="check"><input type="checkbox" name="echo" value="' + esc(q) + '"' + ((p.echo || []).indexOf(q) >= 0 ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>' + esc(q) + '</span></label>';
-      }).join('') + '</div></div>' +
+      '<form id="set-form"><div class="sf-box"></div>' +
       '<div class="row" style="position:sticky;bottom:0;background:var(--surface);padding:12px 0"><span class="spacer"></span><button class="btn primary" type="submit"' + (ro ? ' disabled' : '') + '>儲存設定</button></div></form>';
-
-    function f(name, label, type, value, hint) {
-      return '<label class="field"><span>' + esc(label) + '</span><input class="input" name="' + name + '" type="' + type + '" value="' + esc(value === undefined ? '' : value) + '"' + (ro ? ' disabled' : '') + '>' + (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') + '</label>';
-    }
-    function sel(name, label, options, value) {
-      return '<label class="field"><span>' + esc(label) + '</span><select class="input" name="' + name + '"' + (ro ? ' disabled' : '') + '>' +
-        options.map(function (o) { return '<option' + (o === value ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
-    }
+    var sf = SettingsForm.build($('.sf-box', d.body), p, {
+      ro: ro, fieldKeys: D.fieldKeys, activeCount: D.stats.active, onSquadStaff: openSquadStaff,
+      onRefresh: function () {
+        withBusy(api('refreshFormQuestions', prefix)).then(function (r) {
+          var msg = r.added.length || r.removed.length ? '新增題目：' + (r.added.join('、') || '無') + '；消失題目：' + (r.removed.join('、') || '無') + '。請確認欄位對應。' : '表單題目沒有變動';
+          toast(msg, !!(r.added.length || r.removed.length));
+          return load().then(function () { d.close(); openSettings('mapping'); });
+        }).catch(function (e) { toast(e.message, true); });
+      }
+    });
 
     $('#set-maint', d.body).addEventListener('click', function () {
       var on = p.status !== '系統維護';
@@ -1358,186 +1648,34 @@ App.page('students', function (root, params) {
       });
     });
 
-    $('#set-refresh', d.body).addEventListener('click', function () {
-      withBusy(api('refreshFormQuestions', prefix)).then(function (r) {
-        var msg = r.added.length || r.removed.length ? '新增題目：' + (r.added.join('、') || '無') + '；消失題目：' + (r.removed.join('、') || '無') + '。請確認欄位對應。' : '表單題目沒有變動';
-        toast(msg, !!(r.added.length || r.removed.length));
-        return load().then(function () { d.close(); openSettings(); });
-      }).catch(function (e) { toast(e.message, true); });
-    });
-
-    bindHexField($('.set-head', d.body));
-    // 退款規定：時間段列表
-    var rfList = $('.rf-list', d.body);
-    function rfRow(t) {
-      t = t || {};
-      var row = el('<div class="rf-row"><input class="input" type="date" aria-label="這天（含）前取消"><span class="small muted">前取消，退還</span><input class="input" type="number" min="0" max="100" step="1" aria-label="退還比例"><span class="small muted">%</span>' +
-        (ro ? '' : '<button class="btn sm ghost" type="button" aria-label="刪除這個時間段">刪除</button>') + '</div>');
-      var ins = $$('input', row);
-      ins[0].value = t.until || ''; ins[1].value = t.pct === undefined ? '' : t.pct;
-      ins.forEach(function (i) { i.disabled = ro; });
-      if (!ro) $('button', row).addEventListener('click', function () { row.remove(); rfEmpty(); });
-      rfList.appendChild(row);
-    }
-    function rfEmpty() {
-      var e = $('.rf-empty', rfList);
-      if (!$('.rf-row', rfList) && !e) rfList.appendChild(el('<div class="small muted rf-empty">還沒有時間段（不設定時信裡與表單不顯示退款比例）</div>'));
-      if ($('.rf-row', rfList) && e) e.remove();
-    }
-    ((p.refund && p.refund.tiers) || []).forEach(rfRow);
-    rfEmpty();
-    $('[name=refundNote]', d.body).value = (p.refund && p.refund.note) || '';
-    $('[name=h_note]', d.body).value = (p.hotel && p.hotel.note) || '';
-    if ($('#rf-add', d.body)) $('#rf-add', d.body).addEventListener('click', function () {
-      var rows = $$('.rf-row', rfList), last = rows.length ? $$('input', rows[rows.length - 1]) : null;
-      rfRow({ pct: last && last[1].value !== '' ? Math.max(0, Number(last[1].value) - 50) : 100 });
-      rfEmpty();
-    });
-    $('#set-squad-staff', d.body).addEventListener('click', function () {
-      var n = Number($('[name=squads]', d.body).value) || 0;
-      if (n !== (p.squads || 0)) { toast('小隊數改了還沒儲存，請先按「儲存設定」', true); return; }
-      openSquadStaff();
-    });
-    var ctList = $('.ct-list', d.body);
-    function ctRow(c) {
-      c = c || {};
-      var dis = ro ? ' disabled' : '';
-      var r = el('<div class="ct-row">' +
-        '<input class="input" data-k="title" placeholder="職稱或名稱" title="職稱（例如 總召）或官方帳號名稱（例如 醫工營 IG）" maxlength="40"' + dis + '>' +
-        '<input class="input" data-k="name" placeholder="姓名（官方帳號可不填）" maxlength="40"' + dis + '>' +
-        '<input class="input" data-k="phone" placeholder="電話" maxlength="40" inputmode="tel"' + dis + '>' +
-        '<input class="input" data-k="email" placeholder="信箱" maxlength="120" type="email"' + dis + '>' +
-        '<input class="input" data-k="ig" placeholder="IG 帳號（@帳號 或網址）" maxlength="200"' + dis + '>' +
-        '<input class="input" data-k="line" placeholder="LINE ID 或加好友連結" maxlength="200"' + dis + '>' +
-        '<input class="input" data-k="link" placeholder="其他連結 https://…（粉專、官網）" maxlength="300"' + dis + '>' +
-        (ro ? '' : '<button class="btn sm ghost" type="button" title="移除" aria-label="移除">✕</button>') + '</div>');
-      $$('input', r).forEach(function (i) { i.value = c[i.dataset.k] || ''; });
-      if (!ro) $('button', r).addEventListener('click', function () { r.remove(); if (!ctList.children.length) ctList.appendChild(ctEmpty()); });
-      return r;
-    }
-    function ctEmpty() { return el('<div class="small muted ct-empty">尚未設定聯絡人員</div>'); }
-    (p.contacts || []).forEach(function (c) { ctList.appendChild(ctRow(c)); });
-    if (!ctList.children.length) ctList.appendChild(ctEmpty());
-    if ($('#ct-add', d.body)) $('#ct-add', d.body).addEventListener('click', function () {
-      if ($$('.ct-row', ctList).length >= 20) { toast('聯絡人員最多 20 位', true); return; }
-      var e0 = $('.ct-empty', ctList); if (e0) e0.remove();
-      var r = ctRow(); ctList.appendChild(r); $('input', r).focus();
-    });
-    var sigIn = $('[name=signature]', d.body);
-    sigIn.value = p.signature || '';
-    var sigEd = chipEditor(sigIn);
-    if (!ro) sigIn.parentNode.insertBefore(formatToolbar(sigEd, { vars: true }), sigIn);
-    var footTa = $('[name=footer]', d.body);
-    footTa.value = p.footerEffective || '';
-    var footEd = chipEditor(footTa);
-    footTa.parentNode.insertBefore(formatToolbar(footEd, { vars: true }), footTa);
-    $('#set-foot-state', d.body).textContent = p.footer === '' ? '目前使用系統預設。' : p.footer === '-' ? '目前這個專案不加附註。' : '目前是這個專案自訂的內容。';
-    if ($('#set-foot-reset', d.body)) $('#set-foot-reset', d.body).addEventListener('click', function () { footEd.value = p.footerSystem || ''; footTa.dispatchEvent(new Event('input', { bubbles: true })); toast('已填入系統預設，按「儲存設定」生效'); });
-    guardDates($('#set-form', d.body));
     $('#set-form', d.body).addEventListener('submit', function (e) {
       e.preventDefault();
-      var form = e.target;
-      var dateErr = dateOrderError({ regStart: form.elements.regStart.value, earlyDeadline: form.elements.earlyDeadline.value, regEnd: form.elements.regEnd.value, start: form.elements.start.value, end: form.elements.end.value });
-      if (dateErr) { toast(dateErr, true); return; }
-      if ((Number(form.elements.earlyPrice.value) > 0 || Number(form.elements.earlyGroupPrice.value) > 0) && !form.elements.earlyDeadline.value) { toast('有填早鳥價時，請填早鳥期限', true); return; }
-      var patch = {};
-      ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyGroupPrice', 'earlyDeadline', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains'].forEach(function (k) {
-        var v = form.elements[k].value;
-        if (String(v) !== String(p[k] === undefined ? '' : p[k])) patch[k] = v;
-      });
-      var rh = Number(form.elements.remindHours.value);
-      if (!(rh >= 1 && rh <= 336)) { toast('匯款期限提醒請填 1 到 336 小時', true); return; }
-      var remind = { on: form.elements.remindOn.checked, hours: Math.round(rh) };
-      if (!p.remind || remind.on !== p.remind.on || remind.hours !== p.remind.hours) patch.remind = remind;
-      var bank = {};
-      ['bank', 'code', 'branch', 'name', 'no'].forEach(function (k) { bank[k] = form.elements['bank_' + k].value.trim(); });
-      var bankChanged = ['bank', 'code', 'branch', 'name', 'no'].some(function (k) { return bank[k] !== (p.bank ? p.bank[k] || '' : ''); });
-      if (bankChanged || !p.bank) {
-        var be = bankError(bank);
-        if (be && (bankChanged || p.bank)) { toast(be, true); return; }
-        if (!be) patch.bank = bank;
-      }
-      var mapping = {};
-      fk.forEach(function (k) {
-        if (k.multi) { var arr = $$('input[name=map_' + k.key + ']:checked', form).map(function (i) { return i.value; }); if (arr.length) mapping[k.key] = arr; return; }
-        var v = form.elements['map_' + k.key].value; if (v) mapping[k.key] = v;
-      });
-      if (JSON.stringify(mapping) !== JSON.stringify(p.mapping)) patch.mapping = mapping;
-      var echo = $$('input[name=echo]:checked', form).map(function (i) { return i.value; });
-      if (JSON.stringify(echo) !== JSON.stringify(p.echo || [])) patch.echo = echo;
-      var hc = normHex($('.set-head .fmt-hexin', form).value);
-      if (!hc) { toast('信件標頭顏色格式不正確，請用 # 加 6 碼（例如 #2f5d62）', true); return; }
-      if (hc !== normHex(p.headerColor || '#2f5d62')) patch.headerColor = hc;
-      var foot = form.elements.footer.value.replace(/\r\n/g, '\n').trim();
-      if (foot !== String(p.footerEffective || '').trim()) patch.footer = foot;
-      var tiers = $$('.rf-row', form).map(function (r) { var i = $$('input', r); return { until: i[0].value, pct: i[1].value }; })
-        .filter(function (t) { return t.until || t.pct !== ''; });
-      var rfErr = '';
-      var rs = form.elements.regStart.value, cs = form.elements.start.value, seen = {};
-      var re = '';
-      if (cs) { var cd = new Date(cs + 'T00:00:00Z'); cd.setUTCDate(cd.getUTCDate() - 1); re = cd.toISOString().slice(0, 10); }   // 營隊開始前一天
-      tiers.forEach(function (t) {
-        if (rfErr) return;
-        if (!t.until) rfErr = '退款規定的日期請填完整';
-        else if (t.pct === '' || !(Number(t.pct) >= 0 && Number(t.pct) <= 100)) rfErr = '退還比例請填 0 到 100';
-        else if (rs && t.until < rs) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）早於開始招生日期';
-        else if (re && t.until > re) rfErr = '退款規定的日期（' + t.until.replace(/-/g, '/') + '）要在營隊開始前一天（' + re.replace(/-/g, '/') + '）以前';
-        else if (seen[t.until]) rfErr = '退款規定有重複的日期';
-        seen[t.until] = true;
-      });
-      if (rfErr) { toast(rfErr, true); return; }
-      var refund = { tiers: tiers.map(function (t) { return { until: t.until, pct: Math.round(Number(t.pct)) }; }).sort(function (a, b) { return a.until < b.until ? -1 : 1; }), note: form.elements.refundNote.value.replace(/\r\n/g, '\n').trim() };
-      if (JSON.stringify(refund) !== JSON.stringify(p.refund || { tiers: [], note: '' })) patch.refund = refund;
-      var hotel = {};
-      ['name', 'address', 'phone', 'checkin', 'checkout', 'url', 'note'].forEach(function (k) { hotel[k] = form.elements['h_' + k].value.replace(/\r\n/g, '\n').trim(); });
-      var hAny = Object.keys(hotel).some(function (k) { return hotel[k]; });
-      if (hAny) {
-        var hMiss = [['name', '名稱'], ['address', '地址'], ['phone', '電話']].filter(function (x) { return !hotel[x[0]]; }).map(function (x) { return x[1]; });
-        if (hMiss.length) { toast('飯店資訊請填' + hMiss.join('、') + '（不需要住宿就全部留空）', true); return; }
-        if (hotel.url && !/^https?:\/\/[^\s"'<>]+$/i.test(hotel.url)) { toast('飯店網站需以 https:// 開頭', true); return; }
-      }
-      var oldH = p.hotel || {};
-      if (Object.keys(hotel).some(function (k) { return hotel[k] !== (oldH[k] || ''); })) patch.hotel = hotel;
-      var contacts = $$('.ct-row', form).map(function (r) {
-        var c = {}; $$('input', r).forEach(function (i) { c[i.dataset.k] = i.value.trim(); }); return c;
-      }).filter(function (c) { return c.title || c.name || c.phone || c.email || c.ig || c.line || c.link; });
-      var ctErr = '';
-      contacts.forEach(function (c, i) {
-        if (ctErr) return;
-        var who = c.name || c.title;
-        if (!who) ctErr = '第 ' + (i + 1) + ' 位聯絡人員請填職稱、名稱或姓名';
-        else if (!c.phone && !c.email && !c.ig && !c.line && !c.link) ctErr = '聯絡人員「' + who + '」請至少填一種聯絡方式（電話、信箱、IG、LINE 或連結）';
-        else if (c.ig && !igLink(c.ig)) ctErr = '聯絡人員「' + who + '」的 IG 請填帳號（例如 @camp_2027）或 instagram.com 網址';
-        else if (c.line && !lineLink(c.line)) ctErr = '聯絡人員「' + who + '」的 LINE 請填 LINE ID 或 https:// 開頭的加好友連結';
-        else if (c.link && !/^https?:\/\/[^\s"'<>]+$/i.test(c.link)) ctErr = '聯絡人員「' + who + '」的連結需以 https:// 開頭';
-        else if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) ctErr = '聯絡人員「' + who + '」的信箱格式不正確';
-      });
-      if (ctErr) { toast(ctErr, true); return; }
-      contacts.forEach(function (c) { c.email = c.email.toLowerCase(); });
-      if (JSON.stringify(contacts) !== JSON.stringify(p.contacts || [])) patch.contacts = contacts;
-      var cim = form.elements.contactsInMail.checked;
-      if (cim !== (p.contactsInMail !== false)) patch.contactsInMail = cim;
-      var mask = form.elements.echoMask.checked;
-      if (mask !== !!p.echoMask) patch.echoMask = mask;
-      var disp = $$('input[name=disp]:checked', form).map(function (i) { return i.value; });
-      if (JSON.stringify(disp) !== JSON.stringify(p.display)) patch.display = disp;
+      var patch;
+      try { patch = sf.patch(); } catch (err) { toast(err.message, true); return; }
       if (!Object.keys(patch).length) { toast('沒有變更'); return; }
       var priceKeys = ['price', 'groupPrice', 'earlyPrice', 'earlyGroupPrice', 'earlyDeadline'].filter(function (k) { return k in patch; });
       withBusy(api('updateProjectSettings', prefix, patch)).then(function (r) {
-        toast('已儲存 ' + r.changed + ' 項設定' + (r.promoted ? '，自動遞補 ' + r.promoted + ' 人' : ''));
+        toast(r.changed ? '已儲存 ' + r.changed + ' 項設定' + (r.promoted ? '，自動遞補 ' + r.promoted + ' 人' : '') : '沒有變更');
         d.close();
         return load().then(function () { if (priceKeys.length) return reviewPrices(); });
       }).catch(function (err) { toast(err.message, true); });
     });
+    if (focusKey) setTimeout(function () { sf.focus(focusKey); }, 60);
   }
 
-  /* ---------- 群發 ---------- */
-  function openBulk() {
+  /* ---------- 群發 ----------
+   * 編輯 → 預覽（確認畫面）→ 寄出；確認畫面按「返回修改」回到同一個編輯視窗，內容都還在。
+   * 也可以「先寄一封給自己」看實際排版，或「排程寄出」由定時工作在指定時間寄。 */
+  var bulkBody = null;   // 這次開啟頁面期間保留群發草稿
+  var bulkBase;          // 草稿剛建立時的內容（判斷有沒有改動）
+  function bulkForm() {
     var statuses = Object.keys(D.statuses).map(function (k) { return D.statuses[k]; }).filter(function (x) { return x !== '報名失敗'; });
     var body = el('<form style="display:flex;flex-direction:column;gap:14px" onsubmit="return false">' +
-      '<div class="field"><span class="small muted">收件對象（依狀態）</span><div class="row wrap" style="gap:14px;margin-top:6px">' +
-      statuses.map(function (s) { return '<label class="check"><input type="checkbox" name="st" value="' + esc(s) + '"' + (s === '程序完成' ? ' checked' : '') + '><span>' + esc(s) + '</span></label>'; }).join('') +
+      '<div class="bulk-sched" data-nodirty></div>' +
+      '<div class="field bulk-st"><span class="small muted">收件對象（依狀態）</span><div class="row wrap" style="gap:14px;margin-top:6px">' +
+      statuses.map(function (x) { return '<label class="check"><input type="checkbox" name="st" value="' + esc(x) + '"' + (x === '程序完成' ? ' checked' : '') + '><span>' + esc(x) + '</span></label>'; }).join('') +
       '</div><span class="hint">只寄給勾選的狀態；候補中、申請取消、報名取消預設不勾，要寄給他們才勾。</span></div>' +
+      (consentOpen() ? '<label class="check"><input type="checkbox" name="unsigned"><span>只寄給還沒簽同意書的人（含被要求重簽的）</span></label>' : '') +
       '<label class="field"><span>通知類型</span><select class="input" name="code"><option value="PRE_CAMP">營前通知（使用範本）</option><option value="CUSTOM">特殊訊息（自訂主旨與內容）</option></select></label>' +
       '<div class="field" data-for="PRE_CAMP"><span>通知內容</span><textarea class="input" name="message" placeholder="例如：報到時間、地點、攜帶物品…"></textarea></div>' +
       '<label class="field hidden" data-for="CUSTOM"><span>主旨</span><input class="input" name="subject"></label>' +
@@ -1549,40 +1687,115 @@ App.page('students', function (root, params) {
     msgTa.parentNode.appendChild(presetChips(msgEd, P('message'), '\n'));
     bodyTa.parentNode.insertBefore(formatToolbar(bodyEd, { vars: true }), bodyTa);
     bodyEd.el.parentNode.insertBefore(presetChips(bodyEd, P('message'), '\n'), bodyEd.el.nextSibling);
+    // 勾「只寄給還沒簽同意書的人」：特殊訊息還沒寫時帶入提醒簽署的範例
+    if (body.elements.unsigned) body.elements.unsigned.addEventListener('change', function () {
+      if (!this.checked || body.elements.subject.value.trim() || bodyEd.value.trim()) return;
+      body.elements.code.value = 'CUSTOM'; body.elements.code.dispatchEvent(new Event('change'));
+      body.elements.subject.value = '【{{營隊名稱}}】請完成同意書簽署';
+      bodyEd.value = ('{{姓名}} 您好：\n\n我們還沒有收到您的同意書，請在營隊開始前完成簽署（未滿 18 歲需要家長一起簽名）。\n{{簽署同意書按鈕}}\n{{學員專區}}');
+    });
     body.elements.code.addEventListener('change', function () {
       $$('[data-for]', body).forEach(function (x) { x.classList.toggle('hidden', x.getAttribute('data-for') !== body.elements.code.value); });
     });
-    modal({
-      title: '群發通知', desc: '寄出前會再顯示收件人數與信件預覽', body: body, wide: true,
-      buttons: [{ label: '取消', value: null }, {
-        label: '預覽', cls: 'primary', value: function () {
-          return {
-            statuses: $$('input[name=st]:checked', body).map(function (i) { return i.value; }),
-            code: body.elements.code.value, message: body.elements.message.value,
-            subject: body.elements.subject.value, body: body.elements.body.value
-          };
-        }
-      }]
-    }).then(function (opts) {
-      if (!opts) return;
-      withBusy(api('previewBulk', prefix, opts)).then(function (pv) {
-        var extra = ['收件人 ' + pv.count + ' 人：' + pv.names.slice(0, 12).join('、') + (pv.count > 12 ? '…' : '')];
-        if (!pv.enough) extra.push('注意：今日剩餘額度 ' + pv.quota + ' 封，不足以寄出全部');
-        pv.summary = [];
-        return mailConfirm(pv, extra).then(function (ok) {
-          if (!ok) { api('cancelBulk', prefix, pv.label); return; }
-          return withBusy(api('runBulk', prefix, opts)).then(function (r) {
-            toast('已寄出 ' + r.sent + ' 封' + (r.failed.length ? '，失敗 ' + r.failed.length + ' 封：' + r.failed.join('、') : ''), !!r.failed.length);
-            load();
-          });
+    return body;
+  }
+  function bulkOpts(body) {
+    return {
+      statuses: $$('input[name=st]:checked', body).map(function (i) { return i.value; }),
+      consent: body.elements.unsigned && body.elements.unsigned.checked ? 'unsigned' : '',
+      code: body.elements.code.value, message: body.elements.message.value,
+      subject: body.elements.subject.value, body: body.elements.body.value
+    };
+  }
+  /** 視窗內檢查：錯誤顯示在欄位旁 */
+  function bulkCheck(body) {
+    clearFieldErrors(body);
+    var o = bulkOpts(body);
+    if (!o.statuses.length) { fieldError($('input[name=st]', body), '請至少勾選一種狀態'); return false; }
+    if (o.code === 'PRE_CAMP' && !o.message.trim()) { fieldError(body.elements.message, '請填寫通知內容'); return false; }
+    if (o.code === 'CUSTOM' && !o.subject.trim()) { fieldError(body.elements.subject, '請填寫主旨'); return false; }
+    if (o.code === 'CUSTOM' && !o.body.trim()) { fieldError(body.elements.body, '請填寫內容'); return false; }
+    return true;
+  }
+  /** 已排程的群發：列在群發視窗最上方，可以取消 */
+  function drawScheduled(box) {
+    var list = D.scheduled || [];
+    box.innerHTML = '';
+    if (!list.length) return;
+    box.appendChild(el('<div class="small muted">已排程（到時間由系統自動寄出）</div>'));
+    list.forEach(function (x) {
+      var row = el('<div class="sched-row"><span class="grow"><b></b> <span class="small muted"></span></span><button class="btn sm ghost" type="button">取消排程</button></div>');
+      $('b', row).textContent = fmtTime(x.at) + '　' + x.label + (x.subject ? '「' + x.subject + '」' : '');
+      $('.small', row).textContent = '寄給：' + x.statuses.join('、') + '・' + x.byName;
+      $('button', row).addEventListener('click', function () {
+        confirmDialog({ title: '取消這封排程群發？', lines: [fmtTime(x.at) + ' 寄出的' + x.label], okLabel: '取消排程', cancelLabel: '保留', danger: true }).then(function (ok) {
+          if (!ok) return;
+          withBusy(api('cancelScheduledBulk', prefix, x.id)).then(function (l) { D.scheduled = l; drawScheduled(box); toast('已取消排程'); }).catch(function (e) { toast(e.message, true); });
         });
-      }).catch(function (e) { toast(e.message, true); });
+      });
+      box.appendChild(row);
     });
+  }
+  function openBulk() {
+    if (!bulkBody) { bulkBody = bulkForm(); bulkBase = undefined; }
+    var body = bulkBody;
+    drawScheduled($('.bulk-sched', body));
+    if (bulkBase === undefined) setTimeout(function () { bulkBase = formSnapshot(body); }, 70);
+    modal({
+      title: '群發通知', desc: '寄出前會再顯示收件人數與信件預覽', body: body, wide: true, base: bulkBase,
+      buttons: [{ label: '關閉', value: null }, {
+        label: '先寄一封給自己', cls: 'ghost',
+        validate: function () { return bulkCheck(body); },
+        value: function () { return bulkOpts(body); },
+        run: function (o) {
+          return api('testBulk', prefix, o).then(function (r) { toast('已寄一封測試信到 ' + r.to + '（用「' + r.sample + '」的資料代入）'); return false; });
+        }
+      }, {
+        label: '排程寄出…', cls: 'ghost',
+        validate: function () { return bulkCheck(body); },
+        value: function () { return bulkOpts(body); },
+        run: function (o) {
+          var d0 = new Date(Date.now() + 3600000);
+          var def = d0.getFullYear() + '-' + pad(d0.getMonth() + 1) + '-' + pad(d0.getDate()) + 'T' + pad(d0.getHours()) + ':00';
+          return formDialog({
+            title: '排程寄出', okLabel: '排程', desc: '到時間由系統的定時工作寄出（約 5 分鐘內），收件人依當時的狀態決定。排程後可在群發視窗最上方取消。',
+            fields: [{ name: 'at', label: '寄出時間', type: 'datetime-local', required: true, value: def }],
+            check: function (v) { var t = new Date(v.at); return isNaN(t) ? { name: 'at', msg: '請選擇日期與時間' } : t.getTime() < Date.now() + 5 * 60000 ? { name: 'at', msg: '至少要在 5 分鐘之後' } : ''; },
+            submit: function (v) { return api('scheduleBulk', prefix, o, new Date(v.at).toISOString()).then(function () { return v; }); }
+          }).then(function (v) {
+            if (!v) return false;
+            toast('已排程：' + fmtTime(new Date(v.at)) + ' 寄出');
+            bulkBody = null;
+            return load().then(function () { return 'scheduled'; });
+          });
+        }
+      }, {
+        label: '預覽', cls: 'primary',
+        validate: function () { return bulkCheck(body); },
+        value: function () { return bulkOpts(body); },
+        run: function (o) { return api('previewBulk', prefix, o).then(function (pv) { return { opts: o, pv: pv }; }); }
+      }]
+    }).then(function (r) {
+      if (!r) { bulkBody = null; return; }   // 關閉（有改動時已確認放棄）
+      if (r === 'scheduled') return;
+      var pv = r.pv, opts = r.opts;
+      var extra = ['收件人 ' + pv.count + ' 人：' + pv.names.slice(0, 12).join('、') + (pv.count > 12 ? '…' : '')];
+      if (!pv.enough) extra.push('注意：今日剩餘額度 ' + pv.quota + ' 封，不足以寄出全部');
+      pv.summary = [];
+      return mailConfirm(pv, extra, { cancelLabel: '返回修改' }).then(function (ok) {
+        if (!ok) { api('cancelBulk', prefix, pv.label).catch(function () {}); openBulk(); return; }   // 回到編輯畫面，內容保留
+        return withBusy(api('runBulk', prefix, opts)).then(function (res) {
+          toast('已寄出 ' + res.sent + ' 封' + (res.failed.length ? '，失敗 ' + res.failed.length + ' 封：' + res.failed.join('、') : ''), !!res.failed.length);
+          bulkBody = null;
+          load();
+        });
+      });
+    }).catch(function (e) { toast(e.message, true); });
   }
 
   /* ---------- 名單顯示欄位與強調顯示 ---------- */
   function openColumns() {
-    var p = D.project, nameCol = p.mapping.name, ro = D.readOnly, hl = JSON.parse(JSON.stringify(p.highlight || {}));
+    var p = D.project, nameCol = p.mapping.name, ro = RO(), hl = JSON.parse(JSON.stringify(p.highlight || {}));
     // 每題實際出現過的答案（多選題拆開），依次數排序，給「答案是…」勾選
     function answers(q) {
       var cnt = {};
@@ -1619,26 +1832,38 @@ App.page('students', function (root, params) {
       sel.addEventListener('change', drawVals);
       drawVals();
     });
-    modal({ title: '名單顯示欄位與強調', body: body, wide: true, buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
-      if (!ok) return;
+    var patch = null;
+    // 檢查在視窗內：選了「答案是…」卻沒有答案時，錯誤顯示在那一題旁邊
+    function collect() {
+      clearFieldErrors(body);
       var disp = $$('input[name=disp]:checked', body).map(function (i) { return i.value; });
-      var out = {}, bad = '';
+      var out = {}, badRow = null;
       $$('.col-row', body).forEach(function (row) {
-        var sel = $('.col-hl', row); if (!sel || !sel.value) return;
+        var hs = $('.col-hl', row); if (!hs || !hs.value) return;
         var q = row.getAttribute('data-q');
-        if (sel.value === 'filled') { out[q] = { mode: 'filled', values: [] }; return; }
+        if (hs.value === 'filled') { out[q] = { mode: 'filled', values: [] }; return; }
         var vals = $$('.col-opts input:checked', row).map(function (i) { return i.value; })
           .concat(String(($('.col-extra', row) || {}).value || '').split(/[、,，\n]+/).map(function (x) { return x.trim(); }).filter(String));
-        if (!vals.length) { bad = bad || q; return; }
+        if (!vals.length) { badRow = badRow || row; return; }
         out[q] = { mode: 'match', values: vals };
       });
-      if (bad) { toast('「' + bad + '」選了「答案是…」，請勾選或輸入要強調的答案', true); return; }
-      var patch = {};
-      if (JSON.stringify(disp) !== JSON.stringify(p.display)) patch.display = disp;
-      if (JSON.stringify(out) !== JSON.stringify(p.highlight || {})) patch.highlight = out;
-      if (!Object.keys(patch).length) { toast('沒有變更'); return; }
-      withBusy(api('updateProjectSettings', prefix, patch)).then(function () { toast('已更新顯示欄位與強調'); return load(); }).catch(function (e) { toast(e.message, true); });
-    });
+      if (badRow) { fieldError($('.col-extra', badRow) || $('.col-hl', badRow), '選了「答案是…」，請勾選或輸入要強調的答案'); return false; }
+      patch = {};
+      // 比對前正規化：顯示欄位依題目順序、去掉空值；強調規則依題目排序
+      var norm = function (arr) { return (arr || []).filter(function (x) { return x && (p.questions || []).indexOf(x) >= 0; }); };
+      var sortObj = function (o) { var r = {}; Object.keys(o || {}).sort().forEach(function (k) { r[k] = o[k]; }); return JSON.stringify(r); };
+      var oldDisp = (p.questions || []).filter(function (q) { return norm(p.display).indexOf(q) >= 0; });
+      if (JSON.stringify(disp) !== JSON.stringify(oldDisp)) patch.display = disp;
+      if (sortObj(out) !== sortObj(p.highlight)) patch.highlight = out;
+      return true;
+    }
+    modal({ title: '名單顯示欄位與強調', body: body, wide: true, buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, {
+      label: '儲存', cls: 'primary', validate: collect, value: true,
+      run: function () {
+        if (!Object.keys(patch).length) { toast('沒有變更'); return true; }
+        return api('updateProjectSettings', prefix, patch).then(function () { toast('已更新顯示欄位與強調'); return load(); }).then(function () { return true; });
+      }
+    }] });
   }
 
   /* ---------- 分小隊 ---------- */
@@ -1650,7 +1875,7 @@ App.page('students', function (root, params) {
   function openSquads() {
     var n = D.project.squads || 0;
     if (!(n > 0)) {
-      if (D.readOnly) { toast('這個專案沒有設定小隊數', true); return; }
+      if (RO()) { toast('這個專案沒有設定小隊數', true); return; }
       formDialog({ title: '設定小隊數', desc: '要分幾個小隊？之後可在專案設定修改。', okLabel: '下一步',
         fields: [{ name: 'squads', label: '小隊數', type: 'number', required: true, value: 4 }] }).then(function (v) {
         if (!v) return;
@@ -1670,7 +1895,7 @@ App.page('students', function (root, params) {
       '<span class="small muted">自動分配會平均人數' + (list.some(genderOf) ? '並平衡男女' : '') + '，同團報的人盡量同隊</span></div>' +
       '<div class="squad-list">' + list.map(function (s) {
         return '<div class="squad-row" data-id="' + esc(s.id) + '"><div class="grow"><b>' + esc(s.name) + '</b> <span class="small muted">' + esc(s.status) + (genderOf(s) ? '・' + genderOf(s) : '') + (s.groupId ? '・團報' : '') + '</span></div>' +
-          '<select class="input"' + (D.readOnly ? ' disabled' : '') + '>' + opts + '</select></div>';
+          '<select class="input"' + (RO() ? ' disabled' : '') + '>' + opts + '</select></div>';
       }).join('') + '</div></div>');
     function sync() {
       $$('.squad-row', body).forEach(function (r) { $('select', r).value = cur[r.getAttribute('data-id')]; });
@@ -1684,7 +1909,7 @@ App.page('students', function (root, params) {
     $('[data-a=auto]', body).addEventListener('click', function () {
       var size = [], sex = [];
       for (var i = 0; i <= n; i++) { size.push(0); sex.push({ '男': 0, '女': 0, '': 0 }); }
-      list.forEach(function (s) { var q = Number(cur[s.id]); if (q) { size[q]++; sex[q][genderOf(s)]++; } });
+      list.forEach(function (s) { var sqn = Number(cur[s.id]); if (sqn) { size[sqn]++; sex[sqn][genderOf(s)]++; } });
       var todo = list.filter(function (s) { return cur[s.id] === ''; });
       // 團報的人先排在一起，再依性別、筆畫
       var groupSquad = {};
@@ -1709,19 +1934,21 @@ App.page('students', function (root, params) {
     $('.squad-sum', body).insertAdjacentHTML('afterend', '<div><button class="btn sm ghost" type="button" data-a="staff">各小隊專輔與隨輔…</button></div>');
     $('[data-a=staff]', body).addEventListener('click', function () { openSquadStaff(); });
     modal({ title: '分小隊', desc: '共 ' + n + ' 隊，' + list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回。', body: body, wide: true,
-      buttons: D.readOnly ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
-      if (!ok) return;
-      var diff = {};
-      list.forEach(function (s) { var before = s.squad === '' ? '' : String(s.squad); if (cur[s.id] !== before) diff[s.id] = cur[s.id]; });
-      if (!Object.keys(diff).length) { toast('沒有變更'); return; }
-      withBusy(api('setSquads', prefix, diff)).then(function (r) { toast('已更新 ' + r.changed + ' 人的小隊'); return load(); }).catch(function (e) { toast(e.message, true); });
-    });
+      buttons: RO() ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, {
+        label: '儲存', cls: 'primary', value: true,
+        run: function () {
+          var diff = {};
+          list.forEach(function (s) { var before = s.squad === '' ? '' : String(s.squad); if (cur[s.id] !== before) diff[s.id] = cur[s.id]; });
+          if (!Object.keys(diff).length) { toast('沒有變更'); return true; }
+          return api('setSquads', prefix, diff).then(function (r) { toast('已更新 ' + r.changed + ' 人的小隊'); return load(); }).then(function () { return true; });
+        }
+      }] });
   }
 
   /* ---------- 分房：房間清單＋每位學員的房間 ---------- */
   function roomGender(label) { return /女/.test(label || '') ? '女' : /男/.test(label || '') ? '男' : ''; }
   function openRooms() {
-    var ro = D.readOnly, cfg = D.project.rooms || { show: true, mates: true, rooms: [] };
+    var ro = RO(), cfg = D.project.rooms || { show: true, mates: true, rooms: [] };
     var list = D.students.filter(function (s) { return tierOk(s); }).sort(function (a, b) { return STROKE(a.name, b.name); });
     var cur = {};
     list.forEach(function (s) { cur[s.id] = s.room || ''; });
@@ -1777,10 +2004,10 @@ App.page('students', function (root, params) {
       $('[data-a=batch]', body).addEventListener('click', function () {
         formDialog({ title: '一次新增多間房', desc: '房號是數字時，從起始號碼連續新增，例如 301 到 310。', okLabel: '新增',
           fields: [{ name: 'from', label: '起始房號', type: 'number', required: true }, { name: 'to', label: '結束房號', type: 'number', required: true },
-            { name: 'label', label: '類型（選填，例如 男生四人房）' }, { name: 'beds', label: '每間床位（選填）', type: 'number' }] }).then(function (v) {
+            { name: 'label', label: '類型（選填，例如 男生四人房）' }, { name: 'beds', label: '每間床位（選填）', type: 'number' }],
+          check: function (v) { var a0 = Number(v.from), z0 = Number(v.to); return a0 > 0 && z0 >= a0 && z0 - a0 < 100 ? '' : { name: 'to', msg: '房號範圍不正確（結束要大於等於起始，一次最多 100 間）' }; } }).then(function (v) {
           if (!v) return;
           var a = Number(v.from), z = Number(v.to);
-          if (!(a > 0 && z >= a && z - a < 100)) { toast('房號範圍不正確（一次最多 100 間）', true); return; }
           var have = {}; rooms().forEach(function (x) { have[x.no] = true; });
           for (var i = a; i <= z; i++) if (!have[String(i)]) roomRow({ no: String(i), label: v.label || '', beds: v.beds || '' });
           draw();
@@ -1811,37 +2038,273 @@ App.page('students', function (root, params) {
       });
     }
     draw();
-    modal({ title: '分房', desc: list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回；學員專區與信件的 {{房號}} 會顯示房間。', body: body, wide: true,
-      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, { label: '儲存', cls: 'primary', value: true }] }).then(function (ok) {
-      if (!ok) return;
-      var rs = rooms(), seen = {}, err = '';
-      rs.forEach(function (x) {
-        if (err) return;
-        if (!x.no) err = '每間房都要填房號';
-        else if (seen[x.no]) err = '房號重複：' + x.no;
-        else if (x.beds !== '' && !(x.beds >= 1 && x.beds <= 50)) err = '房號 ' + x.no + ' 的床位請填 1 到 50';
-        seen[x.no] = true;
+    var newCfg = null, first = {}, later = {}, nChanged = 0, cfgChanged = false;
+    // 檢查在視窗內：房號空白、重複、床位錯誤時標在那一間房旁邊，房間和分配都不會不見
+    function check() {
+      clearFieldErrors(body);
+      var rows = $$('.room-row', rl), seen = {}, bad = null;
+      rows.forEach(function (r) {
+        if (bad) return;
+        var no = $('[data-k=no]', r).value.trim(), beds = $('[data-k=beds]', r).value.trim();
+        var any = no || $('[data-k=label]', r).value.trim() || $('[data-k=note]', r).value.trim() || beds;
+        if (!any) return;
+        if (!no) bad = [$('[data-k=no]', r), '請填房號'];
+        else if (seen[no]) bad = [$('[data-k=no]', r), '房號重複：' + no];
+        else if (beds !== '' && !(Number(beds) >= 1 && Number(beds) <= 50)) bad = [$('[data-k=beds]', r), '床位請填 1 到 50'];
+        seen[no] = true;
       });
-      if (err) { toast(err, true); return; }
-      var lost = list.filter(function (s) { return cur[s.id] && !seen[cur[s.id]]; }).map(function (s) { return s.name; });
-      if (lost.length) { toast(lost.join('、') + ' 的房間已不在清單，請改分其他房間', true); return; }
-      var newCfg = { show: $('[name=show]', body).checked, mates: $('[name=mates]', body).checked, rooms: rs };
+      if (bad) { fieldError(bad[0], bad[1]); return false; }
+      var lost = list.filter(function (s) { return cur[s.id] && !seen[cur[s.id]]; });
+      if (lost.length) {
+        var row = $('.squad-row[data-id="' + lost[0].id + '"]', body);
+        fieldError(row ? $('select', row) : $('.room-assign', body), lost.map(function (s) { return s.name; }).join('、') + ' 的房間已不在清單，請改分其他房間');
+        return false;
+      }
+      var rs = rooms();
+      newCfg = { show: $('[name=show]', body).checked, mates: $('[name=mates]', body).checked, rooms: rs };
       var oldKnown = {}; cfg.rooms.forEach(function (x) { oldKnown[x.no] = true; });
-      var first = {}, later = {}, n = 0;
+      first = {}; later = {}; nChanged = 0;
       list.forEach(function (s) {
         if (cur[s.id] === (s.room || '')) return;
-        n++;
+        nChanged++;
         if (!cur[s.id] || oldKnown[cur[s.id]]) first[s.id] = cur[s.id]; else later[s.id] = cur[s.id];
       });
-      var cfgChanged = JSON.stringify(newCfg) !== JSON.stringify(cfg);
-      if (!cfgChanged && !n) { toast('沒有變更'); return; }
-      // 先把要搬走的人移出，再存房間清單（刪掉的房間要先沒人），最後分到新房間
-      var job = Promise.resolve();
-      if (Object.keys(first).length) job = job.then(function () { return api('setRooms', prefix, first); });
-      if (cfgChanged) job = job.then(function () { return api('updateProjectSettings', prefix, { rooms: newCfg }); });
-      if (Object.keys(later).length) job = job.then(function () { return api('setRooms', prefix, later); });
-      withBusy(job).then(function () { toast('已儲存分房' + (n ? '（' + n + ' 人變更）' : '')); cacheClear(); return load(); }).catch(function (e) { toast(e.message, true); load(); });
+      cfgChanged = JSON.stringify(newCfg) !== JSON.stringify(cfg);
+      return true;
+    }
+    modal({ title: '分房', desc: list.length + ' 位學員（已取消、失敗的不列入）。改完按儲存才會寫回；學員專區與信件的 {{房號}} 會顯示房間。', body: body, wide: true,
+      buttons: ro ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, {
+        label: '儲存', cls: 'primary', value: true, validate: check,
+        run: function () {
+          if (!cfgChanged && !nChanged) { toast('沒有變更'); return true; }
+          // 先把要搬走的人移出，再存房間清單（刪掉的房間要先沒人），最後分到新房間
+          var job = Promise.resolve();
+          if (Object.keys(first).length) job = job.then(function () { return api('setRooms', prefix, first); });
+          if (cfgChanged) job = job.then(function () { return api('updateProjectSettings', prefix, { rooms: newCfg }); });
+          if (Object.keys(later).length) job = job.then(function () { return api('setRooms', prefix, later); });
+          return job.then(function () { toast('已儲存分房' + (nChanged ? '（' + nChanged + ' 人變更）' : '')); cacheClear(); return load(); }, function (e) { load(); throw e; }).then(function () { return true; });
+        }
+      }] });
+  }
+
+  /* ---------- 勾選多人批次操作 ----------
+   * 先填共同的內容 → 摘要（每位會做什麼、為什麼略過、第一封信預覽）→ 確認執行 → 每位的結果。
+   * 後端逐筆套用單人操作的規則，單筆失敗不影響其他筆；人多時分批送，不超過 Apps Script 的執行時間。 */
+  var BATCH = {
+    confirmPaid: { label: '確認繳款', mail: true },
+    custom: { label: '寄送特殊訊息', mail: true },
+    setStatus: { label: '手動變更狀態' },
+    cancel: { label: '取消報名', danger: true }
+  };
+  function pickedIds() {
+    var have = {};
+    D.students.forEach(function (x) { have[x.id] = true; });
+    Object.keys(selected).forEach(function (id) { if (!have[id]) delete selected[id]; });
+    return sorted(D.students).filter(function (x) { return selected[x.id]; }).map(function (x) { return x.id; });
+  }
+  function renderBatchBar() {
+    var bar = $('#st-batch', root), ids = D ? pickedIds() : [];
+    if (!ids.length || RO()) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+    bar.classList.remove('hidden');
+    var hidden = ids.filter(function (id) { return !shownList.some(function (x) { return x.id === id; }); }).length;
+    bar.innerHTML = '<b class="batch-n"></b><span class="small muted batch-hide"></span><span class="spacer"></span>' +
+      Object.keys(BATCH).map(function (k) { return '<button class="btn sm' + (BATCH[k].danger ? ' danger-ghost' : '') + '" type="button" data-b="' + k + '">' + esc(BATCH[k].label) + '…</button>'; }).join('') +
+      '<button class="btn sm ghost" type="button" data-b="clear">清除勾選</button>';
+    $('.batch-n', bar).textContent = '已勾選 ' + ids.length + ' 位';
+    $('.batch-hide', bar).textContent = hidden ? '（其中 ' + hidden + ' 位不在目前篩選結果）' : '';
+    $$('[data-b]', bar).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.getAttribute('data-b');
+        if (k === 'clear') { selected = {}; renderTable(); return; }
+        askBatch(k, pickedIds());
+      });
     });
+  }
+  function askBatch(action, ids) {
+    var fields = null;
+    if (action === 'custom') fields = [{ name: 'subject', label: '主旨', required: true }, { name: 'body', label: '內容', type: 'textarea', required: true, format: true, presets: P('message'), presetJoin: '\n', hint: '可用 {{姓名}} 等變數，每位學員代入自己的資料；下一步會看到預覽' }];
+    if (action === 'setStatus') fields = statusFields(Object.keys(D.statuses).map(function (k) { return D.statuses[k]; })).concat([{ name: 'info', type: 'note', html: '不寄信。已經是這個狀態的人會略過。' }]);
+    if (action === 'cancel') fields = [{ name: 'reason', label: '取消原因', type: 'textarea', required: true, presets: P('cancel'), placeholder: '例如：超過匯款期限未繳費' },
+      { name: 'sendMail', label: '寄送「取消報名通知」給學員', type: 'checkbox', value: true },
+      { name: 'info', type: 'note', html: '取消後釋出名額（自動遞補模式會自動遞補候補）。已繳費或申請取消的學員會略過，請個別用「處理退款並取消報名」計算退款。' }];
+    var more = action === 'setStatus' ? statusMore : {};
+    var step = fields ? formDialog({ title: BATCH[action].label + '（' + ids.length + ' 位）', fields: fields, danger: action === 'cancel', onOpen: more.onOpen, check: more.check }) : Promise.resolve({});
+    step.then(function (extra) {
+      if (!extra) return;
+      return withBusy(api('previewBatch', prefix, ids, action, extra)).then(function (pv) { return confirmBatch(action, ids, extra, pv); });
+    }).catch(function (e) { toast(e.message, true); });
+  }
+  function confirmBatch(action, ids, extra, pv) {
+    var body = el('<div class="batch-dlg"><div class="batch-sum"></div><div class="batch-list"></div><div class="batch-mail"></div><div class="small muted batch-prog" role="status"></div></div>');
+    $('.batch-sum', body).textContent = '可以執行 ' + pv.ok + ' 位' + (pv.items.length - pv.ok ? '，略過 ' + (pv.items.length - pv.ok) + ' 位（原因列在下面）' : '') + '。';
+    pv.items.forEach(function (it) {
+      var row = el('<div class="batch-row' + (it.ok ? '' : ' skip') + '"><b></b><span class="small"></span></div>');
+      $('b', row).textContent = it.name + (it.status ? '（' + it.status + '）' : '');
+      $('span', row).textContent = it.ok ? it.summary : '略過：' + it.why;
+      $('.batch-list', body).appendChild(row);
+    });
+    if (pv.mail) {
+      var mb = $('.batch-mail', body);
+      mb.appendChild(el('<div class="small">會寄 ' + pv.mails + ' 封「' + esc(pv.mail.templateName) + '」，今日剩餘額度 ' + esc(pv.quota) + ' 封' + (pv.enough ? '' : '，<b style="color:var(--bad)">額度不足，後面的人會寄送失敗</b>') + '。下面是「' + esc(pv.sample) + '」的信：</div>'));
+      var fr = el('<iframe class="mail-frame" sandbox="" title="信件預覽"></iframe>');
+      fr.srcdoc = pv.mail.html;
+      mb.appendChild(fr);
+    }
+    var okIds = pv.items.filter(function (x) { return x.ok; }).map(function (x) { return x.id; });
+    var all = [];
+    return modal({
+      title: '確認批次' + BATCH[action].label, body: body, wide: !!pv.mail,
+      buttons: !okIds.length ? [{ label: '關閉', value: null }] : [{ label: '取消', value: null }, {
+        label: '確認執行（' + okIds.length + ' 位）', cls: action === 'cancel' ? 'danger' : 'primary', value: true,
+        run: function () {
+          // 分批送：後端快到時間上限會回傳 remaining，再送一次
+          function next(list) {
+            $('.batch-prog', body).textContent = '處理中：已完成 ' + all.length + ' / ' + okIds.length + ' 位…';
+            return api('runBatch', prefix, list, action, extra).then(function (r) {
+              all = all.concat(r.results);
+              return r.remaining.length ? next(r.remaining) : all;
+            });
+          }
+          return next(okIds).then(function () { return true; }, function (e) {
+            if (all.length) return true;   // 已經做了一部分：照樣顯示結果
+            throw e;
+          });
+        }
+      }]
+    }).then(function (ok) {
+      if (!ok) return;
+      var skipped = pv.items.filter(function (x) { return !x.ok; }).map(function (x) { return { id: x.id, name: x.name, ok: false, why: x.why }; });
+      showBatchResult(action, all.concat(skipped), okIds.length - all.length);
+    });
+  }
+  function showBatchResult(action, results, notRun) {
+    var good = results.filter(function (x) { return x.ok; });
+    var body = el('<div class="batch-dlg"><div class="batch-sum"></div><div class="batch-list"></div></div>');
+    $('.batch-sum', body).textContent = '成功 ' + good.length + ' 位' + (results.length - good.length ? '，略過 ' + (results.length - good.length) + ' 位' : '') + (notRun > 0 ? '，另有 ' + notRun + ' 位因連線中斷沒有執行，請重新勾選再試' : '') + '。';
+    results.forEach(function (it) {
+      var row = el('<div class="batch-row' + (it.ok ? ' done' : ' skip') + '"><b></b><span class="small"></span></div>');
+      $('b', row).textContent = (it.ok ? '成功　' : '略過　') + it.name;
+      $('span', row).textContent = it.ok ? (it.note || '') + (it.promoted && it.promoted.length ? '（自動遞補：' + it.promoted.join('、') + '）' : '') : it.why;
+      $('.batch-list', body).appendChild(row);
+    });
+    good.forEach(function (x) { delete selected[x.id]; });
+    load();
+    modal({ title: '批次' + BATCH[action].label + '的結果', body: body, buttons: [{ label: '關閉', cls: 'primary', value: true }] });
+  }
+
+  /* ---------- 常用篩選：目前的篩選＋搜尋＋小隊，存在伺服器（每位管理員、每個專案各自一份） ---------- */
+  function applySaved(x) {
+    fset = toSet(x.filter);
+    consentSet = toSet(x.consent);
+    squadSet = toSet(x.squad);
+    search = String(x.search || '').toLowerCase();
+    $('#st-search', root).value = x.search || '';
+    render();
+    toast('已套用「' + x.name + '」');
+  }
+  function openSavedMenu() {
+    var list = D.savedFilters || [];
+    var items = [{ header: list.length ? '常用篩選（點一下套用）' : '還沒有常用篩選' }];
+    list.forEach(function (x) {
+      items.push({ label: x.name, onClick: function () { applySaved(x); } });
+    });
+    items.push({ sep: true }, { label: '把目前的篩選存成常用…', onClick: saveCurrentFilter });
+    if (list.length) items.push({ label: '刪除常用篩選…', danger: true, onClick: deleteSaved });
+    popMenu($('#st-saved', root), items);
+  }
+  function saveCurrentFilter() {
+    var desc = describeFilter() || '全部';
+    formDialog({
+      title: '存成常用篩選', okLabel: '儲存', desc: '目前條件：' + desc + '。只有你看得到，下次在「常用篩選」一鍵套用。',
+      fields: [{ name: 'name', label: '名稱', required: true, placeholder: '例如：已繳費未簽同意書' }],
+      check: function (v) { return v.name.trim().length > 30 ? { name: 'name', msg: '名稱最多 30 個字' } : ''; },
+      submit: function (v) { return api('saveFilter', prefix, { name: v.name.trim(), filter: keysOf(fset).join(','), consent: keysOf(consentSet).join(','), squad: keysOf(squadSet).join(','), search: $('#st-search', root).value.trim() }); }
+    }).then(function (list) {
+      if (!list) return;
+      D.savedFilters = list;
+      toast('已存成常用篩選');
+    });
+  }
+  function deleteSaved() {
+    formDialog({
+      title: '刪除常用篩選', okLabel: '刪除', danger: true,
+      fields: [{ name: 'name', label: '要刪除哪一個', type: 'select', options: D.savedFilters.map(function (x) { return x.name; }) }],
+      submit: function (v) { return api('deleteSavedFilter', prefix, v.name); }
+    }).then(function (list) {
+      if (!list) return;
+      D.savedFilters = list;
+      toast('已刪除');
+    });
+  }
+
+  /* ---------- 報名趨勢圖：每天累計的報名人數與確認繳款人數（inline SVG） ---------- */
+  function dayKey(t) { var d = new Date(t); return isNaN(d) ? '' : d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  /** 確認繳款的時間：狀態紀錄裡第一次變成「程序完成」的時間（舊資料找不到時不計入） */
+  function paidDay(s) {
+    var h = (s.history || []).filter(function (x) { return /→ 程序完成/.test(x.msg); })[0];
+    return h ? dayKey(h.t) : '';
+  }
+  function trendData() {
+    var reg = {}, paid = {}, days = [];
+    D.students.forEach(function (s) {
+      var k = dayKey(s.time); if (k) reg[k] = (reg[k] || 0) + 1;
+      var pk = paidDay(s); if (pk) paid[pk] = (paid[pk] || 0) + 1;
+    });
+    var keys = Object.keys(reg).concat(Object.keys(paid)).sort();
+    if (!keys.length) return null;
+    var d = new Date(keys[0] + 'T00:00:00'), end = new Date(keys[keys.length - 1] + 'T00:00:00');
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (today > end && today - end < 120 * 86400000) end = today;
+    var r = 0, p = 0;
+    while (d <= end && days.length < 400) {
+      var k2 = dayKey(d);
+      r += reg[k2] || 0; p += paid[k2] || 0;
+      days.push({ day: k2, reg: r, paid: p, newReg: reg[k2] || 0, newPaid: paid[k2] || 0 });
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  }
+  function renderTrend() {
+    var box = $('#st-trend', root), days = trendData();
+    if (!days) { box.innerHTML = '<div class="small muted">還沒有報名資料</div>'; return; }
+    var W = 720, H = 240, L = 40, R = 16, T = 16, B = 30;
+    var max = Math.max(4, days[days.length - 1].reg, D.stats.capacity || 0);
+    var step = max <= 10 ? 2 : max <= 50 ? 10 : max <= 200 ? 50 : 100;
+    max = Math.ceil(max / step) * step;
+    var n = days.length;
+    function x(i) { return L + (n === 1 ? (W - L - R) / 2 : i * (W - L - R) / (n - 1)); }
+    function y(v) { return T + (H - T - B) * (1 - v / max); }
+    function path(key) { return days.map(function (d, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d[key]).toFixed(1); }).join(' '); }
+    var grid = '';
+    for (var v = 0; v <= max; v += step) grid += '<line class="tr-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"/><text class="tr-ax" x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>';
+    var ticks = '', every = Math.max(1, Math.ceil(n / 6));
+    days.forEach(function (d, i) { if (i % every === 0 || i === n - 1) ticks += '<text class="tr-ax" x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + d.day.slice(5).replace('-', '/') + '</text>'; });
+    var cap = D.stats.capacity ? '<line class="tr-cap" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(D.stats.capacity) + '" y2="' + y(D.stats.capacity) + '"/><text class="tr-ax" x="' + (W - R) + '" y="' + (y(D.stats.capacity) - 5) + '" text-anchor="end">名額上限 ' + D.stats.capacity + '</text>' : '';
+    var last = days[n - 1];
+    box.innerHTML = '<div class="row wrap tr-head"><b>報名趨勢（累計）</b><span class="tr-key"><i class="tr-sw reg"></i>報名人數 ' + last.reg + '</span><span class="tr-key"><i class="tr-sw paid"></i>確認繳款 ' + last.paid + '</span><span class="small muted grow" style="text-align:right">含之後取消的人；確認繳款依狀態紀錄的日期</span></div>' +
+      '<div class="tr-wrap"><svg class="tr-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="每天累計報名人數與確認繳款人數，最新：報名 ' + last.reg + ' 人、確認繳款 ' + last.paid + ' 人">' +
+      grid + cap + ticks +
+      '<path class="tr-line reg" d="' + path('reg') + '"/><path class="tr-line paid" d="' + path('paid') + '"/>' +
+      '<line class="tr-cross hidden" y1="' + T + '" y2="' + (H - B) + '"/><circle class="tr-dot reg hidden" r="4"/><circle class="tr-dot paid hidden" r="4"/>' +
+      '<rect class="tr-hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></svg><div class="tr-tip hidden" role="status"></div></div>' +
+      '<details class="tr-table"><summary class="small">以表格查看</summary><div class="table-wrap"><table class="simple"><thead><tr><th>日期</th><th>當天報名</th><th>累計報名</th><th>當天確認繳款</th><th>累計確認繳款</th></tr></thead><tbody>' +
+      days.filter(function (d) { return d.newReg || d.newPaid; }).map(function (d) { return '<tr><td>' + d.day.replace(/-/g, '/') + '</td><td>' + d.newReg + '</td><td>' + d.reg + '</td><td>' + d.newPaid + '</td><td>' + d.paid + '</td></tr>'; }).join('') +
+      '</tbody></table></div></details>';
+    // 滑過：十字線＋當天的數字
+    var svg = $('svg', box), tip = $('.tr-tip', box), cross = $('.tr-cross', box), dr = $('.tr-dot.reg', box), dp = $('.tr-dot.paid', box);
+    function show(ev) {
+      var rc = svg.getBoundingClientRect(), px = (ev.clientX - rc.left) * W / rc.width;
+      var i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round((px - L) / ((W - L - R) / (n - 1)))));
+      var d = days[i];
+      [cross, dr, dp, tip].forEach(function (e) { e.classList.remove('hidden'); });
+      cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i));
+      dr.setAttribute('cx', x(i)); dr.setAttribute('cy', y(d.reg)); dp.setAttribute('cx', x(i)); dp.setAttribute('cy', y(d.paid));
+      tip.textContent = d.day.replace(/-/g, '/') + '　報名 ' + d.reg + '（+' + d.newReg + '）　確認繳款 ' + d.paid + '（+' + d.newPaid + '）';
+      var left = x(i) / W * rc.width;
+      tip.style.left = Math.max(0, Math.min(rc.width - tip.offsetWidth, left - tip.offsetWidth / 2)) + 'px';
+    }
+    $('.tr-hit', box).addEventListener('mousemove', show);
+    $('.tr-hit', box).addEventListener('mouseleave', function () { [cross, dr, dp, tip].forEach(function (e) { e.classList.add('hidden'); }); });
   }
 
   /* ---------- 事件 ---------- */
@@ -1851,9 +2314,18 @@ App.page('students', function (root, params) {
   $('#st-tpl', root).addEventListener('click', function () { if (D) openProjectTemplates(); });
   $('#st-forms', root).addEventListener('click', function () { if (D) openForms(); });
   $('#st-portal', root).addEventListener('click', function () { if (D) openPortal(); });
+  $('#st-checkin', root).addEventListener('click', function () { go('checkin', { prefix: prefix }); });
   $('#st-squad', root).addEventListener('click', function () { if (D) openSquads(); });
   $('#st-room', root).addEventListener('click', function () { if (D) openRooms(); });
   $('#st-cols', root).addEventListener('click', function () { if (D) openColumns(); });
+  $('#st-saved', root).addEventListener('click', function (e) { e.stopPropagation(); if (D) openSavedMenu(); });
+  $('#st-trend-toggle', root).addEventListener('click', function () {
+    var box = $('#st-trend', root), open = box.classList.contains('hidden');
+    box.classList.toggle('hidden', !open);
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.textContent = open ? '收起報名趨勢圖' : '報名趨勢圖';
+    if (open && D) renderTrend();
+  });
   // 列表檢視：預設／窄（記在這台電腦的瀏覽器）
   var density = '';
   try { density = localStorage.getItem('st_density') || ''; } catch (e) {}
@@ -1867,7 +2339,8 @@ App.page('students', function (root, params) {
     applyDensity();
   });
   applyDensity();
-  $('#st-squad-filter', root).addEventListener('change', function (e) { squadFilter = e.target.value; renderTable(); });
+  $('#st-squad-filter', root).addEventListener('click', function (e) { e.stopPropagation(); if (e.currentTarget.getAttribute('aria-expanded') === 'true') closePopMenu(); else openSquadMenu(); });
+  $('#st-consent-filter', root).addEventListener('click', function (e) { e.stopPropagation(); if (e.currentTarget.getAttribute('aria-expanded') === 'true') closePopMenu(); else openConsentMenu(); });
   /** 匯出 PDF 的程式在 assets/export.js；沒載到（檔案沒上傳、舊快取）就現場補載一次 */
   function withExport(fn) {
     if (typeof openExportDialog === 'function') return fn();
@@ -1882,11 +2355,10 @@ App.page('students', function (root, params) {
     withExport(openExport);
   });
   function openExport() {
-    var f = FILTERS.filter(function (x) { return x.key === filter; })[0];
     openExportDialog({
       prefix: prefix, project: D.project, groups: D.groups || {},
       filtered: sorted(D.students).filter(matches), all: sorted(D.students),
-      filterLabel: (f ? f.label : filter === 'refund' ? '待退款' : filter === 'consent' ? '同意書待審' : '全部') + (search ? '＋搜尋「' + search + '」' : ''),
+      filterLabel: describeFilter() || '全部',
       displayCols: columns(), squads: D.project.squads || 0, rooms: ((D.project.rooms || {}).rooms || []).filter(function (x) { return x.no; })
     });
   }
@@ -1941,6 +2413,8 @@ App.page('students', function (root, params) {
   document.addEventListener('visibilitychange', checkNew);
 
   load().then(function () {
+    // 從開始新專案的完成頁點進來：直接打開專案設定的那一區
+    if (params.settings && D) { openSettings(params.settings); return; }
     // 從通知鈴鐺點進來：直接打開那位學員
     if (!params.student || !D) return;
     var hit = D.students.filter(function (x) { return x.id === params.student; })[0];
