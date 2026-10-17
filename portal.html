@@ -131,6 +131,8 @@
     .pt-dlg { background: var(--surface, #fff); border-radius: 18px; width: 100%; max-width: 480px; padding: 22px; display: flex; flex-direction: column; gap: 14px; max-height: 85vh; overflow: auto; }
     .pt-dlg h2 { margin: 0; font-size: 18px; }
     .pt-dlg .input { width: 100%; box-sizing: border-box; }
+    .pt-dlg .pl-body { display: flex; flex-direction: column; gap: 14px; }
+    .pt-dlg .pl-body .pt-text { line-height: 1.7; }
     .pt-dlg-btns { display: flex; gap: 8px; flex-wrap: wrap; }
     @media (min-width: 521px) { .pt-mask { align-items: center; } }
     @media (max-width: 520px) { .pt-row { grid-template-columns: 1fr; } .pt-body { padding: 20px 16px; } .pt-blk { padding: 18px 16px; } }
@@ -442,18 +444,10 @@
     var box = mask.querySelector('.pl-body');
     function draw(r) {
       box.innerHTML = '<div class="pt-text">把這個連結傳給家長（監護人），家長用自己的手機打開就能閱讀並簽名，不用輸入你的身分證字號。這個連結只能簽你的同意書，' + esc(r.days) + ' 天內有效（到 ' + esc(r.exp) + '）。</div>' +
-        '<input class="input" readonly><div class="pt-dlg-btns"><button class="btn primary" type="button" data-share>' + (navigator.share ? '分享（LINE 等）' : '複製連結') + '</button>' +
-        (navigator.share ? '<button class="btn" type="button" data-copy>複製連結</button>' : '') + '<button class="btn ghost" type="button" data-regen>重新產生</button></div>' +
+        '<input class="input" readonly><div class="pt-dlg-btns"><button class="btn primary" type="button" data-copy>複製連結</button><button class="btn ghost" type="button" data-regen>重新產生</button></div>' +
         '<div class="small muted">重新產生後，舊的連結會失效。你和家長誰先簽都可以，兩位都簽好才算完成。</div>';
       var inp = box.querySelector('input'); inp.value = r.url;
-      var text = I.campName + '同意書：請家長（監護人）打開連結閱讀並簽名\n' + r.url;
-      box.querySelector('[data-share]').addEventListener('click', function () {
-        var b = this;
-        if (navigator.share) navigator.share({ title: I.campName + '同意書', text: text }).catch(function () {});
-        else copyBtn(b, r.url);
-      });
-      var cp = box.querySelector('[data-copy]');
-      if (cp) cp.addEventListener('click', function () { copyBtn(this, r.url); });
+      box.querySelector('[data-copy]').addEventListener('click', function () { copyBtn(this, r.url); });
       box.querySelector('[data-regen]').addEventListener('click', function () {
         if (!confirm('確定要重新產生連結嗎？舊的連結會立即失效，要把新連結再傳給家長。')) return;
         load(true);
