@@ -170,9 +170,12 @@ function pill(status) {
 
 /* ---------- 提示與忙碌 ---------- */
 function toast(msg, bad) {
-  var t = el('<div class="toast' + (bad ? ' bad' : '') + '"></div>');
+  var root = $('#toast-root');
+  if (!root) return;
+  if (!root.hasAttribute('aria-live')) root.setAttribute('aria-live', 'polite');   // 螢幕閱讀器會念出提示
+  var t = el('<div class="toast' + (bad ? ' bad' : '') + '"' + (bad ? ' role="alert"' : ' role="status"') + '></div>');
   t.textContent = msg;
-  $('#toast-root').appendChild(t);
+  root.appendChild(t);
   setTimeout(function () { t.remove(); }, bad ? 6000 : 3200);
 }
 var busyCount = 0;
@@ -187,41 +190,174 @@ function withBusy(p) {
   return p.then(function (r) { busy(false); return r; }, function (e) { busy(false); throw e; });
 }
 
-/* ---------- 彈窗 ---------- */
+/* ---------- 視窗層級：Esc 只關最上層；開啟時焦點移入，關閉時回到原本的按鈕 ---------- */
+var LAYERS = [];
+function openLayer(o) {
+  o.returnTo = document.activeElement;
+  LAYERS.push(o);
+  return o;
+}
+function closeLayer(o) {
+  var i = LAYERS.indexOf(o);
+  if (i < 0) return;
+  LAYERS.splice(i, 1);
+  var r = o.returnTo;
+  // 只有關掉的是最上層時才把焦點還回去（底下還有視窗時，焦點留在那個視窗裡）
+  if (i === LAYERS.length && r && r !== document.body && r.isConnected && typeof r.focus === 'function') {
+    try { r.focus({ preventScroll: true }); } catch (e) { /* 不能聚焦就算了 */ }
+  }
+}
+function topLayer() { return LAYERS.length ? LAYERS[LAYERS.length - 1] : null; }
+/** 視窗裡可以用 Tab 移動到的元素 */
+function focusables(root) {
+  return $$('a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]', root)
+    .filter(function (x) { return x.getClientRects().length && !x.closest('.chip-src') && getComputedStyle(x).visibility !== 'hidden'; });
+}
+document.addEventListener('keydown', function (e) {
+  var top = topLayer();
+  if (!top) return;
+  if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
+    if (top.onEsc) top.onEsc();
+    return;
+  }
+  if (e.key === 'Tab' && top.trap) {
+    var list = focusables(top.el);
+    if (!list.length) { e.preventDefault(); return; }
+    var first = list[0], last = list[list.length - 1], cur = document.activeElement;
+    if (!top.el.contains(cur)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && cur === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
+  }
+}, true);
+
+/**
+ * 有沒有改過：記下視窗裡所有輸入欄位（含區塊順序）的值，關閉時比對。
+ * 格式工具列、搜尋框、加了 data-nodirty 的欄位不算。
+ */
+function formSnapshot(root) {
+  return $$('input, select, textarea, [data-sys]', root).filter(function (i) {
+    return i.type !== 'search' && !i.closest('[data-nodirty]') && !i.closest('.fmt-bar') && !i.closest('.fmt-link');
+  }).map(function (i) {
+    if (!/^(INPUT|SELECT|TEXTAREA)$/.test(i.tagName)) return 'sys:' + i.getAttribute('data-sys');
+    return (i.name || i.getAttribute('data-k') || i.tagName) + '=' + (i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value);
+  }).join('\u0001');
+}
+/** 關閉前確認：有改動時問「要放棄修改嗎？」，回傳 Promise<是否可以關閉> */
+function askDiscard() {
+  return confirmDialog({ title: '要放棄修改嗎？', lines: ['剛才輸入或修改的內容還沒有儲存，關閉後會遺失。'], cancelLabel: '繼續編輯', okLabel: '放棄修改', danger: true });
+}
+
+/** 欄位旁的錯誤訊息：標紅框、捲到欄位並聚焦；改了欄位內容後自動消失 */
+function fieldError(input, msg) {
+  if (!input) return;
+  var target = input;
+  if (input.classList && input.classList.contains('chip-src') && input.nextElementSibling) target = input.nextElementSibling;   // 變數方塊編輯器
+  var box = target.closest('.field, .check, .ps-block, .room-row, .ct-row, .rf-row, .col-row, .squad-row') || target.parentNode;
+  var old = $('.field-err', box); if (old) old.remove();
+  var m = el('<div class="field-err" role="alert"></div>');
+  m.textContent = msg;
+  box.appendChild(m);
+  target.setAttribute('aria-invalid', 'true');
+  function clear() { m.remove(); target.removeAttribute('aria-invalid'); target.removeEventListener('input', clear); target.removeEventListener('change', clear); }
+  target.addEventListener('input', clear);
+  target.addEventListener('change', clear);
+  try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { target.scrollIntoView(); }
+  if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+}
+function clearFieldErrors(root) {
+  $$('.field-err', root).forEach(function (x) { x.remove(); });
+  $$('[aria-invalid]', root).forEach(function (x) { x.removeAttribute('aria-invalid'); });
+}
+
+/* ---------- 彈窗 ----------
+ * buttons: [{label, cls, value, validate(ov) → true 才繼續, run(value, ov) → Promise}]
+ * run：在視窗內執行（按鈕顯示處理中），成功才關閉；失敗時錯誤顯示在視窗內，輸入的內容都還在。
+ * value 為 null／false 且沒有 validate、run 的按鈕視為「取消」：有改動時會先問要不要放棄。
+ * opts.onOpen(ov, ctl)：ctl 有 close(v)、markClean()、error(msg)。opts.guard === false 時不檢查改動。
+ */
 function modal(opts) {
   return new Promise(function (resolve) {
-    var ov = el('<div class="overlay"><div class="modal' + (opts.wide ? ' wide' : '') + (opts.cls ? ' ' + opts.cls : '') + '" role="dialog" aria-modal="true">' +
+    var ov = el('<div class="overlay"><div class="modal' + (opts.wide ? ' wide' : '') + (opts.cls ? ' ' + opts.cls : '') + '" role="dialog" aria-modal="true" tabindex="-1">' +
       '<div class="modal-head"><h2></h2>' + (opts.desc ? '<p></p>' : '') + '</div>' +
-      '<div class="modal-body"></div><div class="modal-foot"></div></div></div>');
+      '<div class="modal-body"></div><div class="modal-foot"><div class="modal-err" role="alert"></div></div></div></div>');
+    var box = $('.modal', ov);
+    var hid = 'mh' + Math.random().toString(36).slice(2, 8);
+    $('h2', ov).id = hid; box.setAttribute('aria-labelledby', hid);
     $('h2', ov).textContent = opts.title || '';
     if (opts.desc) $('.modal-head p', ov).textContent = opts.desc;
     var body = $('.modal-body', ov);
     if (typeof opts.body === 'string') body.innerHTML = opts.body; else if (opts.body) body.appendChild(opts.body);
-    var foot = $('.modal-foot', ov);
-    function close(v) { document.removeEventListener('keydown', onKey); ov.remove(); resolve(v); }
-    function onKey(e) { if (e.key === 'Escape') close(null); }
+    var foot = $('.modal-foot', ov), errBox = $('.modal-err', ov);
+    // opts.base：改動比較的基準（重新打開保留的草稿時，用第一次打開時的空白內容比較）
+    var closed = false, working = false, asking = false, base = opts.base === undefined ? null : opts.base;
+    var layer = openLayer({ el: box, trap: true, onEsc: function () { dismiss(); } });
+    function close(v) {
+      if (closed) return;
+      closed = true;
+      ov.remove();
+      closeLayer(layer);
+      resolve(v);
+    }
+    function dirty() { return opts.guard !== false && base !== null && formSnapshot(body) !== base; }
+    /** Esc、點背景、按取消：有改動先問 */
+    function dismiss(v) {
+      if (working || asking || closed) return;
+      if (!dirty()) { close(v === undefined ? null : v); return; }
+      asking = true;
+      askDiscard().then(function (ok) { asking = false; if (ok) close(v === undefined ? null : v); });
+    }
+    function setWorking(on, btn) {
+      working = on;
+      $$('.modal-foot .btn', ov).forEach(function (b) { b.disabled = on; });
+      if (btn) btn.classList.toggle('is-busy', on);
+    }
+    var ctl = {
+      close: close,
+      markClean: function () { base = formSnapshot(body); },
+      error: function (msg) { errBox.textContent = msg || ''; }
+    };
     (opts.buttons || [{ label: '確定', cls: 'primary', value: true }]).forEach(function (b) {
       var btn = el('<button class="btn ' + (b.cls || '') + '" type="button"></button>');
       btn.textContent = b.label;
+      var isCancel = !b.validate && !b.run && (b.value === null || b.value === false || b.value === undefined);
       btn.addEventListener('click', function () {
+        if (working) return;
+        if (isCancel) { dismiss(b.value); return; }
+        errBox.textContent = '';
         if (b.validate) { var r = b.validate(ov); if (r !== true) return; }
-        close(typeof b.value === 'function' ? b.value(ov) : b.value);
+        var v = typeof b.value === 'function' ? b.value(ov) : b.value;
+        if (!b.run) { close(v); return; }
+        setWorking(true, btn);
+        Promise.resolve().then(function () { return b.run(v, ov); }).then(function (res) {
+          setWorking(false, btn);
+          if (res === false) return;   // 留在視窗（例如錯誤已顯示在欄位旁）
+          close(res === undefined ? v : res);
+        }, function (e) {
+          setWorking(false, btn);
+          errBox.textContent = (e && e.message) || String(e);
+        });
       });
       foot.appendChild(btn);
     });
-    ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(null); });
-    document.addEventListener('keydown', onKey);
+    ov.addEventListener('mousedown', function (e) { if (e.target === ov) dismiss(); });
     $('#modal-root').appendChild(ov);
-    if (opts.onOpen) opts.onOpen(ov);
-    var first = $('input, textarea, select', body);
-    if (first) setTimeout(function () { first.focus(); }, 30);
+    if (opts.onOpen) opts.onOpen(ov, ctl);
+    var first = $('input:not([type=hidden]):not([readonly]), textarea, select, [contenteditable="true"]', body);
+    first = first && first.classList.contains('chip-src') ? first.nextElementSibling : first;
+    setTimeout(function () {
+      if (closed) return;
+      var f = first && first.getClientRects().length ? first : (focusables(foot).slice(-1)[0] || box);
+      try { f.focus({ preventScroll: !first }); } catch (e) { box.focus(); }
+    }, 30);
+    setTimeout(function () { if (!closed && base === null) base = formSnapshot(body); }, 60);
   });
 }
 
 function confirmDialog(o) {
   var body = '<ul class="summary-list">' + (o.lines || []).map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>';
   return modal({
-    title: o.title, desc: o.desc, body: o.lines && o.lines.length ? body : '',
+    title: o.title, desc: o.desc, body: o.lines && o.lines.length ? body : '', guard: false,
     buttons: (o.cancelLabel === null ? [] : [{ label: o.cancelLabel || '取消', value: false }]).concat([{ label: o.okLabel || '確認', cls: o.danger ? 'danger' : 'primary', value: true }])
   }).then(function (v) { return !!v; });
 }
@@ -279,30 +415,47 @@ function formDialog(o) {
     }
     form.appendChild(wrap);
   });
-  var err = el('<div class="small" style="color:var(--bad);min-height:16px"></div>');
+  var err = el('<div class="small form-err" style="color:var(--bad);min-height:16px" role="alert"></div>');
   form.appendChild(err);
+  function values() {
+    var out = {};
+    o.fields.forEach(function (f) {
+      if (f.type === 'note') return;
+      if (f.type === 'checklist') { out[f.name] = $$('input[data-cl="' + f.name + '"]:checked', form).map(function (i) { return i.value; }); return; }
+      var i = form.elements[f.name]; out[f.name] = f.type === 'checkbox' ? i.checked : i.value;
+    });
+    return out;
+  }
+  /** 錯誤顯示在欄位旁：msg 可以是文字，或 {name, msg} 指定欄位 */
+  function showErr(e) {
+    var name = e && e.name, msg = e && e.msg !== undefined ? e.msg : e;
+    var inp = name ? (form.elements[name] || $('input[data-cl="' + name + '"]', form)) : null;
+    if (inp && inp.length !== undefined && !inp.tagName) inp = inp[0];
+    if (inp) { err.textContent = ''; fieldError(inp.getAttribute('data-cl') ? inp.closest('.check-list') : inp, msg); }
+    else err.textContent = msg;
+  }
   return modal({
-    title: o.title, desc: o.desc, body: form, wide: o.wide,
-    buttons: [{ label: '取消', value: null }, {
+    title: o.title, desc: o.desc, body: form, wide: o.wide, onOpen: o.onOpen,
+    buttons: [{ label: o.cancelLabel || '取消', value: null }, {
       label: o.okLabel || '下一步', cls: o.danger ? 'danger' : 'primary',
       validate: function () {
+        err.textContent = '';
+        clearFieldErrors(form);
         for (var i = 0; i < o.fields.length; i++) {
           var f = o.fields[i];
           if (f.type === 'note') continue;
-          if (f.type === 'checklist') { if (f.required && !$$('input[data-cl="' + f.name + '"]:checked', form).length) { err.textContent = '請至少勾選一位'; return false; } continue; }
-          if (f.required && f.type !== 'checkbox' && !String(form.elements[f.name].value).trim()) { err.textContent = '請填寫「' + f.label + '」'; return false; }
+          if (f.type === 'checklist') { if (f.required && !$$('input[data-cl="' + f.name + '"]:checked', form).length) { showErr({ name: f.name, msg: '請至少勾選一位' }); return false; } continue; }
+          if (f.required && f.type !== 'checkbox' && !String(form.elements[f.name].value).trim()) { showErr({ name: f.name, msg: '請填寫「' + f.label + '」' }); return false; }
         }
+        // 呼叫端的檢查：回傳錯誤文字或 {name, msg}，在視窗內顯示，不關閉
+        if (o.check) { var bad = o.check(values(), form); if (bad) { showErr(bad); return false; } }
         return true;
       },
-      value: function () {
-        var out = {};
-        o.fields.forEach(function (f) {
-          if (f.type === 'note') return;
-          if (f.type === 'checklist') { out[f.name] = $$('input[data-cl="' + f.name + '"]:checked', form).map(function (i) { return i.value; }); return; }
-          var i = form.elements[f.name]; out[f.name] = f.type === 'checkbox' ? i.checked : i.value;
-        });
-        return out;
-      }
+      value: values,
+      // 呼叫端的送出：在視窗內呼叫後端，成功才關閉；失敗時錯誤留在視窗內
+      run: o.submit ? function (v) {
+        return Promise.resolve(o.submit(v, form)).then(function (r) { return r === undefined || r === null || r === false ? v : r; });
+      } : undefined
     }]
   });
 }
@@ -1108,7 +1261,7 @@ function openTemplateEditor(t, opts) {
     '<div class="small muted sig-def"></div><div class="sig-edit"><input class="input" name="signature"></div></div></div>' +
     '<details class="fmt-details"><summary class="small">格式寫法</summary>' + help + '</details>' +
     '<div class="small tpl-err" style="color:var(--bad);min-height:16px"></div></div>' +
-    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="row wrap" style="gap:8px"><span class="small muted grow">即時預覽（文字以 OOO、數字以 000 代入）</span><label class="check small"><input type="checkbox" class="note-toggle"' + (MAIL_NOTES_SHOWN ? ' checked' : '') + '><span>顯示內部備註</span></label></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><div class="row wrap" style="gap:8px"><span class="small muted grow">即時預覽（文字以 OOO、數字以 000 代入）</span><label class="check small" data-nodirty><input type="checkbox" class="note-toggle"' + (MAIL_NOTES_SHOWN ? ' checked' : '') + '><span>顯示內部備註</span></label></div>' +
     '<div class="row wrap tpl-head" style="gap:8px"><span class="small">這封信的標頭顏色</span>' + hexField('tpl-headhex', normHex(t.headerColor) || defHead) +
     '<button class="btn sm ghost" type="button" data-head-reset>恢復預設</button><span class="small muted grow head-state"></span></div>' +
     '<div class="small" data-subj style="font-weight:600"></div><iframe class="mail-frame" sandbox=""></iframe></div></div>');
@@ -1180,7 +1333,7 @@ function openTemplateEditor(t, opts) {
   if (echoSave) {
     echoSave.addEventListener('click', function () {
       var list = $$('.tpl-echo input:checked', body).map(function (i) { return i.value; });
-      Promise.resolve(opts.onSaveEcho(list)).then(function () { toast('已更新報名資料表的題目（' + list.length + ' 題）'); })
+      Promise.resolve(opts.onSaveEcho(list)).then(function () { toast('已更新報名資料表的題目（' + list.length + ' 題）'); if (ctl) ctl.markClean(); })
         .catch(function (e) { toast(e.message, true); });
     });
   }
@@ -1193,13 +1346,29 @@ function openTemplateEditor(t, opts) {
   body.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { closingUi(); preview(); }, 150); });
   closingUi();
   preview();
+  var ctl = null;
+  // 唯讀（opts.readOnly）只能看、只有「關閉」
+  if (opts.readOnly) return modal({ title: '查看範本：' + t.name, cls: 'xwide', body: body, guard: false, buttons: [{ label: '關閉', value: null }] });
   var buttons = [{ label: '取消', value: null }];
-  if (opts.resetLabel) buttons.push({ label: opts.resetLabel, cls: 'ghost', value: { reset: true } });
+  if (opts.resetLabel) buttons.push({
+    label: opts.resetLabel, cls: 'ghost', value: { reset: true },
+    // 恢復預設會蓋掉自訂內容：先確認；有 opts.onSave 時在視窗內存檔
+    run: function (v) {
+      return confirmDialog({ title: opts.resetLabel + '？', lines: ['這封信改回系統預設的主旨與內容，目前自訂的內容會被取代。'], okLabel: opts.resetLabel, danger: true }).then(function (ok) {
+        if (!ok) return false;
+        return opts.onSave ? Promise.resolve(opts.onSave(v)).then(function () { return v; }) : v;
+      });
+    }
+  });
   buttons.push({
     label: '儲存', cls: 'primary',
     validate: function () {
-      if (!subj.value.trim() || !ta.value.trim()) { $('.tpl-err', body).textContent = '主旨與內容不可空白'; return false; }
-      if (!normHex($('.tpl-headhex .fmt-hexin', body).value)) { $('.tpl-err', body).textContent = '標頭顏色格式是 # 加 6 碼（例如 #2f5d62）或 3 碼'; return false; }
+      var errEl = $('.tpl-err', body);
+      errEl.textContent = '';
+      clearFieldErrors(body);
+      if (!subj.value.trim()) { fieldError(subj, '主旨不可空白'); return false; }
+      if (!ta.value.trim()) { fieldError(ta, '內容不可空白'); return false; }
+      if (!normHex($('.tpl-headhex .fmt-hexin', body).value)) { errEl.textContent = '標頭顏色格式是 # 加 6 碼（例如 #2f5d62）或 3 碼'; return false; }
       return true;
     },
     value: function () {
@@ -1208,9 +1377,11 @@ function openTemplateEditor(t, opts) {
         footer: fm === 'default' ? '' : fm === 'none' || !ft ? '-' : ft,
         signature: sigSel.value === 'custom' ? sigIn.value.trim() : '',
         headerColor: headCustom ? normHex($('.tpl-headhex .fmt-hexin', body).value) : '' };
-    }
+    },
+    // 有 opts.onSave 時在視窗內存檔：失敗時內容都還在
+    run: opts.onSave ? function (v) { return Promise.resolve(opts.onSave(v)).then(function () { return v; }); } : undefined
   });
-  return modal({ title: '編輯範本：' + t.name, cls: 'xwide', body: body, buttons: buttons });
+  return modal({ title: '編輯範本：' + t.name, cls: 'xwide', body: body, buttons: buttons, onOpen: function (ov, c) { ctl = c; } });
 }
 
 /** 常用清單：點一下填入（reason 類欄位用「；」接在後面，訊息類換行接上） */
@@ -1231,7 +1402,8 @@ function presetChips(target, items, joiner) {
 }
 
 /** 對外通知的確認視窗：收件人、改寄說明、主旨、信件預覽、剩餘額度 */
-function mailConfirm(pv, extraLines) {
+function mailConfirm(pv, extraLines, o) {
+  o = o || {};
   var m = pv.mail;
   var body = el('<div style="display:flex;flex-direction:column;gap:14px"></div>');
   var lines = (pv.summary || []).concat(extraLines || []);
@@ -1253,22 +1425,38 @@ function mailConfirm(pv, extraLines) {
     title: (m ? '確認寄出：' : '確認執行：') + (pv.label || ''),
     desc: pv.student ? pv.student.name + (pv.student.email ? '（' + pv.student.email + '）' : '') : '',
     body: body, wide: !!m,
-    buttons: [{ label: '取消', value: false }, { label: m ? '確認寄出' : '確認執行', cls: 'primary', value: true }]
+    buttons: [{ label: o.cancelLabel || '取消', value: false }, { label: o.okLabel || (m ? '確認寄出' : '確認執行'), cls: 'primary', value: true }]
   }).then(function (v) { return !!v; });
 }
 
 /* ---------- 浮動選單 ---------- */
+var menuLayer = null;
 function popMenu(anchor, items) {
   closePopMenu();
-  var m = el('<div class="menu-pop" id="menu-pop"></div>');
+  if ($('#bell-pop')) Bell.close();
+  var m = el('<div class="menu-pop" id="menu-pop" role="menu"></div>');
   items.forEach(function (it) {
     if (it.sep) { m.appendChild(el('<hr>')); return; }
     if (it.header) { var h = el('<div class="menu-label"></div>'); h.textContent = it.header; m.appendChild(h); return; }
-    var b = el('<button type="button"' + (it.danger ? ' class="danger"' : '') + '></button>');
+    var isCheck = typeof it.checked === 'boolean';
+    var b = el('<button type="button" role="' + (isCheck ? 'menuitemcheckbox' : 'menuitem') + '"' + (it.danger ? ' class="danger"' : '') + '></button>');
     b.textContent = it.label;
+    if (isCheck) {
+      // 可複選的項目：點了切換勾選，選單不關（Esc 或點外面才關）
+      b.classList.add('menu-check');
+      b.setAttribute('aria-checked', it.checked ? 'true' : 'false');
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        it.checked = !it.checked;
+        b.setAttribute('aria-checked', it.checked ? 'true' : 'false');
+        it.onClick(it.checked);
+      });
+      m.appendChild(b);
+      return;
+    }
     // mail：'yes' 會寄信給學員、'opt' 可選擇是否寄信（確認前都能預覽）
     if (it.mail) { var tg = el('<span class="mail-tag' + (it.mail === 'opt' ? ' opt' : '') + '"></span>'); tg.textContent = it.mail === 'opt' ? '可選寄信' : '寄信'; tg.title = it.mail === 'opt' ? '下一步可以選擇要不要寄信' : '會寄信給學員（確認前可預覽）'; b.appendChild(tg); }
-    if (it.disabled) { b.disabled = true; b.style.opacity = .4; }
+    if (it.disabled) { b.disabled = true; b.style.opacity = .4; if (it.why) b.title = it.why; }
     b.addEventListener('click', function (e) { e.stopPropagation(); closePopMenu(); it.onClick(); });
     m.appendChild(b);
   });
@@ -1278,29 +1466,79 @@ function popMenu(anchor, items) {
   if (top + m.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - m.offsetHeight - 4);
   m.style.top = top + 'px';
   m.style.left = Math.max(8, left) + 'px';
-  setTimeout(function () { document.addEventListener('click', closePopMenu, { once: true }); }, 0);
+  if (m.offsetHeight > window.innerHeight - 16) { m.style.top = '8px'; m.style.maxHeight = (window.innerHeight - 16) + 'px'; m.style.overflowY = 'auto'; }
+  anchor.setAttribute('aria-expanded', 'true');
+  menuLayer = openLayer({ el: m, onEsc: closePopMenu, anchor: anchor });
+  // 上下鍵移動、Tab 關閉
+  m.addEventListener('keydown', function (e) {
+    var bs = $$('button:not([disabled])', m), i = bs.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); var n = bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length]; if (n) n.focus(); }
+    else if (e.key === 'Tab') closePopMenu();
+  });
+  var firstBtn = $('button:not([disabled])', m);
+  if (firstBtn) firstBtn.focus({ preventScroll: true });
+  m.addEventListener('click', function (e) { if (e.target.closest('.menu-check')) e.stopPropagation(); });
+  setTimeout(function () { document.addEventListener('click', outsideClose); }, 0);
 }
-function closePopMenu() { var m = $('#menu-pop'); if (m) m.remove(); }
+function outsideClose(e) {
+  var m = $('#menu-pop');
+  if (m && m.contains(e.target)) return;
+  document.removeEventListener('click', outsideClose);
+  closePopMenu();
+}
+function closePopMenu() {
+  document.removeEventListener('click', outsideClose);
+  var m = $('#menu-pop'); if (m) m.remove();
+  if (menuLayer) {
+    var l = menuLayer; menuLayer = null;
+    if (l.anchor) l.anchor.setAttribute('aria-expanded', 'false');
+    closeLayer(l);
+  }
+}
 
-/* ---------- 側邊抽屜 ---------- */
+/* ---------- 側邊抽屜 ----------
+ * Esc、點背景、按 ✕：有改動時先問要不要放棄（o.guard === false 不檢查）。
+ * 回傳 {el, body, close()（直接關）, tryClose()（有改動先問）, markClean()（存檔後不關抽屜時呼叫）}
+ */
 function drawer(o) {
   var ov = el('<div class="drawer-overlay"></div>');
-  var d = el('<aside class="drawer"><div class="drawer-head"><div class="grow"><h2></h2><div class="muted small sub"></div></div>' +
-    '<button class="btn ghost icon" type="button" aria-label="關閉">✕</button></div><div class="drawer-body"></div></aside>');
+  var d = el('<aside class="drawer" role="dialog" aria-modal="true" tabindex="-1"><div class="drawer-head"><div class="grow"><h2></h2><div class="muted small sub"></div></div>' +
+    '<button class="btn ghost icon" type="button" aria-label="關閉" title="關閉">✕</button></div><div class="drawer-body"></div></aside>');
+  var hid = 'dh' + Math.random().toString(36).slice(2, 8);
+  $('h2', d).id = hid; d.setAttribute('aria-labelledby', hid);
   $('h2', d).textContent = o.title || '';
   $('.sub', d).innerHTML = o.sub || '';
-  function close() { ov.remove(); d.remove(); document.removeEventListener('keydown', onKey); if (o.onClose) o.onClose(); }
-  function onKey(e) { if (e.key === 'Escape' && !$('.overlay')) close(); }
-  ov.addEventListener('click', close);
-  $('.drawer-head button', d).addEventListener('click', close);
-  document.addEventListener('keydown', onKey);
+  var body = $('.drawer-body', d), base = null, closed = false, asking = false;
+  var layer = openLayer({ el: d, trap: true, onEsc: function () { tryClose(); } });
+  function close() {
+    if (closed) return;
+    closed = true;
+    ov.remove(); d.remove();
+    closeLayer(layer);
+    if (o.onClose) o.onClose();
+  }
+  function tryClose() {
+    if (closed || asking) return;
+    // o.dirty()：自己判斷有沒有未儲存的內容（例如詳細資料裡還沒送出的備註）
+    var dirty = o.dirty ? !!o.dirty() : !(o.guard === false || base === null || formSnapshot(body) === base);
+    if (!dirty) { close(); return; }
+    asking = true;
+    askDiscard().then(function (ok) { asking = false; if (ok) close(); });
+  }
+  ov.addEventListener('click', tryClose);
+  $('.drawer-head button', d).addEventListener('click', tryClose);
   document.body.appendChild(ov);
   document.body.appendChild(d);
-  return { el: d, body: $('.drawer-body', d), close: close };
+  setTimeout(function () { if (!closed) { d.focus({ preventScroll: true }); if (base === null) base = formSnapshot(body); } }, 60);
+  return {
+    el: d, body: body, close: close, tryClose: tryClose,
+    markClean: function () { base = formSnapshot(body); },
+    setTitle: function (t, sub) { $('h2', d).textContent = t || ''; $('.sub', d).innerHTML = sub || ''; }
+  };
 }
 
 /* ---------- 頁面：每個功能一個 HTML ---------- */
-var PAGE_TITLES = { menu: '功能選單', students: '報名與學員管理', newproject: '開始新專案', admin: '系統管理', logs: '操作紀錄' };
+var PAGE_TITLES = { menu: '功能選單', students: '報名與學員管理', newproject: '開始新專案', admin: '系統管理', logs: '操作紀錄', checkin: '報到模式' };
 
 function go(name, params) {
   var q = params ? Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&') : '';
@@ -1314,36 +1552,47 @@ function getParams() {
   return out;
 }
 
+var ICON_HELP = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm-1-4h2v2h-2v-2Zm1-10a4 4 0 0 0-4 4h2a2 2 0 1 1 3.2 1.6c-.9.68-2.2 1.5-2.2 3.4h2c0-1 .62-1.5 1.4-2.1A4 4 0 0 0 12 6Z"/></svg>';
+var ICON_MAIL = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v.5l8 5 8-5V6H4Zm16 2.85-7.47 4.67a1 1 0 0 1-1.06 0L4 8.85V18h16V8.85Z"/></svg>';
+
 function renderTopbar(name, params) {
   var bar = el('<header class="topbar">' +
-    '<div class="brand" id="brand"><div class="brand-mark">營</div><span>營隊報名管理</span></div>' +
+    '<a class="brand" id="brand" href="menu.html" aria-label="回到功能選單"><div class="brand-mark" aria-hidden="true">營</div><span>營隊報名管理</span></a>' +
     '<div class="crumb" id="crumb"></div><div class="spacer"></div>' +
-    '<button class="bell" id="bell" type="button" aria-label="通知"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z" fill="currentColor"/></svg><span class="bell-badge hidden" id="bell-badge"></span></button>' +
-    '<div class="user-chip" id="user-chip"><span id="user-name"></span><span class="role-tag" id="user-role"></span><div class="avatar" id="user-avatar"></div></div>' +
+    '<button class="bell" id="bell" type="button" aria-label="通知" title="通知" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z" fill="currentColor"/></svg><span class="bell-badge hidden" id="bell-badge"></span></button>' +
+    '<button class="bell top-icon" id="top-help" type="button" aria-label="使用手冊與問題快速排除" title="使用手冊" aria-haspopup="menu">' + ICON_HELP + '</button>' +
+    '<button class="bell top-icon" id="top-contact" type="button" aria-label="聯絡開發人員" title="聯絡開發人員">' + ICON_MAIL + '</button>' +
+    '<button class="user-chip" id="user-chip" type="button" aria-haspopup="menu" aria-label="帳號選單"><span id="user-name"></span><span class="role-tag" id="user-role"></span><span class="avatar" id="user-avatar" aria-hidden="true"></span></button>' +
     '</header>');
   document.body.insertBefore(bar, document.body.firstChild);
   $('#crumb').innerHTML = name === 'menu' ? '' : '<b>' + esc(PAGE_TITLES[name] || '') + '</b>' + (params.title ? '　/　' + esc(params.title) : '');
   $('#user-name').textContent = App.user.name;
   $('#user-role').textContent = App.user.role;
+  $('#user-chip').setAttribute('aria-label', '帳號選單：' + App.user.name + '（' + App.user.role + '）');
   if (App.user.isOwner) { $('#user-role').classList.add('owner'); $('#user-avatar').classList.add('root'); $('#user-role').title = App.user.isChief ? '兼任協同總管' : '協同總管已交給其他人；你仍保有全部權限'; }
   else if (App.user.isRoot) { $('#user-role').classList.add('root'); $('#user-avatar').classList.add('root'); }
   else if (App.user.perms && App.user.perms.length) { $('#user-role').textContent = '共同管理＋授權'; $('#user-role').title = '總管授予的權限可在系統管理使用'; }
   if (App.user.siteMaint) {
     var mt = el('<a class="maint-pill" href="admin.html?tab=projects">全站維護中</a>');
     mt.title = '暫停：' + (App.user.siteMaintLabels || []).join('、') + '（到系統管理調整）';
-    $('#user-chip').parentNode.insertBefore(mt, $('#user-chip'));
+    $('#bell').parentNode.insertBefore(mt, $('#bell'));
   }
   $('#user-avatar').textContent = (App.user.name || '?').slice(0, 1).toUpperCase();
-  $('#brand').addEventListener('click', function () { go('menu'); });
+  // 使用手冊：小選單裡有「使用手冊」與「問題快速排除」（手冊的一章）
+  $('#top-help').addEventListener('click', function (e) {
+    e.stopPropagation();
+    popMenu($('#top-help'), [
+      { label: '使用手冊（另開分頁）', onClick: function () { openManual(''); } },
+      { label: '問題快速排除', onClick: function () { openManual('troubleshoot'); } }
+    ]);
+  });
+  $('#top-contact').addEventListener('click', function () { contactDeveloper(); });
   $('#user-chip').addEventListener('click', function (e) {
     e.stopPropagation();
     popMenu($('#user-chip'), [
       { header: App.user.email },
       { label: '修改密碼', onClick: changeMyPassword },
       { label: '安裝到桌面', onClick: installApp },
-      { label: '使用手冊', onClick: function () { openManual(''); } },
-      { label: '問題快速排除', onClick: function () { openManual('troubleshoot'); } },
-      { label: '聯絡開發人員', onClick: contactDeveloper },
       { sep: true },
       { label: '登出', danger: true, onClick: function () { api('logout').finally(function () { store('camp_token', null); location.href = 'index.html'; }); } }
     ]);
@@ -1369,14 +1618,18 @@ var Bell = {
     b.textContent = n > 99 ? '99+' : String(n);
     b.classList.toggle('hidden', !n);
     $('#bell').setAttribute('aria-label', n ? '通知，' + n + ' 則未讀' : '通知');
+    $('#bell').title = n ? '通知（' + n + ' 則未讀）' : '通知';
   },
   poll: function () {
     var self = this;
     api('notifyCount').then(function (r) { self.setCount(r.unread); }).catch(function () { /* 背景更新失敗就略過 */ });
   },
+  layer: null,
   close: function () {
     var p = $('#bell-pop'); if (p) p.remove();
     document.removeEventListener('click', Bell.outside);
+    $('#bell') && $('#bell').setAttribute('aria-expanded', 'false');
+    if (Bell.layer) { var l = Bell.layer; Bell.layer = null; closeLayer(l); }
   },
   outside: function (e) { if (!e.target.closest('#bell-pop') && !e.target.closest('.overlay')) Bell.close(); },
   toggle: function () {
@@ -1389,9 +1642,12 @@ var Bell = {
     document.body.appendChild(pop);
     this.place();
     var self = this;
+    $('#bell').setAttribute('aria-expanded', 'true');
+    Bell.layer = openLayer({ el: pop, onEsc: function () { Bell.close(); } });
+    $('[data-act=all]', pop).focus({ preventScroll: true });
     setTimeout(function () { document.addEventListener('click', Bell.outside); }, 0);
     $('[data-act=all]', pop).addEventListener('click', function () {
-      api('markNotifications', 'all').then(function (r) { self.setCount(r.unread); self.load(); });
+      api('markNotifications', 'all').then(function (r) { self.setCount(r.unread); self.load(); }).catch(function (e) { toast(e.message, true); });
     });
     $('[data-act=settings]', pop).addEventListener('click', function () { self.settings(); });
     $$('.bell-tabs button', pop).forEach(function (b) {
@@ -1748,27 +2004,28 @@ function contactDeveloper() {
       { name: 'kind', label: '類型', type: 'select', value: 'bug', options: [{ value: 'bug', label: '問題回報' }, { value: 'idea', label: '功能建議' }, { value: 'other', label: '其他' }] },
       { name: 'subject', label: '主旨', required: true },
       { name: 'body', label: '內容', type: 'textarea', required: true, hint: '問題回報請寫：在哪一頁、做了什麼、看到什麼訊息。目前頁面網址與瀏覽器會自動附上' }
-    ]
-  }).then(function (v) {
-    if (!v) return;
-    v.page = location.pathname.split('/').pop() + location.search;
-    v.ua = navigator.userAgent;
-    withBusy(api('contactDeveloper', v)).then(function () { toast('已寄給開發人員，謝謝你的回報'); }).catch(function (e) { toast(e.message, true); });
-  });
+    ],
+    submit: function (v) {
+      v.page = location.pathname.split('/').pop() + location.search;
+      v.ua = navigator.userAgent;
+      return api('contactDeveloper', v);
+    }
+  }).then(function (v) { if (v) toast('已寄給開發人員，謝謝你的回報'); });
 }
 
 function changeMyPassword() {
-
   formDialog({
     title: '修改密碼', okLabel: '儲存',
     fields: [
       { name: 'old', label: '目前密碼', type: 'password', required: true },
       { name: 'pw', label: '新密碼', type: 'password', required: true, hint: '至少 8 個字元' },
       { name: 'pw2', label: '再輸入一次新密碼', type: 'password', required: true }
-    ]
-  }).then(function (v) {
-    if (!v) return;
-    if (v.pw !== v.pw2) { toast('兩次輸入的新密碼不一致', true); return; }
-    withBusy(api('changePassword', v.old, v.pw)).then(function () { toast('密碼已更新'); }).catch(function (e) { toast(e.message, true); });
-  });
+    ],
+    check: function (v) {
+      if (v.pw.length < 8) return { name: 'pw', msg: '新密碼至少 8 個字元' };
+      if (v.pw !== v.pw2) return { name: 'pw2', msg: '兩次輸入的新密碼不一致' };
+      return '';
+    },
+    submit: function (v) { return api('changePassword', v.old, v.pw); }
+  }).then(function (v) { if (v) toast('密碼已更新'); });
 }
