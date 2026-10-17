@@ -155,15 +155,15 @@ App.page('newproject', function (root) {
       if (k.multi) {
         // 共同團報人可能分成好幾題（共同報名人 1、2、3…），全部勾起來
         var cur = [].concat(info.mapping[k.key] || []);
-        var box = el('<div class="field multi-map"><span></span><div class="multi-q"></div><span class="hint">可複選：表單把每位同伴分成不同題目時，全部勾起來。</span></div>');
-        $('span', box).textContent = k.label + '（可複選）';
+        var mb = el('<div class="field multi-map"><span></span><div class="multi-q"></div><span class="hint">可複選：表單把每位同伴分成不同題目時，全部勾起來。</span></div>');
+        $('span', mb).textContent = k.label + '（可複選）';
         info.questions.forEach(function (q) {
           var c = el('<label class="check"><input type="checkbox"><span></span></label>');
           $('input', c).name = 'map_' + k.key; $('input', c).value = q; $('input', c).checked = cur.indexOf(q) >= 0;
           $('span', c).textContent = q;
-          $('.multi-q', box).appendChild(c);
+          $('.multi-q', mb).appendChild(c);
         });
-        $('#np-mapping', root).appendChild(box);
+        box.appendChild(mb);
         return;
       }
       var lab = el('<label class="field"><span></span><select class="input"></select></label>');
