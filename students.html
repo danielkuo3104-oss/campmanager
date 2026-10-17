@@ -1140,6 +1140,16 @@ App.page('students', function (root, params) {
 
   function tierOk(s) { return ['報名取消', '報名失敗'].indexOf(s.status) < 0; }
 
+  /** 批次確認繳款的對帳：一行列出最新回報的後五碼、金額、匯款日（沒有回報就用報名表填的後五碼） */
+  function last5Text(id) {
+    var s = D.students.filter(function (x) { return x.id === id; })[0];
+    if (!s) return '';
+    var f = (s.forms || []).filter(function (x) { return x.kind === 'pay'; }).pop();
+    var col = D.project.mapping.last5, v = col && s.data[col] ? String(s.data[col]).trim() : '';
+    if (f) return '後五碼 <strong>' + esc(f.last5 || '—') + '</strong>' + (f.amount !== '' && f.amount !== undefined && f.amount !== null ? '・回報 ' + money(f.amount) + ' 元' : '') + (f.date ? '・匯款日 ' + esc(String(f.date).slice(0, 10)) : '') + (f.payer ? '・匯款人 ' + esc(f.payer) : '');
+    if (v) return '後五碼 <strong>' + esc(v) + '</strong>（報名表填的）';
+    return '<span style="color:var(--bad)">沒有回報後五碼，請用金額與存摺對帳</span>';
+  }
   /** 確認繳款時的對帳資料：學員回報的後五碼、金額、匯款日（最新在上），以及報名表裡填的後五碼 */
   function payCheckHtml(s) {
     var rows = [];
@@ -2142,6 +2152,7 @@ App.page('students', function (root, params) {
       var row = el('<div class="batch-row' + (it.ok ? '' : ' skip') + '"><b></b><span class="small"></span></div>');
       $('b', row).textContent = it.name + (it.status ? '（' + it.status + '）' : '');
       $('span', row).textContent = it.ok ? it.summary : '略過：' + it.why;
+      if (action === 'confirmPaid' && it.ok) row.appendChild(el('<div class="batch-l5 small" style="flex-basis:100%">' + last5Text(it.id) + '</div>'));
       $('.batch-list', body).appendChild(row);
     });
     if (pv.mail) {
