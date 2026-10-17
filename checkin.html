@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<!-- 營隊報名管理系統　© 2026 Daniel GUO. All rights reserved. -->
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2f5d62">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="營隊管理">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>報到模式｜營隊報名管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+  <script src="assets/loading.js"></script>
+  <style>
+    /* 報到模式：管理員用手機掃學員專區的 QR code 報到 */
+    .ck-wrap { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+    .ck-mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-radius: var(--radius, 16px); font-weight: 700; background: #e4efe6; color: #2f6a45; }
+    .ck-mode.trial { background: repeating-linear-gradient(-45deg, #fff1d6, #fff1d6 14px, #ffe6b3 14px, #ffe6b3 28px); color: #8a5300; border: 2px dashed #e0a030; }
+    .ck-mode .grow { flex: 1 1 auto; min-width: 0; }
+    .ck-mode small { display: block; font-weight: 400; font-size: 12.5px; opacity: .9; }
+    .ck-count { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .ck-count div { padding: 10px 12px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); text-align: center; }
+    .ck-count b { display: block; font-size: 26px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .ck-count span { font-size: 12.5px; color: var(--text-2); }
+    .ck-cam { position: relative; border-radius: 16px; overflow: hidden; background: #111; aspect-ratio: 4 / 3; max-height: 60vh; }
+    .ck-cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ck-cam .ck-aim { position: absolute; inset: 18% 22%; border: 3px solid rgba(255, 255, 255, .85); border-radius: 18px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); pointer-events: none; }
+    .ck-cam .ck-tip { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: #fff; font-size: 13px; text-shadow: 0 1px 2px #000; }
+    .ck-res { padding: 18px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; border: 3px solid transparent; }
+    .ck-res.ok { border-color: #2e7d32; }
+    .ck-res.dup { border-color: #ef6c00; }
+    .ck-res.bad { border-color: var(--bad, #b3261e); }
+    .ck-res h2 { margin: 0; font-size: 26px; }
+    .ck-res .ck-big { font-size: 18px; font-weight: 700; }
+    .ck-facts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ck-facts span { padding: 4px 12px; border-radius: 999px; background: var(--surface-2); font-size: 14px; }
+    .ck-warn { padding: 8px 12px; border-radius: 10px; background: var(--bad-soft, #fdecea); color: var(--bad, #b3261e); font-size: 14px; line-height: 1.6; }
+    .ck-note { padding: 8px 12px; border-radius: 10px; background: var(--warn-soft, #fff4e0); color: var(--warn, #8a5300); font-size: 14px; line-height: 1.6; }
+    .ck-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ck-acts .btn { height: 46px; padding: 0 22px; font-size: 16px; }
+    .ck-queue { padding: 12px 14px; border-radius: 12px; background: var(--bad-soft, #fdecea); color: var(--bad, #b3261e); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+    .ck-list { display: flex; flex-direction: column; }
+    .ck-row { display: flex; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .ck-row:last-child { border-bottom: 0; }
+    .ck-row b { flex: 1 1 auto; min-width: 0; }
+    .ck-row .small { white-space: nowrap; }
+    .ck-grp { margin: 12px 0 2px; font-size: 13px; font-weight: 700; color: var(--text-2); }
+    .ck-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  </style>
+</head>
+<body>
+  <main id="app">
+<div class="view-checkin hidden">
+  <div class="ck-wrap">
+    <div class="page-head" style="margin-bottom:0">
+      <div class="grow"><h1>報到模式</h1><div class="sub">掃描學員專區的報到 QR code，或用姓名、電話搜尋後手動報到</div></div>
+    </div>
+    <label class="field"><span>專案</span><select class="input" id="ck-project"></select></label>
+    <div id="ck-body" class="hidden" style="display:flex;flex-direction:column;gap:14px">
+      <div class="ck-mode" id="ck-mode"></div>
+      <div id="ck-queue"></div>
+      <div class="ck-count" id="ck-count"></div>
+      <div class="card card-pad" style="display:flex;flex-direction:column;gap:12px">
+        <div class="row wrap" style="gap:8px">
+          <button class="btn primary" type="button" id="ck-cam-btn" style="height:44px">開始掃描</button>
+          <span class="small muted" id="ck-cam-state"></span>
+        </div>
+        <div class="ck-cam hidden" id="ck-cam"><video playsinline muted></video><div class="ck-aim"></div><div class="ck-tip">把 QR code 對準框內</div></div>
+        <div id="ck-res"></div>
+        <label class="field"><span>找不到 QR code：輸入姓名或電話</span><input class="input" id="ck-search" placeholder="例如 王小明、0912…" autocomplete="off"></label>
+        <div class="ck-list" id="ck-found"></div>
+      </div>
+      <div class="card card-pad">
+        <div class="ck-tabs">
+          <div class="chips" id="ck-tabs"></div>
+          <span class="spacer"></span>
+          <select class="input hidden" id="ck-squad" aria-label="依小隊篩選" style="max-width:160px"></select>
+        </div>
+        <div class="ck-list" id="ck-list"></div>
+      </div>
+      <div class="small muted" id="ck-sync"></div>
+    </div>
+  </div>
+</div>
+<div class="loading" id="page-loading"><div class="spinner"></div>載入中</div>
+  </main>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+<script>
+App.page('checkin', function (root, params) {
+  var prefix = '';
+  var D = null;                 // checkinData 的結果
+  var trial = false;            // 試跑模式
+  var tab = 'todo';             // 名單：todo 未到、done 已到
+  var squadSel = '';
+  var paused = false, lastCode = '', lastAt = 0;
+  var stream = null, timer = null, detector = null, canvas = null;
+  var video = $('#ck-cam video', root);
+  var QKEY = 'camp-checkin-queue';
+
+  /* ---------- 送不出去的報到：存在這支手機，網路恢復自動重送 ---------- */
+  function queue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch (e) { return []; } }
+  function setQueue(q) { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch (e) {} drawQueue(); }
+  function drawQueue() {
+    var q = queue().filter(function (x) { return x.prefix === prefix; }), box = $('#ck-queue', root);
+    box.innerHTML = q.length ? '<div class="ck-queue"><b class="grow">' + q.length + ' 筆報到還沒送出（網路不穩）：' + esc(q.map(function (x) { return x.name; }).join('、')) + '</b><button class="btn sm" type="button">重送</button></div>' : '';
+    if (q.length) $('button', box).addEventListener('click', function () { flush(true); });
+  }
+  var flushing = false;
+  function flush(manual) {
+    var all = queue(), mine = all.filter(function (x) { return x.prefix === prefix; });
+    if (flushing || !mine.length) return;
+    flushing = true;
+    var left = all.filter(function (x) { return x.prefix !== prefix; }), sent = 0;
+    mine.reduce(function (pr, it) {
+      return pr.then(function () {
+        return api('checkinScan', it.prefix, it.by, { trial: it.trial, rid: it.rid }).then(function (r) { sent++; apply(r.student); }, function (e) {
+          if (isNetErr(e)) left.push(it); else toast(it.name + '：' + e.message, true);
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      flushing = false;
+      setQueue(left);
+      if (sent) { toast('已補送 ' + sent + ' 筆報到'); render(); }
+      else if (manual && left.length) toast('還是連不上，請確認網路後再按重送', true);
+    });
+  }
+  function isNetErr(e) { return /無法連線|連線失敗/.test(e.message); }
+  window.addEventListener('online', function () { flush(); });
+  setInterval(function () { if (navigator.onLine !== false) flush(); }, 20000);
+
+  /* ---------- 專案與名單 ---------- */
+  api('listProjects').then(function (r) {
+    var sel = $('#ck-project', root);
+    sel.appendChild(new Option('請選擇專案', ''));
+    r.projects.filter(function (p) { return p.effective !== '已封存'; }).forEach(function (p) { sel.appendChild(new Option(p.prefix + '　' + p.name + (p.readOnly ? '（' + p.effective + '）' : ''), p.prefix)); });
+    if (params.prefix) { sel.value = params.prefix; choose(params.prefix); }
+  }).catch(function (e) { toast(e.message, true); });
+  $('#ck-project', root).addEventListener('change', function (e) { choose(e.target.value); });
+
+  function choose(p) {
+    prefix = p; D = null;
+    $('#ck-res', root).innerHTML = '';
+    $('#ck-body', root).classList.toggle('hidden', !p);
+    if (!p) return;
+    history.replaceState(null, '', 'checkin.html?prefix=' + encodeURIComponent(p));
+    load(true);
+  }
+
+  function load(first) {
+    var want = prefix;
+    return apiFast('checkinData', want, function (d) {
+      if (want !== prefix) return;
+      D = d;
+      if (first) {
+        trial = d.trialDefault || d.readOnly; first = false;
+        if (d.readOnly) toast('專案目前是「' + d.effective + '」，只能瀏覽，不能報到', true);
+      }
+      $('#ck-sync', root).textContent = '名單更新：' + fmtTime(new Date().toISOString()) + '（每 20 秒自動更新）';
+      render();
+    }).catch(function (e) { $('#ck-sync', root).textContent = '名單更新失敗：' + e.message + '（畫面上是上次的名單）'; });
+  }
+  setInterval(function () { if (prefix && !document.hidden && !$('#busy-veil')) load(); }, 20000);
+
+  function slot(s) { return trial ? s.trial : s.real; }
+  function pendingIds() { var m = {}; queue().forEach(function (x) { if (x.prefix === prefix && x.trial === trial && x.id) m[x.id] = true; }); return m; }
+  function apply(st) {
+    if (!D || !st) return;
+    D.students.forEach(function (x, i) { if (x.id === st.id) D.students[i] = st; });
+  }
+  function squadText(s) { return s.squad === '' ? '未分隊' : '第 ' + s.squad + ' 隊'; }
+
+  function render() {
+    if (!D) return;
+    var pend = pendingIds();
+    var mode = $('#ck-mode', root);
+    mode.className = 'ck-mode' + (trial ? ' trial' : '');
+    mode.innerHTML = '<div class="grow">' + (trial ? '試跑中' : '正式報到') + '<small>' + (trial ? '試跑紀錄不算正式報到，可以隨時清除；營期前請用試跑確認流程。' : '每筆報到會寫進學員的狀態紀錄與操作紀錄。') + '</small></div>' +
+      (trial ? '<button class="btn sm" type="button" data-a="clear">清除試跑紀錄</button>' : '') +
+      '<label class="check"><input type="checkbox" data-a="trial"' + (trial ? ' checked' : '') + (D.readOnly ? ' disabled' : '') + '><span>試跑模式</span></label>';
+    $('[data-a=trial]', mode).addEventListener('change', function (e) { switchMode(e.target.checked); });
+    if ($('[data-a=clear]', mode)) $('[data-a=clear]', mode).addEventListener('click', clearTrial);
+    var all = D.students, done = all.filter(function (s) { return slot(s) || pend[s.id]; });
+    $('#ck-count', root).innerHTML = '<div><b>' + done.length + '</b><span>已到</span></div><div><b>' + (all.length - done.length) + '</b><span>未到</span></div><div><b>' + all.length + '</b><span>應到</span></div>';
+    var tabs = $('#ck-tabs', root);
+    tabs.innerHTML = '';
+    [['todo', '未到 ' + (all.length - done.length)], ['done', '已到 ' + done.length]].forEach(function (t) {
+      var c = el('<button class="chip' + (tab === t[0] ? ' on' : '') + '" type="button"></button>');
+      c.textContent = t[1];
+      c.addEventListener('click', function () { tab = t[0]; render(); });
+      tabs.appendChild(c);
+    });
+    var sq = $('#ck-squad', root);
+    sq.classList.toggle('hidden', !(D.project.squads > 0));
+    if (D.project.squads > 0) {
+      var opts = '<option value="">全部小隊</option>';
+      for (var q = 1; q <= D.project.squads; q++) opts += '<option value="' + q + '">第 ' + q + ' 隊</option>';
+      sq.innerHTML = opts + '<option value="0">未分隊</option>';
+      sq.value = squadSel;
+    }
+    var list = all.filter(function (s) { return (tab === 'done') === !!(slot(s) || pend[s.id]); })
+      .filter(function (s) { return !squadSel || (squadSel === '0' ? s.squad === '' : String(s.squad) === squadSel); });
+    list.sort(function (a, b) { return (a.squad === '' ? 999 : a.squad) - (b.squad === '' ? 999 : b.squad) || a.name.localeCompare(b.name, 'zh-Hant'); });
+    var box = $('#ck-list', root), last = null;
+    box.innerHTML = list.length ? '' : '<div class="small muted" style="padding:12px 4px">' + (tab === 'todo' ? '全部都到了' : '還沒有人報到') + '</div>';
+    list.forEach(function (s) {
+      if (D.project.squads > 0 && s.squad !== last) { box.appendChild(el('<div class="ck-grp">' + esc(squadText(s)) + '</div>')); last = s.squad; }
+      box.appendChild(rowEl(s, pend[s.id], true));
+    });
+    drawQueue();
+    search();
+  }
+  $('#ck-squad', root).addEventListener('change', function (e) { squadSel = e.target.value; render(); });
+
+  function rowEl(s, isPend, grouped) {
+    var r = el('<div class="ck-row"><b></b><span class="small muted"></span></div>');
+    $('b', r).textContent = s.name;
+    var at = slot(s);
+    $('span', r).textContent = isPend ? '待送出' : at ? fmtTime(at.t).slice(-5) + ' 報到' : [D.project.squads > 0 && grouped ? '' : D.project.squads > 0 ? squadText(s) : '', s.room ? '房 ' + s.room : '', s.warns.length ? '有警示' : ''].filter(String).join('・');
+    r.addEventListener('click', function () { show(s); });
+    return r;
+  }
+
+  function switchMode(on) {
+    if (!on && D.trialDefault) {
+      confirmDialog({ title: '切換到正式報到？', lines: ['還沒到營期（' + D.project.start + ' 開始），建議先用試跑模式', '正式報到會寫進學員的狀態紀錄'], okLabel: '切換到正式報到' }).then(function (ok) {
+        if (ok) { trial = false; $('#ck-res', root).innerHTML = ''; render(); } else render();
+      });
+      return;
+    }
+    trial = on; $('#ck-res', root).innerHTML = ''; render();
+  }
+
+  function clearTrial() {
+    var n = D.students.filter(function (s) { return s.trial; }).length;
+    confirmDialog({ title: '清除試跑紀錄？', lines: ['會清除這個專案所有試跑報到（目前 ' + n + ' 筆）', '正式報到的紀錄不受影響'], okLabel: '清除', danger: true }).then(function (ok) {
+      if (!ok) return;
+      withBusy(api('checkinClearTrial', prefix)).then(function (r) { toast('已清除 ' + r.cleared + ' 筆試跑紀錄'); $('#ck-res', root).innerHTML = ''; return load(); }).catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  /* ---------- 搜尋 ---------- */
+  function search() {
+    var q = $('#ck-search', root).value.trim(), box = $('#ck-found', root);
+    box.innerHTML = '';
+    if (!q || !D) return;
+    var digits = q.replace(/\D/g, ''), key = q.replace(/\s/g, '').toLowerCase();
+    var hit = D.students.filter(function (s) {
+      return s.name.replace(/\s/g, '').toLowerCase().indexOf(key) >= 0 || (digits.length >= 3 && s.phones.some(function (p) { return p.indexOf(digits) >= 0; }));
+    }).slice(0, 20);
+    if (!hit.length) { box.innerHTML = '<div class="small muted" style="padding:8px 4px">報到名單裡找不到（候補、取消、申請取消的人不在名單裡）</div>'; return; }
+    var pend = pendingIds();
+    hit.forEach(function (s) { box.appendChild(rowEl(s, pend[s.id])); });
+  }
+  $('#ck-search', root).addEventListener('input', search);
+
+  /* ---------- 結果卡片：確認後才報到 ---------- */
+  function show(s, by, msg) {
+    paused = true;
+    var at = slot(s), pend = pendingIds()[s.id];
+    var box = $('#ck-res', root);
+    var res = el('<div class="ck-res' + (at || pend ? ' dup' : '') + '"></div>');
+    res.innerHTML = '<div class="row"><h2 class="grow"></h2><span class="tag">' + esc(s.status) + '</span></div>' +
+      '<div class="ck-facts">' + (D.project.squads > 0 ? '<span>' + esc(squadText(s)) + '</span>' : '') + (s.room ? '<span>房號 ' + esc(s.room) + '</span>' : '') +
+      (D.consentOn && !s.warns.some(function (w) { return /^同意書/.test(w); }) ? '<span>同意書：' + esc(s.consent) + '</span>' : '') + '</div>' +
+      s.warns.map(function (w) { return '<div class="ck-warn">' + esc(w) + '</div>'; }).join('') +
+      s.notes.map(function (w) { return '<div class="ck-note">' + esc(w) + '</div>'; }).join('') +
+      (msg ? '<div class="ck-warn">' + esc(msg) + '</div>' : '') +
+      (at ? '<div class="ck-big" style="color:#ef6c00">已經' + (trial ? '試跑' : '') + '報到過：' + esc(fmtTime(at.t)) + '（' + esc(at.name) + '）</div>' : pend ? '<div class="ck-big" style="color:#ef6c00">這筆報到還沒送出，網路恢復後會自動重送</div>' : '') +
+      '<div class="ck-acts">' + (at ? '<button class="btn danger" type="button" data-a="undo">取消這筆報到</button>' : pend ? '' : '<button class="btn primary" type="button" data-a="go">' + (trial ? '試跑報到' : '報到') + '</button>') +
+      '<button class="btn" type="button" data-a="close">' + (at || pend ? '繼續掃描' : '取消') + '</button></div>';
+    $('h2', res).textContent = s.name;
+    box.innerHTML = ''; box.appendChild(res);
+    res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    $('[data-a=close]', res).addEventListener('click', closeRes);
+    if ($('[data-a=go]', res)) $('[data-a=go]', res).addEventListener('click', function () { doCheckin(s, by || { id: s.id }, res); });
+    if ($('[data-a=undo]', res)) $('[data-a=undo]', res).addEventListener('click', function () {
+      confirmDialog({ title: '取消 ' + s.name + ' 的' + (trial ? '試跑' : '') + '報到？', lines: ['掃錯人或按錯時使用', trial ? '只影響試跑紀錄' : '會寫進學員的狀態紀錄'], okLabel: '取消報到', danger: true }).then(function (ok) {
+        if (!ok) return;
+        withBusy(api('checkinUndo', prefix, s.id, trial)).then(function (r) { if (r.student) apply(r.student); toast('已取消 ' + s.name + ' 的報到'); closeRes(); render(); }).catch(function (e) { toast(e.message, true); });
+      });
+    });
+  }
+  function closeRes() { $('#ck-res', root).innerHTML = ''; paused = false; lastCode = ''; }
+
+  function doCheckin(s, by, res) {
+    var rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    var btn = $('[data-a=go]', res);
+    btnBusy(btn, true, '報到', '送出中…');
+    var opt = { trial: trial, rid: rid };
+    api('checkinScan', prefix, by, opt).then(function (r) {
+      if (r.result === 'blocked') { res.className = 'ck-res bad'; res.querySelector('.ck-acts').innerHTML = '<div class="ck-warn">' + esc(r.student.name + r.message) + '</div><button class="btn" type="button">繼續掃描</button>'; $('.ck-acts .btn', res).addEventListener('click', closeRes); return; }
+      apply(r.student);
+      if (r.result === 'dup') { show(r.student, by, '剛剛已經有人幫他報到了（' + fmtTime(r.at) + '，' + r.byName + '）'); render(); return; }
+      res.className = 'ck-res ok';
+      res.querySelector('.ck-acts').innerHTML = '<div class="ck-big" style="color:#2e7d32">' + (trial ? '試跑報到完成' : '報到完成') + '</div>';
+      if (navigator.vibrate) navigator.vibrate(60);
+      render();
+      setTimeout(function () { if ($('#ck-res .ck-res.ok', root) === res) closeRes(); }, 1800);
+    }).catch(function (e) {
+      if (isNetErr(e)) {
+        // 網路斷了：存起來，網路恢復自動重送（伺服器用 rid 判斷是不是同一筆，不會變成重複報到）
+        setQueue(queue().concat([{ prefix: prefix, by: by, id: s.id, name: s.name, trial: trial, rid: rid, t: Date.now() }]));
+        res.className = 'ck-res bad';
+        res.querySelector('.ck-acts').innerHTML = '<div class="ck-warn"><b>報到沒有送出（網路不穩）。</b>已記在這支手機，網路恢復會自動重送；也可以按上方的「重送」。</div><button class="btn" type="button">繼續掃描</button>';
+        $('.ck-acts .btn', res).addEventListener('click', closeRes);
+        render();
+        return;
+      }
+      btnBusy(btn, false, trial ? '試跑報到' : '報到');
+      toast(e.message, true);
+    });
+  }
+
+  /** 掃到的內容：CK1.專案代碼.學員ID.簽章（簽章由伺服器驗證） */
+  function onCode(text) {
+    var now = Date.now();
+    if (paused || (text === lastCode && now - lastAt < 3000)) return;
+    lastCode = text; lastAt = now;
+    if (navigator.vibrate) navigator.vibrate(30);
+    var m = String(text).trim().match(/^CK1\.([A-Za-z0-9]+)\.([A-Za-z0-9]+)\.[A-Za-z0-9_-]+$/);
+    if (!m) { toast('這不是報到 QR code', true); return; }
+    if (m[1] !== prefix) { toast('這是其他專案（' + m[1] + '）的報到 QR code，請確認上方選的專案', true); return; }
+    var s = D && D.students.filter(function (x) { return x.id === m[2]; })[0];
+    if (s) { show(s, { code: text }); return; }
+    // 名單裡沒有：可能是剛錄取（名單還沒更新）或已取消，問伺服器
+    paused = true;
+    load().then(function () {
+      var s2 = D && D.students.filter(function (x) { return x.id === m[2]; })[0];
+      if (s2) { show(s2, { code: text }); return; }
+      return api('checkinScan', prefix, { code: text }, { trial: trial }).then(function (r) {
+        if (r.result === 'blocked') toast(r.student.name + r.message, true);
+        else { apply(r.student); render(); }
+      }).catch(function (e) { toast(e.message, true); }).then(function () { paused = false; });
+    });
+  }
+  App.checkinCode = onCode;   // 測試用：直接送入掃到的內容
+
+  /* ---------- 相機：有 BarcodeDetector 就用，沒有就載入內附的 jsQR 解碼 ---------- */
+  function getDecoder() {
+    if (window.BarcodeDetector && BarcodeDetector.getSupportedFormats) {
+      return BarcodeDetector.getSupportedFormats().then(function (f) { return f.indexOf('qr_code') >= 0 ? new BarcodeDetector({ formats: ['qr_code'] }) : null; }).catch(function () { return null; })
+        .then(function (d) { return d || loadJsqr(); });
+    }
+    return loadJsqr();
+  }
+  function loadJsqr() {
+    if (window.jsQR) return Promise.resolve(null);
+    return new Promise(function (ok, bad) {
+      var sc = document.createElement('script');
+      sc.src = 'assets/jsqr.min.js';
+      sc.onload = function () { ok(null); };
+      sc.onerror = function () { bad(new Error('QR 解碼程式載入失敗，請用姓名搜尋報到')); };
+      document.head.appendChild(sc);
+    });
+  }
+  function tick() {
+    if (paused || !stream || video.readyState < 2) return;
+    if (detector) {
+      detector.detect(video).then(function (codes) { if (codes && codes[0]) onCode(codes[0].rawValue); }).catch(function () {});
+      return;
+    }
+    if (!window.jsQR) return;
+    var w = video.videoWidth, h = video.videoHeight, k = Math.min(1, 640 / Math.max(w, h));
+    canvas = canvas || document.createElement('canvas');
+    canvas.width = Math.round(w * k); canvas.height = Math.round(h * k);
+    var c = canvas.getContext('2d', { willReadFrequently: true });
+    c.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var img = c.getImageData(0, 0, canvas.width, canvas.height);
+    var r = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    if (r && r.data) onCode(r.data);
+  }
+  function stopCam() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null;
+    $('#ck-cam', root).classList.add('hidden');
+    $('#ck-cam-btn', root).textContent = '開始掃描';
+    $('#ck-cam-state', root).textContent = '';
+  }
+  $('#ck-cam-btn', root).addEventListener('click', function () {
+    if (stream) { stopCam(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('這個瀏覽器不能使用相機（需要 https），請用姓名或電話搜尋', true); return; }
+    $('#ck-cam-state', root).textContent = '開啟相機中…';
+    Promise.all([navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }), getDecoder()]).then(function (x) {
+      stream = x[0]; detector = x[1];
+      video.srcObject = stream;
+      return video.play();
+    }).then(function () {
+      $('#ck-cam', root).classList.remove('hidden');
+      $('#ck-cam-btn', root).textContent = '停止掃描';
+      $('#ck-cam-state', root).textContent = detector ? '' : '（使用內附解碼器）';
+      timer = setInterval(tick, 200);
+    }).catch(function (e) {
+      stopCam();
+      toast(/Permission|NotAllowed/i.test(e.name || e.message) ? '沒有相機權限：請在瀏覽器設定允許使用相機，或用姓名搜尋' : '無法開啟相機：' + e.message, true);
+    });
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && stream) stopCam(); });
+});
+</script>
+</body>
+</html>
