@@ -270,7 +270,7 @@
             }).join('') + '</div>' : ''));
         },
         pay: function () { return d.payHtml ? card('繳費資訊', '<div class="pt-rich">' + d.payHtml + '</div>') : ''; },
-        info: function () { return '<details class="card pt-blk pt-fold"><summary><h2>報名資訊</h2><span class="pt-fold-hint">點開查看</span></summary>' + infoTable(d.info) + (d.calendar ? calRow() : '') + '</details>'; },
+        info: function () { return '<details class="card pt-blk pt-fold"><summary><h2>報名資訊</h2><span class="pt-fold-hint">點開查看</span></summary>' + infoTable(d.info) + '' + '</details>'; },
         // 報名資料：預設收起來，點標題展開；有開放自行修改的欄位時多一顆「修改資料」
         data: function () {
           if (!d.dataHtml && !editable.length) return '';
@@ -372,7 +372,7 @@
       });
       // 報名進度的說明：用專用的標記找，區塊順序調換後也不會寫到別張卡片（例如「我的房間」的室友那行）
       if (d.statusText) blocks.querySelector('[data-status-text]').textContent = d.statusText;
-      if (d.calendar && !preview) calInCountdown();
+
       // 勾選清單：勾選狀態只存在這支手機（每個區塊依標題記住）
       (d.sections || []).forEach(function (x, i) {
         if (x.type !== 'checklist') return;
