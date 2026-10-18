@@ -25,7 +25,7 @@ var SettingsForm = (function () {
     { key: 'display', title: '名單顯示欄位' },
     { key: 'echo', title: '報名結果信附上的回覆內容', optional: true }
   ];
-  var SIMPLE = ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyGroupPrice', 'earlyDeadline', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains', 'groupMax', 'replyTo', 'refundFee'];
+  var SIMPLE = ['capacity', 'holdHours', 'promoteMode', 'waitOrder', 'price', 'groupPrice', 'earlyPrice', 'earlyGroupPrice', 'earlyDeadline', 'lowIncomePrice', 'payDays', 'name', 'signature', 'regStart', 'regEnd', 'start', 'end', 'squads', 'emailDomains', 'groupMax', 'replyTo', 'refundFee'];
   var HOTEL_KEYS = ['name', 'address', 'phone', 'checkin', 'checkout', 'url', 'note'];
   var BANK_KEYS = ['bank', 'code', 'branch', 'name', 'no'];
   var DEFAULT_KEYS = ['name', 'parentPhone', 'studentPhone', 'idNumber', 'birth', 'diet', 'specialDiet', 'allergy'];
@@ -44,7 +44,7 @@ var SettingsForm = (function () {
   /** 新專案的預設值（與後端建立專案時的預設相同） */
   function blank(o) {
     return {
-      capacity: '', holdHours: 72, promoteMode: '手動', waitOrder: '報名時間', price: '', groupPrice: '', earlyPrice: '', earlyGroupPrice: '', earlyDeadline: '',
+      capacity: '', holdHours: 72, promoteMode: '手動', waitOrder: '報名時間', price: '', groupPrice: '', earlyPrice: '', earlyGroupPrice: '', earlyDeadline: '', lowIncomePrice: '',
       payDays: 1, remind: { on: false, hours: 24 }, bank: null, account: '', refund: { tiers: [], note: '' }, name: o.name || '', signature: '', regStart: '', regEnd: '', start: '', end: '',
       headerColor: '', hotel: {}, contacts: [], contactsInMail: true, footer: '', footerEffective: o.footerSystem || '', footerSystem: o.footerSystem || '',
       squads: 0, emailDomains: '', groupMax: 5, replyTo: '', refundFee: 0, mapping: o.mapping || {}, display: o.display || [], echo: [], echoMask: false, questions: o.questions || []
@@ -87,6 +87,7 @@ var SettingsForm = (function () {
         f('price', '原價' + req, 'number', p.price) + f('groupPrice', '團報價（選填）', 'number', p.groupPrice) +
         f('earlyPrice', '早鳥價（選填）', 'number', p.earlyPrice) + f('earlyGroupPrice', '早鳥團報價（選填）', 'number', p.earlyGroupPrice, '早鳥期限內的團報；沒填就在早鳥價與團報價中取較低的') +
         f('earlyDeadline', '早鳥期限（有早鳥價才需要）', 'date', p.earlyDeadline) +
+        f('lowIncomePrice', '低收報名費（選填，可填 0）', 'number', p.lowIncomePrice === undefined || p.lowIncomePrice === null ? '' : p.lowIncomePrice, '低收／中低收資格審核通過時預設的應繳金額；0 = 全額補助（審核通過直接程序完成）；留空 = 照報名時的價格') +
         f('payDays', '匯款期限（報名後幾天）', 'number', p.payDays, '1 = 報名隔天 23:59') +
         '<div class="field"><span>匯款期限鄰近通知</span><label class="check" style="min-height:38px"><input type="checkbox" name="remindOn"' + (p.remind && p.remind.on ? ' checked' : '') + dis + '><span>自動寄給還沒匯款的人</span></label></div>' +
         '<div class="field"><span>期限前幾小時寄</span><input class="input" name="remindHours" type="number" min="1" max="336" value="' + esc(p.remind ? p.remind.hours : 24) + '"' + dis + '><span class="hint">例如 24 是期限前一天、72 是前三天；每人每個期限只寄一次</span></div>' +
