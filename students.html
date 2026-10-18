@@ -632,8 +632,9 @@ App.page('students', function (root, params) {
     if (s.status === '資格審核中') {
       items.push({ header: '資格審核' });
       add('審核通過，寄繳費通知…', true, function () {
-        ask('審核通過', [{ name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: s.price,
-          hint: '依報名時的價格預設 ' + money(s.price) + ' 元，有減免請改成實際金額。匯款期限從現在起算，下一步可預覽「審核通過與繳費通知」。' }], function (v) { run(s, 'reviewPass', v); });
+        var lp = D.project.lowIncomePrice, low = lp !== '' && lp !== null && lp !== undefined ? Number(lp) : null;
+        ask('審核通過', [{ name: 'amount', label: '應繳金額（元）', type: 'number', required: true, value: low === null ? s.price : low,
+          hint: (low === null ? '依報名時的價格預設 ' + money(s.price) + ' 元' : '依專案設定的低收報名費預設 ' + money(low) + ' 元（報名時的價格是 ' + money(s.price) + ' 元）') + '，可以改。填 0 = 全額補助，直接改為程序完成、不寄繳費通知；其他金額的匯款期限從現在起算，下一步可預覽「審核通過與繳費通知」。' }], function (v) { run(s, 'reviewPass', v); });
       }, false, 'yes');
       add('審核未通過…', true, function () {
         ask('審核未通過', [
@@ -709,6 +710,15 @@ App.page('students', function (root, params) {
     var hasReq = s.status === '申請取消' || !!refundReq(s);
     if (hasReq) add('撤銷取消申請…', true, function () { revertCancel(s); });
     add(hasReq ? '處理退款並取消報名…' : '取消報名…', !has(s, ['報名取消', '報名失敗']), function () { cancelDialog(s); }, true, 'opt');
+    add('完整刪除（測試資料）…', true, function () {
+      formDialog({ title: '完整刪除 ' + s.name + '？', danger: true, okLabel: '永久刪除',
+        desc: '只用在自己測試的資料。會刪掉名單上這一列（含備註、狀態紀錄）和 Google 表單上的那筆回覆，之後同步也不會再出現，無法復原。真的學員要取消請用「取消報名」。',
+        fields: [{ name: 'name', label: '請輸入學員姓名「' + s.name + '」確認', required: true }],
+        check: function (v) { return v.name.trim() === s.name ? '' : { name: 'name', msg: '姓名不符' }; } }).then(function (v) {
+        if (!v) return;
+        withBusy(api('deleteStudentData', prefix, s.id, v.name.trim())).then(function (r) { toast(r.message); closeDetail(); return load(); }).catch(function (e) { toast(e.message, true); });
+      });
+    }, true);
     popMenu(anchor, items);
   }
 
@@ -791,7 +801,7 @@ App.page('students', function (root, params) {
     body.addEventListener('input', sum);
     $('.rc-hint', body).textContent = (paidAmt ? '已確認繳款 ' + money(paidAmt) + ' 元。' : '還沒確認繳款，請填實際收到的金額。') +
       (pct === null ? '這個專案沒有設定退款規定，「無法退回金額」請自行填寫。' : '依退款規定' + (reqPct ? '（學員申請當天）' : '（今天取消）') + '可退 ' + pct + '%，已先算好「無法退回金額」，可以再改。') +
-      '沒退的部分仍計入收入。' + (req ? '學員申請時已經寄過「取消報名通知」。' : '');
+      '只有「無法退回金額（依規定）」計入收入，郵匯費與其他扣除項目不算收入。' + (req ? '學員申請時已經寄過「取消報名通知」。' : '');
     sum();
     modal({ title: isReq || req ? '處理退款並取消報名' : '取消報名', desc: s.name + (req ? '　退款帳戶：' + req.refund.bank + ' ' + (req.refund.branch || '') + '，戶名 ' + req.refund.name + '，帳號 ' + req.refund.no : ''), body: body, wide: true,
       buttons: [{ label: '取消', value: null }, { label: '下一步', cls: 'danger', validate: function () {
