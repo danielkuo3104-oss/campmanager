@@ -49,6 +49,13 @@
     .pf-pay div { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
     .pf-pay div span:first-child { color: var(--text-2); }
     .pf-pay div strong { min-width: 0; overflow-wrap: anywhere; letter-spacing: .3px; }
+    /* 交通方式調查：選項是大顆的按鈕，手機好點 */
+    .pf-info-box { line-height: 1.8; }
+    .pf-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pf-choices label { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 15px; background: var(--surface, #fff); }
+    .pf-choices input { accent-color: var(--brand, #2f5d62); margin: 0; }
+    .pf-choices label:has(input:checked) { border-color: var(--brand, #2f5d62); background: var(--brand-soft, #e6efed); font-weight: 500; }
+    .pf-other[hidden] { display: none; }
     @media (min-width: 521px) { .pf-mask { align-items: center; } }
     @media (max-width: 520px) { .pf-row { grid-template-columns: 1fr; } .pf-body { padding: 20px 16px; } }
   </style>
@@ -155,6 +162,17 @@
         '<div class="pf-row"><label class="field"><span>匯款金額（元）</span><input class="input" name="amount" inputmode="numeric" maxlength="9" value="' + esc(r.price) + '"><span class="hint">只填數字，例如 6000</span></label>' +
         '<label class="field"><span>匯款日期</span><input class="input" name="date" type="date" value="' + esc(r.today) + '"></label></div>' +
         '<label class="field"><span>匯款人姓名</span><input class="input" name="payer" maxlength="40" autocomplete="off" placeholder="選填，例如 王媽媽"><span class="hint">用家長或其他人的帳戶匯款時請填，方便籌辦團隊對帳</span></label>';
+    } else if (kind === 'transport') {
+      var tp = r.transport || { choices: [], last: null };
+      if (tp.infoHtml) fields += '<div class="pf-info-box">' + tp.infoHtml + '</div>';
+      if (tp.last) fields += '<div class="pf-msg">你在 ' + esc(tp.last.t) + ' 填過了，下面帶入上次的答案。改好再送出，籌辦團隊以最後一次為準。</div>';
+      [['arrive', '怎麼來營隊'], ['leave', '營隊結束後怎麼離開']].forEach(function (x) {
+        var cur = tp.last ? tp.last[x[0]] : '', note = tp.last ? tp.last[x[0] + 'Note'] : '';
+        fields += '<div class="field"><span>' + x[1] + '<em>*</em></span><div class="pf-choices" role="radiogroup">' + tp.choices.map(function (c) {
+          return '<label><input type="radio" name="' + x[0] + '" value="' + esc(c) + '"' + (c === cur ? ' checked' : '') + ' required>' + esc(c) + '</label>';
+        }).join('') + '</div>' +
+          '<label class="field pf-other" data-other="' + x[0] + '"' + (cur === tp.other ? '' : ' hidden') + '><span>請說明交通方式<em>*</em></span><input class="input" name="' + x[0] + 'Note" maxlength="60" placeholder="例如 自己騎機車" value="' + esc(note) + '"></label></div>';
+      });
     } else {
       if (r.refundHtml) fields += '<div class="pf-policy">' + r.refundHtml + '</div>';
       fields += '<label class="field"><span>取消原因<em>*</em></span><textarea class="input" name="reason" rows="2" maxlength="500" required></textarea></label>';
@@ -170,12 +188,19 @@
       }
     }
     fields += '<label class="field"><span>' + esc(F.noteLabel) + '</span><textarea class="input" name="note" rows="3" maxlength="1000" placeholder="選填"></textarea></label>';
-    var danger = kind !== 'pay';
+    var danger = kind !== 'pay' && kind !== 'transport';
     body.innerHTML = html + '<form class="pf-steps" id="pf-send">' + fields +
       '<label class="check"><input type="checkbox" name="me" required><span>以上是我的報名資料' + (danger && !r.paid ? '，確定要取消（無法復原）' : '') + '</span></label>' +
       '<div class="pf-err"></div><div class="row" style="gap:8px;display:flex;flex-wrap:wrap"><button class="btn ' + (danger ? 'danger' : 'primary') + '" type="submit">送出</button>' + (r.viaPortal ? '' : '<button class="btn ghost" type="button" id="pf-back">不是我，重新查詢</button>') + '</div></form>';
     if (!r.viaPortal) document.getElementById('pf-back').onclick = start;
     var form = document.getElementById('pf-send');
+    // 選了「其他」才出現說明欄
+    Array.prototype.forEach.call(form.querySelectorAll('.pf-choices input'), function (rb) {
+      rb.addEventListener('change', function () {
+        var box = form.querySelector('[data-other="' + rb.name + '"]');
+        if (box) box.hidden = rb.value !== (r.transport && r.transport.other);
+      });
+    });
     Array.prototype.forEach.call(form.querySelectorAll('[data-copy]'), function (b) { b.addEventListener('click', function () { copyBtn(b, r.payRows[Number(b.getAttribute('data-copy'))][2]); }); });
     // 匯款金額只收數字：全形轉半形，其他字（例如「六千」、「元」）輸入時就拿掉
     if (form.elements.amount) form.elements.amount.addEventListener('input', function () {
@@ -187,20 +212,33 @@
       var btn = form.querySelector('button[type=submit]'), err = form.querySelector('.pf-err');
       err.textContent = '';
       var data = {};
-      ['last5', 'amount', 'date', 'payer', 'reason', 'note', 'r_bank', 'r_branch', 'r_no', 'r_name'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value.trim(); });
+      ['last5', 'amount', 'date', 'payer', 'reason', 'note', 'r_bank', 'r_branch', 'r_no', 'r_name', 'arriveNote', 'leaveNote'].forEach(function (k) { if (form.elements[k]) data[k] = form.elements[k].value.trim(); });
+      if (kind === 'transport') {
+        var tp2 = r.transport, miss = '';
+        [['arrive', '怎麼來營隊'], ['leave', '怎麼離開']].forEach(function (x) {
+          var pick = form.querySelector('input[name=' + x[0] + ']:checked');
+          data[x[0]] = pick ? pick.value : '';
+          if (!miss && !data[x[0]]) miss = '請選擇' + x[1];
+          if (!miss && data[x[0]] === tp2.other && !data[x[0] + 'Note']) miss = x[1] + '選了「' + tp2.other + '」，請說明交通方式';
+          if (data[x[0]] !== tp2.other) data[x[0] + 'Note'] = '';
+        });
+        if (miss) { err.textContent = miss; return; }
+      }
       if (kind === 'pay' && !/^\d{5}$/.test(data.last5)) { err.textContent = '匯款帳號後五碼請填 5 位數字'; form.elements.last5.focus(); return; }
       if (kind === 'pay' && data.amount && !/^\d{1,9}$/.test(data.amount.replace(/,/g, ''))) { err.textContent = '匯款金額請填數字，例如 6000'; form.elements.amount.focus(); return; }
       if (data.r_no !== undefined && !/^[\d\s-]{6,30}$/.test(data.r_no)) { err.textContent = '退款帳號請填數字（可含 - 或空白）'; return; }
       // 送出前再確認一次
       var rows = [['學員姓名', who.name]];
       if (kind === 'pay') rows.push(['後五碼', data.last5], ['匯款金額', data.amount ? Number(data.amount.replace(/,/g, '')).toLocaleString('en-US') + ' 元' : '（未填）'], ['匯款日期', data.date || '（未填）'], ['匯款人姓名', data.payer || '（未填）']);
+      else if (kind === 'transport') rows.push(['怎麼來', data.arrive + (data.arriveNote ? '（' + data.arriveNote + '）' : '')], ['怎麼離開', data.leave + (data.leaveNote ? '（' + data.leaveNote + '）' : '')]);
       else rows.push(['取消原因', data.reason]);
       if (data.r_bank !== undefined) rows.push(['退款銀行', data.r_bank + ' ' + data.r_branch], ['退款帳號', data.r_no], ['戶名', data.r_name]);
       if (data.note) rows.push([F.noteLabel, data.note]);
       var warn = kind === 'pay' ? '送出後狀態會改為「繳款待核覆」，籌辦團隊查帳後會寄確認信。'
+        : kind === 'transport' ? '之後有變動可以再填一次，以最後一次為準。'
         : r.paid ? '送出後會通知籌辦團隊處理退款，退款完成前報名仍然有效。'
         : kind === 'unwait' ? '送出後會立即取消你的候補，無法復原。' : '送出後會立即取消你的報名，無法復原。';
-      confirmBox(kind === 'pay' ? '確定送出匯款回報？' : kind === 'unwait' ? '確定取消候補？' : '確定取消報名？', rows, warn, kind !== 'pay' && !r.paid).then(function (yes) {
+      confirmBox(kind === 'pay' ? '確定送出匯款回報？' : kind === 'transport' ? '確定送出交通方式？' : kind === 'unwait' ? '確定取消候補？' : '確定取消報名？', rows, warn, !danger ? false : !r.paid).then(function (yes) {
         if (!yes) return;
         busy(btn, true, '送出');
         call('publicSubmit', prefix, kind, who.name, who.key, data).then(function (res) {
