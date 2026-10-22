@@ -246,7 +246,7 @@
           function btn(a, cls) {
             var i = d.actions.indexOf(a);
             // 預覽時按鈕不會開表單，點了只提示
-            return preview ? '<span class="' + cls + '" data-pv>' + esc(a.label) + '</span>' : '<a class="' + cls + '" data-a="' + i + '" href="' + esc(a.url) + '">' + esc(a.label) + (a.done && a.kind === 'pay' ? '（已回報）' : '') + '</a>';
+            return preview ? '<span class="' + cls + '" data-pv>' + esc(a.label) + '</span>' : '<a class="' + cls + '" data-a="' + i + '" href="' + esc(a.url) + '">' + esc(a.label) + (a.done && a.kind === 'pay' ? '（已回報）' : a.done && a.kind === 'transport' ? '（已填，可修改）' : '') + '</a>';
           }
           var todo = d.actions.filter(function (a) { return a.todo; }), quiet = d.actions.filter(function (a) { return a.quiet; });
           var rest = d.actions.filter(function (a) { return !a.todo && !a.quiet; });
