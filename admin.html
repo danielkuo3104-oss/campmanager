@@ -565,7 +565,7 @@ App.page('admin', function (root, params) {
 
   /** 營隊互動系統的系統連線：互動系統建立營隊時可以直接選這裡的專案，串接設定自動寫好 */
   function interactSysCard() {
-    var c = el('<div class="card card-pad" style="margin-top:16px"><h3>營隊互動系統連線</h3><div class="small muted" style="margin-bottom:12px">產生系統連線金鑰，貼到營隊互動系統「我的營隊 → 報名後台連線」。之後互動系統建立營隊時可以直接選這裡的專案，名稱、營期、小隊數與串接設定會自動帶過去，不用兩邊複製貼上。互動系統只拿得到專案的代碼、名稱、營期、小隊數，學員資料一樣只有代碼、姓名、小隊與隊輔姓名。</div><div class="isys-state small"></div><div class="isys-key"></div><div class="row" style="justify-content:flex-end;gap:8px"></div></div>');
+    var c = el('<div class="card card-pad" style="margin-top:16px"><h3>營隊互動系統連線</h3><div class="small muted" style="margin-bottom:12px">產生系統連線金鑰，貼到營隊互動系統「我的營隊 → 報名後台連線」。之後互動系統建立營隊時可以直接選這裡的專案，名稱、營期、小隊數與串接設定會自動帶過去，不用兩邊複製貼上。互動系統只拿得到專案的代碼、名稱、營期、小隊數，學員資料一樣只有代碼、姓名、小隊、房間；另外會同步專輔隨輔與分房。</div><div class="isys-state small"></div><div class="isys-key"></div><div class="row" style="justify-content:flex-end;gap:8px"></div></div>');
     function draw(st) {
       $('.isys-state', c).textContent = st.set ? '已產生（' + fmtTime(st.at) + '）。金鑰內容看不到；遺失時重新產生，再貼到互動系統。' : '還沒有產生。';
       var btns = $('.row', c);
