@@ -1006,11 +1006,11 @@ App.page('students', function (root, params) {
   }
 
   /**
-   * 營隊互動系統（另一套系統）：學員專區多一個「進入營隊互動」按鈕，互動系統定時來拿名單（學員代碼、姓名、小隊、隊輔姓名）。
+   * 營隊互動系統（另一套系統）：學員專區多一個「進入營隊互動」按鈕，互動系統定時來拿名單（學員代碼、姓名、小隊、房間；專輔隨輔與分房）。
    * 網址、互動營隊 ID、串接金鑰都在互動系統的「營隊設定」複製；金鑰只存在後端，這裡只顯示有沒有設定。
    */
   function interactSection(box, ro) {
-    var sec = el('<div class="drawer-section"><h3>營隊互動系統</h3><p class="hint" style="margin-top:0">開啟後，已錄取的學員在學員專區會看到「進入營隊互動」，按了直接登入互動系統（不用再輸入資料）。互動系統只會拿到學員代碼、姓名、小隊與隊輔姓名，拿不到電話、身分證、Email，也不能修改報名資料。</p><div class="small muted">讀取中…</div></div>');
+    var sec = el('<div class="drawer-section"><h3>營隊互動系統</h3><p class="hint" style="margin-top:0">開啟後，已錄取的學員在學員專區會看到「進入營隊互動」，按了直接登入互動系統（不用再輸入資料）。互動系統只會拿到學員代碼、姓名、小隊、房間，以及專輔隨輔（姓名、職稱、聯絡方式）與分房，拿不到學員的電話、身分證、Email，也不能修改報名資料。</p><div class="small muted">讀取中…</div></div>');
     box.appendChild(sec);
     api('getInteract', prefix).then(function (c) {
       var dis = ro ? ' disabled' : '';
