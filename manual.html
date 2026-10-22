@@ -1839,6 +1839,7 @@
 <li>用<a href="#mail-bulk">群發通知</a>選<span class="sx-btn">營前通知（使用範本）</span>寄出。範本已經放好 {{交通資訊}} 和 {{交通方式調查按鈕}}，學員收到信就看得到交通資訊和填寫按鈕。</li>
 </ol>
 <p>打開之後，這一列下面會出現<b>填寫狀況</b>：已錄取幾人、已填幾人、「怎麼來」「怎麼離開」各選項幾人，還有誰還沒填（最多列 30 人）。每位學員的答案在學員詳細資料的「交通方式」，匯出 PDF 可以選「交通（來）」「交通（回）」欄，見<a href="#export-pdf">匯出</a>。</p>
+<p>名單上方有<span class="sx-btn">交通：全部 ▾</span>篩選（交通方式調查打開、或有人填過才出現），可以複選「交通未填」、「來：高鐵」、「回：家長接送」等，符合任一個就顯示，也能存成常用篩選。例如勾「來：高鐵」再匯出 PDF，就是高鐵集合的點名單。<a href="#checkin">營隊報到</a>時，掃到的學員卡片也會顯示「交通：來 高鐵／回 家長接送」，表單有開但還沒填的會提醒「交通方式還沒填」。</p>
 <div class="tip"><p>交通方式調查關閉時，{{交通資訊}} 和 {{交通方式調查按鈕}} 都是空的，營前通知不會多出空白段落，可以放心照常寄。</p></div>
 
 <h3 id="forms-student">學員看到什麼</h3>
@@ -2270,7 +2271,7 @@
 </section>
 <section class="chap" id="checkin">
 <h2><span class="n">14</span>營隊報到</h2>
-<p class="lead">營隊當天，學員打開學員專區出示報到 QR code，工作人員用手機掃描就完成報到；忘了帶手機的學員，用姓名或電話搜尋後手動報到。報到畫面同時顯示小隊、房號、還沒繳的錢、同意書和過敏資訊，讓報到台一次確認。營期前可以用「試跑」拿真實名單演練，不會留下正式紀錄。</p>
+<p class="lead">營隊當天，學員打開學員專區出示報到 QR code，工作人員用手機掃描就完成報到；忘了帶手機的學員，用姓名或電話搜尋後手動報到。報到畫面同時顯示小隊、房號、交通方式、還沒繳的錢、同意書和過敏資訊，讓報到台一次確認。營期前可以用「試跑」拿真實名單演練，不會留下正式紀錄。</p>
 
 <h3 id="checkin-before">報到前的準備</h3>
 <ul>
@@ -2304,7 +2305,7 @@
 <figure class="phone"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="ck-result" alt="報到卡片" loading="lazy"><figcaption>圖：讀到 QR code 後的卡片。<span class="co">1</span> 姓名與狀態；<span class="co">2</span> 小隊、房號；<span class="co">3</span> 過敏、特殊飲食；<span class="co">4</span> 報到；<span class="co">5</span> 取消</figcaption></figure>
 <ul>
 <li><span class="co">1</span> 學員姓名，右邊是目前狀態。</li>
-<li><span class="co">2</span> 小隊（有分隊時）、房號（有分房時），同意書沒問題時也會顯示「同意書：已完成」或「同意書：已簽，待審核」。</li>
+<li><span class="co">2</span> 小隊（有分隊時）、房號（有分房時）、交通方式（學員填過<a href="#forms-transport">交通方式調查</a>時，例如「交通：來 高鐵／回 家長接送」），同意書沒問題時也會顯示「同意書：已完成」或「同意書：已簽，待審核」。</li>
 <li><span class="co">3</span> 黃色提示：報名資料裡的過敏物質與特殊疾病、特殊飲食習慣（填「無」「沒有」的不顯示），提醒交給醫護組或餐飲組。</li>
 <li><span class="co">4</span> <span class="sx-btn c-primary">報到</span>：真正送出報到。</li>
 <li><span class="co">5</span> <span class="sx-btn">取消</span>：不報到，關掉卡片。</li>
