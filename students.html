@@ -980,6 +980,34 @@ App.page('students', function (root, params) {
     document.head.appendChild(sc);
   }
 
+  /**
+   * 營隊互動系統（另一套系統）：學員專區多一個「進入營隊互動」按鈕，互動系統定時來拿名單（學員代碼、姓名、小隊、隊輔姓名）。
+   * 網址、互動營隊 ID、串接金鑰都在互動系統的「營隊設定」複製；金鑰只存在後端，這裡只顯示有沒有設定。
+   */
+  function interactSection(box, ro) {
+    var sec = el('<div class="drawer-section"><h3>營隊互動系統</h3><p class="hint" style="margin-top:0">開啟後，已錄取的學員在學員專區會看到「進入營隊互動」，按了直接登入互動系統（不用再輸入資料）。互動系統只會拿到學員代碼、姓名、小隊與隊輔姓名，拿不到電話、身分證、Email，也不能修改報名資料。</p><div class="small muted">讀取中…</div></div>');
+    box.appendChild(sec);
+    api('getInteract', prefix).then(function (c) {
+      var dis = ro ? ' disabled' : '';
+      sec.lastChild.remove();
+      sec.appendChild(el('<div style="display:flex;flex-direction:column;gap:10px">' +
+        '<label class="check"><input type="checkbox" name="ixOn"' + (c.on ? ' checked' : '') + dis + '><span><b>開啟營隊互動系統入口</b></span></label>' +
+        '<label class="field"><span>互動系統網址</span><input class="input" name="ixUrl" placeholder="https://（互動系統前端網址）/" value="' + esc(c.url) + '"' + dis + '></label>' +
+        '<label class="field"><span>互動營隊 ID</span><input class="input" name="ixCamp" placeholder="例如 C2027ABCDE" value="' + esc(c.camp) + '"' + dis + '></label>' +
+        '<label class="field"><span>串接金鑰</span><input class="input" name="ixSecret" autocomplete="off" placeholder="' + (c.secretSet ? '已設定（要更換才填）' : '從互動系統的營隊設定複製') + '"' + dis + '></label>' +
+        (ro ? '' : '<div><button class="btn primary" type="button" data-ix-save>儲存</button></div>') + '</div>'));
+      var btn = $('[data-ix-save]', sec);
+      if (btn) btn.addEventListener('click', function () {
+        var v = { on: $('[name=ixOn]', sec).checked, url: $('[name=ixUrl]', sec).value, camp: $('[name=ixCamp]', sec).value, secret: $('[name=ixSecret]', sec).value };
+        withBusy(api('saveInteract', prefix, v)).then(function (r) {
+          $('[name=ixSecret]', sec).value = '';
+          $('[name=ixSecret]', sec).placeholder = r.secretSet ? '已設定（要更換才填）' : '從互動系統的營隊設定複製';
+          toast(r.on ? '已開啟營隊互動系統入口' : '已儲存（入口目前關閉）');
+        }).catch(function (e) { toast(e.message, true); });
+      });
+    }).catch(function (e) { sec.lastChild.textContent = e.message; });
+  }
+
   /** 學員專區：開關、這個專案自己的網址、營隊資訊 */
   function openPortal() {
     var ro = D.readOnly, pt = D.project.portal || { on: false, intro: '', url: '' };
@@ -1005,6 +1033,7 @@ App.page('students', function (root, params) {
       }).join('') + '</div><span class="hint">勾選的欄位，學員可以在學員專區的「報名資料」自己修改；改了會寫進學員資料、狀態紀錄記下「學員自行修改：欄位 舊→新」，並在右上角鈴鐺通知。姓名、身分證字號、Email、團報等不開放。</span></div>' +
       (ro ? '' : '<div style="margin-top:12px"><button class="btn primary" type="button" id="pt-self">儲存</button></div>') + '</div>';
     var urlBox = $('.pt-url', d.body);
+    interactSection(d.body, ro);
     function drawUrl() {
       urlBox.innerHTML = '';
       if (!pt.on) { urlBox.appendChild(el('<div class="small muted">目前沒有開放，學員打開網址會看到「沒有開放」。</div>')); return; }
