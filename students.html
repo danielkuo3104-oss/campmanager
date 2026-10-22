@@ -56,6 +56,7 @@
       <div class="chips" id="st-chips"></div>
       <button class="chip chip-drop hidden" type="button" id="st-consent-filter" aria-haspopup="menu" aria-expanded="false"></button>
       <button class="chip chip-drop hidden" type="button" id="st-squad-filter" aria-haspopup="menu" aria-expanded="false"></button>
+      <button class="chip chip-drop hidden" type="button" id="st-transport-filter" aria-haspopup="menu" aria-expanded="false"></button>
       <button class="btn sm ghost" type="button" id="st-saved" aria-haspopup="menu">常用篩選</button>
       <span class="spacer"></span>
       <div class="seg seg-sm" id="st-density" role="radiogroup" aria-label="列表檢視">
@@ -85,6 +86,7 @@ App.page('students', function (root, params) {
   var selected = {};          // 勾選的學員 {學員ID: true}（批次操作）
   var shownList = [];         // 目前篩選後顯示的學員
   var consentSet = {};        // 同意書（可複選），見 CONSENT_FILTERS；空的代表全部
+  var transportSet = {};      // 交通方式（可複選）：'none' 還沒填、'a:高鐵' 來程、'l:高鐵' 回程；空的代表全部
   /** 'a,b' → {a: true, b: true}（網址參數、常用篩選都用逗號分隔） */
   function toSet(str) {
     var o = {};
@@ -93,7 +95,7 @@ App.page('students', function (root, params) {
   }
   function keysOf(o) { return Object.keys(o).filter(function (k) { return o[k]; }); }
   // 主選單的今日待辦、其他頁面的連結：直接套用對應篩選（filter、consent、squad 都可用逗號複選）
-  fset = toSet(params.filter); consentSet = toSet(params.consent); squadSet = toSet(params.squad);
+  fset = toSet(params.filter); consentSet = toSet(params.consent); squadSet = toSet(params.squad); transportSet = toSet(params.transport);
   var ISSUE_TAG = { id: '身分證有誤', email: '信箱有誤', phone: '電話有誤', dup: '可能重複', group: '團報超過上限', mail: '信件寄不出' };
   /** 標籤滑過時，說明之後怎麼處理（各種問題不一樣） */
   var ISSUE_HINT = { id: '報名信已提醒更正', email: '報名信已提醒更正', phone: '報名信已提醒更正', dup: '請點開比對，確認是不是同一人報名兩次', group: '超過的人沒有保留名額，請和團報聯絡人確認', mail: '請確認信箱正確後，從「操作」補寄' };
@@ -146,6 +148,20 @@ App.page('students', function (root, params) {
     return c ? c[1] : k;
   }
   function squadLabel(k) { return k === '0' ? '未分隊' : '第 ' + k + ' 隊'; }
+  function transportLabel(k) { return k === 'none' ? '交通未填' : (k.slice(0, 2) === 'a:' ? '來：' : '回：') + k.slice(2); }
+  /** 這位學員符不符合交通方式的某個篩選 */
+  function transportIs(s, k) {
+    var t = lastTransport(s);
+    if (k === 'none') return !t;
+    return !!t && (k.slice(0, 2) === 'a:' ? t.arrive : t.leave) === k.slice(2);
+  }
+  /** 交通方式的選項：專案設定的選項，加上學員填過、後來被拿掉的選項 */
+  function transportChoices() {
+    var f = (D.project.forms || []).filter(function (x) { return x.kind === 'transport'; })[0] || {};
+    var list = (f.choices || []).slice();
+    D.students.forEach(function (x) { var t = lastTransport(x); if (t) [t.arrive, t.leave].forEach(function (c) { if (c && list.indexOf(c) < 0) list.push(c); }); });
+    return list;
+  }
   /** 目前的篩選組合，用文字說明（名單上方、匯出 PDF、存常用篩選都用這個）；沒有任何篩選時回傳 '' */
   function describeFilter(rawSearch) {
     var parts = [];
@@ -155,6 +171,8 @@ App.page('students', function (root, params) {
     if (cs.length) parts.push(cs.map(consentLabel).join(' 或 '));
     var qs = keysOf(squadSet).sort(function (a, b) { return (a === '0' ? 999 : +a) - (b === '0' ? 999 : +b); });
     if (qs.length && D && D.project.squads > 0) parts.push(qs.map(squadLabel).join('、'));
+    var ts = keysOf(transportSet);
+    if (ts.length) parts.push(ts.map(transportLabel).join(' 或 '));
     var q = rawSearch === undefined ? $('#st-search', root).value.trim() : rawSearch;
     if (q) parts.push('搜尋「' + q + '」');
     return parts.join('＋');
@@ -225,6 +243,8 @@ App.page('students', function (root, params) {
     if (cs.length && cs.indexOf(consentState(s)) < 0) return false;
     var qs = keysOf(squadSet);
     if (qs.length && D.project.squads > 0 && qs.indexOf(String(s.squad === '' ? 0 : s.squad)) < 0) return false;
+    var ts = keysOf(transportSet);
+    if (ts.length && !ts.some(function (k) { return transportIs(s, k); })) return false;
     if (search) {
       var hay = (s.name + ' ' + s.email + ' ' + Object.keys(s.data).map(function (k) { return s.data[k]; }).join(' ')).toLowerCase();
       if (hay.indexOf(search) < 0) return false;
@@ -317,6 +337,10 @@ App.page('students', function (root, params) {
     if (!csOn) consentSet = {};
     $('#st-consent-filter', root).classList.toggle('hidden', !csOn);
     $('#st-squad-filter', root).classList.toggle('hidden', !(p.squads > 0));
+    // 交通方式：有開交通方式調查、或已經有人填過時才出現
+    var tsOn = (p.forms || []).some(function (x) { return x.kind === 'transport' && x.open; }) || D.students.some(lastTransport);
+    if (!tsOn) transportSet = {};
+    $('#st-transport-filter', root).classList.toggle('hidden', !tsOn);
     if (!$('#st-trend', root).classList.contains('hidden')) renderTrend();
     renderTable();
   }
@@ -479,6 +503,10 @@ App.page('students', function (root, params) {
     qb.textContent = '小隊：' + (qs.length ? (qs.length > 2 ? qs.length + ' 個' : qsSorted.map(squadLabel).join('、')) : '全部') + ' ▾';
     qb.classList.toggle('on', !!qs.length);
     qb.setAttribute('aria-label', '依小隊篩選（可複選），目前：' + (qs.length ? qsSorted.map(squadLabel).join('、') : '全部'));
+    var ts = keysOf(transportSet), tb = $('#st-transport-filter', root);
+    tb.textContent = '交通：' + (ts.length ? (ts.length > 2 ? ts.length + ' 個' : ts.map(transportLabel).join('、')) : '全部') + ' ▾';
+    tb.classList.toggle('on', !!ts.length);
+    tb.setAttribute('aria-label', '依交通方式篩選（可複選），目前：' + (ts.length ? ts.map(transportLabel).join('、') : '全部'));
     var box = $('#st-active', root);
     var d = describeFilter();
     box.classList.toggle('hidden', !d);
@@ -488,7 +516,7 @@ App.page('students', function (root, params) {
     $('button', box).addEventListener('click', clearFilters);
   }
   function clearFilters() {
-    fset = {}; consentSet = {}; squadSet = {}; search = '';
+    fset = {}; consentSet = {}; squadSet = {}; transportSet = {}; search = '';
     $('#st-search', root).value = '';
     render();
   }
@@ -501,6 +529,20 @@ App.page('students', function (root, params) {
     });
     items.push({ sep: true }, { label: '清除同意書篩選', onClick: function () { consentSet = {}; renderTable(); } });
     popMenu($('#st-consent-filter', root), items);
+  }
+  function openTransportMenu() {
+    var live = D.students.filter(function (x) { return tier(x) < 4; });
+    var items = [{ header: '交通方式（可複選，符合任一個就顯示）' }];
+    function add(k) {
+      items.push({ label: transportLabel(k) + '（' + live.filter(function (x) { return transportIs(x, k); }).length + '）', checked: !!transportSet[k],
+        onClick: function (on) { if (on) transportSet[k] = true; else delete transportSet[k]; renderTable(); } });
+    }
+    add('none');
+    var cs = transportChoices();
+    items.push({ header: '怎麼來' }); cs.forEach(function (c) { add('a:' + c); });
+    items.push({ header: '怎麼離開' }); cs.forEach(function (c) { add('l:' + c); });
+    items.push({ sep: true }, { label: '清除交通篩選', onClick: function () { transportSet = {}; renderTable(); } });
+    popMenu($('#st-transport-filter', root), items);
   }
   function openSquadMenu() {
     var n = D.project.squads || 0;
@@ -2291,6 +2333,7 @@ App.page('students', function (root, params) {
     fset = toSet(x.filter);
     consentSet = toSet(x.consent);
     squadSet = toSet(x.squad);
+    transportSet = toSet(x.transport);
     search = String(x.search || '').toLowerCase();
     $('#st-search', root).value = x.search || '';
     render();
@@ -2312,7 +2355,7 @@ App.page('students', function (root, params) {
       title: '存成常用篩選', okLabel: '儲存', desc: '目前條件：' + desc + '。只有你看得到，下次在「常用篩選」一鍵套用。',
       fields: [{ name: 'name', label: '名稱', required: true, placeholder: '例如：已繳費未簽同意書' }],
       check: function (v) { return v.name.trim().length > 30 ? { name: 'name', msg: '名稱最多 30 個字' } : ''; },
-      submit: function (v) { return api('saveFilter', prefix, { name: v.name.trim(), filter: keysOf(fset).join(','), consent: keysOf(consentSet).join(','), squad: keysOf(squadSet).join(','), search: $('#st-search', root).value.trim() }); }
+      submit: function (v) { return api('saveFilter', prefix, { name: v.name.trim(), filter: keysOf(fset).join(','), consent: keysOf(consentSet).join(','), squad: keysOf(squadSet).join(','), transport: keysOf(transportSet).join(','), search: $('#st-search', root).value.trim() }); }
     }).then(function (list) {
       if (!list) return;
       D.savedFilters = list;
@@ -2434,6 +2477,7 @@ App.page('students', function (root, params) {
   });
   applyDensity();
   $('#st-squad-filter', root).addEventListener('click', function (e) { e.stopPropagation(); if (e.currentTarget.getAttribute('aria-expanded') === 'true') closePopMenu(); else openSquadMenu(); });
+  $('#st-transport-filter', root).addEventListener('click', function (e) { e.stopPropagation(); if (e.currentTarget.getAttribute('aria-expanded') === 'true') closePopMenu(); else openTransportMenu(); });
   $('#st-consent-filter', root).addEventListener('click', function (e) { e.stopPropagation(); if (e.currentTarget.getAttribute('aria-expanded') === 'true') closePopMenu(); else openConsentMenu(); });
   /** 匯出 PDF 的程式在 assets/export.js；沒載到（檔案沒上傳、舊快取）就現場補載一次 */
   function withExport(fn) {
