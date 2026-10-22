@@ -22,25 +22,37 @@ function store(key, val, persist) {
 }
 
 /** 呼叫 Apps Script 後端 API（text/plain 避免 CORS 預檢） */
+/** 讀取類的 API：Apps Script 偶爾回 404 或連不上時自動重試（寫入類不重試，避免重複執行） */
+var API_RETRY_ = /^(whoami|get|list|checkinData|portalData|publicLookup|preview|search|load)/;
 function api(name) {
   var args = Array.prototype.slice.call(arguments, 1);
   if (name !== 'login' && name !== 'register' && name !== 'forgotPassword') args = [App.token].concat(args);
   if (!window.CAMP_CONFIG || !CAMP_CONFIG.API_URL || /請填入/.test(CAMP_CONFIG.API_URL)) {
     return Promise.reject(new Error('尚未設定後端網址：請編輯 assets/config.js 的 API_URL'));
   }
-  return fetch(CAMP_CONFIG.API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ fn: name, args: args }),
-    redirect: 'follow'
-  }).then(function (r) {
-    if (!r.ok) throw new Error('連線失敗（HTTP ' + r.status + '）');
-    return r.json();
-  }, function () {
-    throw new Error('無法連線到後端，請檢查網路或 API_URL 設定');
-  }).then(function (j) {
-    // 正常的回應一定有 result；沒有的話通常是 API_URL 不是報名系統的 /exec（或被轉到 doGet 的健康檢查）
-    if (j && j.ok && !('result' in j)) throw new Error('後端回應的格式不對' + (j.service ? '（回應的是「' + j.service + '」）' : '') + '。請確認 assets/config.js 的 API_URL 是報名系統 Apps Script「網頁應用程式」部署的 /exec 網址，並重新部署一次。');
+  var body = JSON.stringify({ fn: name, args: args }), tries = 0, canRetry = API_RETRY_.test(name);
+  function once() {
+    return fetch(CAMP_CONFIG.API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body,
+      redirect: 'follow'
+    }).then(function (r) {
+      if (!r.ok) throw Object.assign(new Error('連線失敗（HTTP ' + r.status + '）'), { retry: r.status === 404 || r.status === 429 || r.status >= 500 });
+      return r.json().catch(function () { throw Object.assign(new Error('後端回應看不懂，請稍後再試'), { retry: true }); });
+    }, function () {
+      throw Object.assign(new Error('無法連線到後端，請檢查網路或 API_URL 設定'), { retry: true });
+    }).then(function (j) {
+      // 正常的回應一定有 result；沒有的話通常是 API_URL 不是報名系統的 /exec（或被轉到 doGet 的健康檢查）
+      if (j && j.ok && !('result' in j)) throw Object.assign(new Error('後端回應的格式不對' + (j.service ? '（回應的是「' + j.service + '」）' : '') + '。請確認 assets/config.js 的 API_URL 是報名系統 Apps Script「網頁應用程式」部署的 /exec 網址，並重新部署一次。'), { retry: true });
+      return j;
+    }).catch(function (e) {
+      if (!e.retry || !canRetry || tries >= 3) throw e;
+      tries++;
+      return new Promise(function (ok) { setTimeout(ok, 700 * Math.pow(2, tries - 1)); }).then(once);
+    });
+  }
+  return once().then(function (j) {
     if (j.ok) return j.result;
     var msg = String(j.error || '發生錯誤').replace(/^(Exception|Error):\s*/, '');
     if (msg.indexOf('AUTH:') === 0) {
