@@ -560,6 +560,37 @@ App.page('admin', function (root, params) {
     $('.small', tc).textContent = desc;
     $$('[data-t]', tc).forEach(function (b) { b.addEventListener('click', function () { transfer(b.getAttribute('data-t'), chief); }); });
     body.appendChild(tc);
+    body.appendChild(interactSysCard());
+  }
+
+  /** 營隊互動系統的系統連線：互動系統建立營隊時可以直接選這裡的專案，串接設定自動寫好 */
+  function interactSysCard() {
+    var c = el('<div class="card card-pad" style="margin-top:16px"><h3>營隊互動系統連線</h3><div class="small muted" style="margin-bottom:12px">產生系統連線金鑰，貼到營隊互動系統「我的營隊 → 報名後台連線」。之後互動系統建立營隊時可以直接選這裡的專案，名稱、營期、小隊數與串接設定會自動帶過去，不用兩邊複製貼上。互動系統只拿得到專案的代碼、名稱、營期、小隊數，學員資料一樣只有代碼、姓名、小隊與隊輔姓名。</div><div class="isys-state small"></div><div class="isys-key"></div><div class="row" style="justify-content:flex-end;gap:8px"></div></div>');
+    function draw(st) {
+      $('.isys-state', c).textContent = st.set ? '已產生（' + fmtTime(st.at) + '）。金鑰內容看不到；遺失時重新產生，再貼到互動系統。' : '還沒有產生。';
+      var btns = $('.row', c);
+      btns.innerHTML = (st.set ? '<button class="btn ghost" type="button" data-k="clear">刪除金鑰</button>' : '') + '<button class="btn primary" type="button" data-k="new">' + (st.set ? '重新產生' : '產生系統連線金鑰') + '</button>';
+      $('[data-k=new]', btns).addEventListener('click', function () {
+        (st.set ? confirmDialog({ title: '重新產生系統連線金鑰？', lines: ['舊金鑰立刻失效，互動系統要貼上新的金鑰才能再讀到專案清單。已經串接好的營隊不受影響。'], okLabel: '重新產生' }) : Promise.resolve(true)).then(function (ok) {
+          if (!ok) return;
+          withBusy(api('newInteractSys')).then(function (r) {
+            draw(r);
+            var box = el('<div class="card card-pad" style="margin:12px 0;background:var(--brand-soft, #eef4f1)"><b>系統連線金鑰（只顯示這一次）</b><div style="font-family:ui-monospace,Menlo,monospace;font-size:16px;word-break:break-all;margin:8px 0"></div><button class="btn sm" type="button">複製</button></div>');
+            $('div', box).textContent = r.key;
+            $('button', box).addEventListener('click', function () { (navigator.clipboard ? navigator.clipboard.writeText(r.key) : Promise.reject()).then(function () { toast('已複製'); }).catch(function () { prompt('系統連線金鑰', r.key); }); });
+            var k = $('.isys-key', c); k.innerHTML = ''; k.appendChild(box);
+          }).catch(function (e) { toast(e.message, true); });
+        });
+      });
+      var cl = $('[data-k=clear]', btns);
+      if (cl) cl.addEventListener('click', function () {
+        confirmDialog({ title: '刪除系統連線金鑰？', lines: ['互動系統就讀不到專案清單，也不能自動串接。已經串接好的營隊不受影響。'], danger: true, okLabel: '刪除' }).then(function (ok) {
+          if (ok) withBusy(api('newInteractSys', true)).then(function (r) { $('.isys-key', c).innerHTML = ''; draw(r); toast('已刪除'); }).catch(function (e) { toast(e.message, true); });
+        });
+      });
+    }
+    api('getInteractSys').then(draw).catch(function (e) { $('.isys-state', c).textContent = e.message; });
+    return c;
   }
 
   function transfer(mode, chief) {
