@@ -289,7 +289,7 @@ App.page('checkin', function (root, params) {
     var box = $('#ck-res', root);
     var res = el('<div class="ck-res' + (at || pend ? ' dup' : '') + '"></div>');
     res.innerHTML = '<div class="row"><h2 class="grow"></h2><span class="tag">' + esc(s.status) + '</span></div>' +
-      '<div class="ck-facts">' + (D.project.squads > 0 ? '<span>' + esc(squadText(s)) + '</span>' : '') + (s.room ? '<span>房號 ' + esc(s.room) + '</span>' : '') +
+      '<div class="ck-facts">' + (D.project.squads > 0 ? '<span>' + esc(squadText(s)) + '</span>' : '') + (s.room ? '<span>房號 ' + esc(s.room) + '</span>' : '') + (s.transport ? '<span>交通：' + esc(s.transport) + '</span>' : '') +
       (D.consentOn && !s.warns.some(function (w) { return /^同意書/.test(w); }) ? '<span>同意書：' + esc(s.consent) + '</span>' : '') + '</div>' +
       s.warns.map(function (w) { return '<div class="ck-warn">' + esc(w) + '</div>'; }).join('') +
       s.notes.map(function (w) { return '<div class="ck-note">' + esc(w) + '</div>'; }).join('') +
