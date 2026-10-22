@@ -39,6 +39,8 @@ function api(name) {
   }, function () {
     throw new Error('無法連線到後端，請檢查網路或 API_URL 設定');
   }).then(function (j) {
+    // 正常的回應一定有 result；沒有的話通常是 API_URL 不是報名系統的 /exec（或被轉到 doGet 的健康檢查）
+    if (j && j.ok && !('result' in j)) throw new Error('後端回應的格式不對' + (j.service ? '（回應的是「' + j.service + '」）' : '') + '。請確認 assets/config.js 的 API_URL 是報名系統 Apps Script「網頁應用程式」部署的 /exec 網址，並重新部署一次。');
     if (j.ok) return j.result;
     var msg = String(j.error || '發生錯誤').replace(/^(Exception|Error):\s*/, '');
     if (msg.indexOf('AUTH:') === 0) {
@@ -1792,6 +1794,7 @@ App.page = function (name, init) {
     if (quick) check.catch(function () {});
     var who = quick ? Promise.resolve(known) : check;
     who.then(function (u) {
+      if (!u || !u.email) { store('camp_token', null); throw new Error('讀不到登入資料，請重新登入（如果一直出現，請確認 assets/config.js 的 API_URL 是報名系統的 /exec 網址）'); }
       App.user = u;
       var params = getParams();
       renderTopbar(name, params);
