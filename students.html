@@ -831,7 +831,8 @@ App.page('students', function (root, params) {
       var out = {};
       list.forEach(function (f) {
         var o = {};
-        if (f.kind === 'consent') { if (f.open) o.on = true; if (f.mode && f.mode !== 'online') o.mode = f.mode; if (f.keepMonths !== undefined && f.keepMonths !== 12) o.keepMonths = f.keepMonths; }
+        if (f.kind === 'transport') { if (f.open) o.on = true; }
+        else if (f.kind === 'consent') { if (f.open) o.on = true; if (f.mode && f.mode !== 'online') o.mode = f.mode; if (f.keepMonths !== undefined && f.keepMonths !== 12) o.keepMonths = f.keepMonths; }
         else if (!f.open) o.off = true;
         (f.fields || ['title', 'intro', 'done', 'button']).forEach(function (k) { if (f[k + 'Own']) o[k] = f[k]; });
         out[f.kind] = o;
@@ -857,7 +858,7 @@ App.page('students', function (root, params) {
       $('input', row).addEventListener('change', function (e) {
         var on = e.target.checked;
         saveForms(function (out) {
-          if (f.kind === 'consent') { if (on) out[f.kind].on = true; else delete out[f.kind].on; }
+          if (f.kind === 'consent' || f.kind === 'transport') { if (on) out[f.kind].on = true; else delete out[f.kind].on; }
           else if (on) delete out[f.kind].off; else out[f.kind].off = true;
         }, on ? '已開放「' + f.name + '」' : '已關閉「' + f.name + '」，信裡的按鈕也不會出現');
       });
@@ -884,6 +885,8 @@ App.page('students', function (root, params) {
         });
         row.appendChild(ks);
       }
+      // 交通方式調查：已錄取的學員填了多少、各選項幾人
+      if (f.kind === 'transport') row.appendChild(transportSummary(f));
       if ($('[data-a=edit]', row)) $('[data-a=edit]', row).addEventListener('click', function () {
         openFormEditor(f, '只影響這個專案；跟系統預設一樣的部分會繼續跟著預設。').then(function (v) {
           if (v) saveForms(function (out) { flds.forEach(function (k) { out[f.kind][k] = v[k]; }); }, '已儲存「' + f.name + '」');
@@ -896,10 +899,32 @@ App.page('students', function (root, params) {
     });
   }
 
+  /** 學員最近一次填的交通方式（沒填過是 null） */
+  function lastTransport(s) { return (s.forms || []).filter(function (f) { return f.kind === 'transport'; }).pop() || null; }
+  function transportText(c, n) { return c + (n ? '（' + n + '）' : ''); }
+  var TRANSPORT_STATUSES = ['已報名', '資格審核中', '繳款待核覆', '匯款逾期', '匯款異常', '程序完成'];
+
+  /** 交通方式統計：已錄取（含待繳費）的學員，來程、回程各選項幾人，還有誰沒填 */
+  function transportSummary(f) {
+    var list = D.students.filter(function (s) { return TRANSPORT_STATUSES.indexOf(s.status) >= 0; });
+    var done = list.filter(lastTransport), miss = list.filter(function (s) { return !lastTransport(s); });
+    function count(k) {
+      var c = {};
+      done.forEach(function (s) { var v = lastTransport(s)[k]; c[v] = (c[v] || 0) + 1; });
+      return Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).map(function (k2) { return k2 + ' ' + c[k2]; }).join('、') || '—';
+    }
+    var box = el('<div class="pf-mode tp-sum"><span class="small muted">填寫狀況</span><span class="small"></span></div>');
+    $$('span', box)[1].innerHTML = '已錄取 ' + list.length + ' 人，已填 ' + done.length + ' 人' +
+      (done.length ? '<br>怎麼來：' + esc(count('arrive')) + '<br>怎麼離開：' + esc(count('leave')) : '') +
+      (miss.length ? '<br><span class="muted">還沒填：' + esc(miss.slice(0, 30).map(function (s) { return s.name; }).join('、') + (miss.length > 30 ? ' 等 ' + miss.length + ' 人' : '')) + '</span>' : '') +
+      '<br><span class="muted">每位學員的答案在學員資料的「交通方式」，匯出 PDF 可選「交通（來）」「交通（回）」欄。</span>';
+    return box;
+  }
+
   /** 預製表單：獨立的抽屜，開關、連結、內容都在這裡 */
   function openForms() {
     var d = drawer({ title: '預製表單', sub: esc(D.project.prefix + '　·　' + D.project.name), guard: false });   // 每個改動都立即儲存
-    d.body.innerHTML = '<div class="drawer-section"><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填，只會查到、寫回這個專案的報名資料。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}}、{{簽署同意書按鈕}} 會出現置中的按鈕。「線上同意書」預設關閉，請先確認兩份同意書的文字再打開；簽名與上傳的檔案存在系統帳號的 Google 雲端硬碟。內容沒改的跟著系統預設（系統管理 → 預製表單）；改動會立即儲存，只影響這個專案。</p><div class="pf-list"></div></div>';
+    d.body.innerHTML = '<div class="drawer-section"><p class="hint" style="margin-top:0">學員不用登入，輸入姓名與身分證字號就能填，只會查到、寫回這個專案的報名資料。信件放 {{匯款回報按鈕}}、{{取消候補按鈕}}、{{取消報名按鈕}}、{{簽署同意書按鈕}}、{{交通方式調查按鈕}} 會出現置中的按鈕。「交通方式調查」預設關閉，按「編輯內容」寫好交通資訊（哪幾班客運能到、高鐵最晚集合時間…）再打開，營前通知會帶出 {{交通資訊}} 和填寫按鈕。「線上同意書」預設關閉，請先確認兩份同意書的文字再打開；簽名與上傳的檔案存在系統帳號的 Google 雲端硬碟。內容沒改的跟著系統預設（系統管理 → 預製表單）；改動會立即儲存，只影響這個專案。</p><div class="pf-list"></div></div>';
     renderFormSettings($('.pf-list', d.body));
   }
 
@@ -1501,6 +1526,10 @@ App.page('students', function (root, params) {
       ['候補順位', s.rank === '' ? '—' : s.rank],
       ['小隊', p.squads > 0 ? squadText(s) : '未設定小隊數'],
       ['房間', s.room || ((p.rooms && p.rooms.rooms.length) ? '未分房' : '—')],
+      ['交通方式', (function () {
+        var t = lastTransport(s), tf = (p.forms || []).filter(function (x) { return x.kind === 'transport'; })[0];
+        return t ? '來 ' + transportText(t.arrive, t.arriveNote) + '，回 ' + transportText(t.leave, t.leaveNote) + '（' + fmtTime(t.t) + ' 填）' : tf && tf.open ? '還沒填' : '—';
+      })()],
       ['團報', g ? g.names.join('、') + '（預期 ' + g.expected + ' 人' + (s.groupIncomplete ? '，未齊' : '') + (g.reserved ? '，預留 ' + g.reserved + ' 名額至 ' + fmtTime(g.holdUntil) : '') + '）' : (s.partners && s.partners.length ? '填寫同伴：' + s.partners.join('、') : '個人報名')],
       ['結果通知', /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出（' + fmtTime(s.notified.split(' ')[0]) + '）' : (s.notified || '—')]
     ];
