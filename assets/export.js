@@ -36,9 +36,16 @@ function exportSystemFields_(groups) {
     { key: 'sys:rank', label: '候補順位', get: function (s) { return s.rank === '' ? '' : String(s.rank); } },
     { key: 'sys:group', label: '團報成員', get: function (s) { var x = g(s); return x ? x.names.join('、') + (s.groupIncomplete ? '（未齊）' : '') : ''; } },
     { key: 'sys:notified', label: '結果通知', get: function (s) { return /^\d{4}-\d{2}-\d{2}T/.test(s.notified) ? '已寄出 ' + fmtTime(s.notified.split(' ')[0]) : (s.notified || ''); } },
+    { key: 'sys:arrive', label: '交通（來）', get: function (s) { var t = exportTransport_(s); return t ? t.arrive + (t.arriveNote ? '（' + t.arriveNote + '）' : '') : ''; } },
+    { key: 'sys:leave', label: '交通（回）', get: function (s) { var t = exportTransport_(s); return t ? t.leave + (t.leaveNote ? '（' + t.leaveNote + '）' : '') : ''; } },
     { key: 'sys:consent', label: '同意書', get: function (s) { return s.consent ? '已簽 ' + fmtTime(s.consent.t) : ''; } },
     { key: 'sys:last', label: '最新備註', get: function (s) { var h = s.history || []; return h.length ? h[h.length - 1].msg : ''; } }
   ];
+}
+
+/** 學員最近一次填的交通方式調查 */
+function exportTransport_(s) {
+  return (s.forms || []).filter(function (f) { return f.kind === 'transport'; }).pop() || null;
 }
 
 function exportCellText_(v) {
