@@ -188,14 +188,14 @@
     <div class="mn-top-in">
       <button class="mn-btn mn-menu-btn" type="button" id="mn-menu" aria-label="目錄">☰ 目錄</button>
       <div class="mn-logo">營</div>
-      <div class="mn-title">營隊報名管理系統　使用手冊<small>版本 2026.10.18</small></div>
+      <div class="mn-title">營隊報名管理系統　使用手冊<small>版本 2026.10.22</small></div>
       <div class="mn-spacer"></div>
       <input class="mn-search" id="mn-search" type="search" placeholder="搜尋手冊，例如：退款、沒收到信" aria-label="搜尋手冊">
       <a class="mn-btn qrh" href="#troubleshoot">問題快速排除</a>
       <button class="mn-btn primary" type="button" id="mn-print">匯出 PDF</button>
     </div>
   </header>
-  <div class="print-cover"><h1>營隊報名管理系統<br>使用手冊</h1><p>版本 2026.10.18</p><p>© 2026 Daniel GUO. All rights reserved.</p></div>
+  <div class="print-cover"><h1>營隊報名管理系統<br>使用手冊</h1><p>版本 2026.10.22</p><p>© 2026 Daniel GUO. All rights reserved.</p></div>
   <div class="mn-body">
     <nav class="mn-nav" id="mn-nav" aria-label="目錄"><div class="cat">開始使用</div>
 <a href="#quickstart"><span class="n">0</span>如何開始</a>
@@ -1778,18 +1778,19 @@
 </section>
 <section class="chap" id="forms">
 <h2><span class="n">10</span>預製表單</h2>
-<p class="lead">預製表單是系統內建、給學員填的四張表單：匯款回報、取消候補、取消報名、線上同意書。學員不用登入，從信裡的按鈕點進去，輸入姓名與身分證字號就能填，送出後直接寫回名單、改狀態。這章說明怎麼設定、學員看到什麼、送出後系統做了什麼。</p>
+<p class="lead">預製表單是系統內建、給學員填的五張表單：匯款回報、取消候補、取消報名、線上同意書、交通方式調查。學員不用登入，從信裡的按鈕點進去，輸入姓名與身分證字號就能填，送出後直接寫回名單、改狀態。這章說明怎麼設定、學員看到什麼、送出後系統做了什麼。</p>
 
-<h3 id="forms-what">四張表單一覽</h3>
+<h3 id="forms-what">五張表單一覽</h3>
 <div class="tbl"><table class="t">
 <tr><th>表單</th><th>信裡的按鈕</th><th>誰能填</th><th>送出後</th><th>預設</th></tr>
 <tr><td>匯款回報表單</td><td>{{匯款回報按鈕}}</td><td><span class="sx-pill c-info">已報名</span>、<span class="sx-pill c-bad">匯款逾期</span>、<span class="sx-pill c-bad">匯款異常</span>、<span class="sx-pill c-brand">繳款待核覆</span></td><td>狀態改<span class="sx-pill c-brand">繳款待核覆</span>，等你查帳</td><td>開放</td></tr>
 <tr><td>取消候補表單</td><td>{{取消候補按鈕}}</td><td><span class="sx-pill c-warn">候補中</span></td><td>立即改<span class="sx-pill c-mute">報名取消</span>，寄取消通知</td><td>開放</td></tr>
 <tr><td>取消報名表單</td><td>{{取消報名按鈕}}</td><td><span class="sx-pill c-info">已報名</span>、<span class="sx-pill c-brand">資格審核中</span>、<span class="sx-pill c-brand">繳款待核覆</span>、<span class="sx-pill c-bad">匯款逾期</span>、<span class="sx-pill c-bad">匯款異常</span>、<span class="sx-pill c-ok">程序完成</span>、<span class="sx-pill c-warn">候補中</span></td><td>未繳費：立即取消、釋出名額。已繳費：改<span class="sx-pill c-bad">申請取消</span>，等你退款</td><td>開放</td></tr>
 <tr><td>線上同意書</td><td>{{簽署同意書按鈕}}</td><td><span class="sx-pill c-info">已報名</span>、<span class="sx-pill c-brand">資格審核中</span>、<span class="sx-pill c-brand">繳款待核覆</span>、<span class="sx-pill c-bad">匯款逾期</span>、<span class="sx-pill c-bad">匯款異常</span>、<span class="sx-pill c-ok">程序完成</span>（<span class="sx-pill c-warn">候補中</span>錄取後再簽）</td><td>簽名或上傳的檔案存到雲端硬碟，等你審核</td><td><b>關閉</b></td></tr>
+<tr><td>交通方式調查</td><td>{{交通方式調查按鈕}}</td><td><span class="sx-pill c-info">已報名</span>、<span class="sx-pill c-brand">資格審核中</span>、<span class="sx-pill c-brand">繳款待核覆</span>、<span class="sx-pill c-bad">匯款逾期</span>、<span class="sx-pill c-bad">匯款異常</span>、<span class="sx-pill c-ok">程序完成</span></td><td>記下「怎麼來」「怎麼離開」，狀態不變；可以重填，以最後一次為準</td><td><b>關閉</b></td></tr>
 </table></div>
 <p>按鈕會自動出現在預設的信件範本裡（例如報名成功信有匯款回報與取消報名按鈕），也可以在<a href="#mail">信件範本</a>自己放。匯款回報是主色按鈕；取消報名是灰色按鈕，避免學員誤按。另外每個都有 {{…連結}} 版本（例如 {{匯款回報連結}}），是純網址。按鈕的網址會自動帶入學員姓名，學員點開時姓名已經填好。學員從<a href="#portal">學員專區</a>裡的按鈕打開表單時，已經登入過，不用再輸入身分證字號。</p>
-<div class="warn">專案<b>已過期</b>（過了營期結束日）或<b>已停止</b>時，四張表單都會關閉，學員打開會看到「這份表單目前沒有開放，如有問題請洽籌辦團隊」。要延長收件，請在專案設定把營期結束日往後改。</div>
+<div class="warn">專案<b>已過期</b>（過了營期結束日）或<b>已停止</b>時，所有表單都會關閉，學員打開會看到「這份表單目前沒有開放，如有問題請洽籌辦團隊」。要延長收件，請在專案設定把營期結束日往後改。</div>
 
 <h3 id="forms-settings">設定預製表單</h3>
 <figure><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="forms" alt="預製表單設定抽屜" loading="lazy"><figcaption>圖：預製表單設定</figcaption></figure>
@@ -1824,6 +1825,22 @@
 </ul>
 <p>同意書預設關閉，請先確認兩份同意書的文字再打開。完整流程（學員怎麼簽、放大簽名、管理員怎麼審核、退回重簽）見<a href="#consent">線上同意書</a>。</p>
 
+<h4 id="forms-transport">交通方式調查的額外設定</h4>
+<p>交通方式調查是問學員「怎麼來營隊」和「營隊結束後怎麼離開」。按這一列的<span class="sx-btn">編輯內容</span>，除了標題、按鈕文字、說明與送出訊息，還多兩欄：</p>
+<div class="tbl"><table class="t">
+<tr><th>欄位</th><th>說明</th></tr>
+<tr><td>交通資訊（我們自己寫的）</td><td>例如哪幾班客運能到、高鐵最晚幾點在哪裡集合、家長接送停車的地方。可以用信件的格式（粗體、顏色、卡片、地圖連結）。會顯示在表單上方，信件裡用 {{交通資訊}} 帶出。空白就不顯示。</td></tr>
+<tr><td>交通方式的選項（一行一個）*</td><td>預設是高鐵、台鐵、客運、家長接送、其他。「怎麼來」和「怎麼離開」共用這些選項，最多 10 個，每個最多 20 字。叫「其他」的選項會多一格讓學員說明（必填，例如「自己騎機車」）。</td></tr>
+</table></div>
+<ol class="steps">
+<li>在學員管理頁按<span class="sx-btn">預製表單</span>，交通方式調查那一列按<span class="sx-btn">編輯內容</span>。</li>
+<li>寫好交通資訊，確認選項，按<span class="sx-btn c-primary">儲存</span>。</li>
+<li>勾選這一列的開關，打開表單。</li>
+<li>用<a href="#mail-bulk">群發通知</a>選<span class="sx-btn">營前通知（使用範本）</span>寄出。範本已經放好 {{交通資訊}} 和 {{交通方式調查按鈕}}，學員收到信就看得到交通資訊和填寫按鈕。</li>
+</ol>
+<p>打開之後，這一列下面會出現<b>填寫狀況</b>：已錄取幾人、已填幾人、「怎麼來」「怎麼離開」各選項幾人，還有誰還沒填（最多列 30 人）。每位學員的答案在學員詳細資料的「交通方式」，匯出 PDF 可以選「交通（來）」「交通（回）」欄，見<a href="#export-pdf">匯出</a>。</p>
+<div class="tip"><p>交通方式調查關閉時，{{交通資訊}} 和 {{交通方式調查按鈕}} 都是空的，營前通知不會多出空白段落，可以放心照常寄。</p></div>
+
 <h3 id="forms-student">學員看到什麼</h3>
 <figure class="phone"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="m-form-cancel" alt="手機上的取消報名表單" loading="lazy"><figcaption>圖：學員在手機上打開取消報名表單（已繳費的學員）</figcaption></figure>
 <ol class="steps">
@@ -1837,6 +1854,7 @@
 <h4>各表單要填的欄位</h4>
 <ul>
 <li><b>匯款回報</b>：上方先列「匯款資訊」框（應繳金額、銀行、分行、戶名、帳號），旁邊的 <span class="sx-btn">複製金額</span>、<span class="sx-btn">複製代碼</span>、<span class="sx-btn">複製帳號</span> 方便學員貼到網銀；資料來自 <a href="#settings">專案設定</a> 的匯款帳號。下面填 <span class="sx-btn">匯款帳號後五碼</span>（必填，5 位數字，轉出帳號或無摺存款帳號的後五碼）、<span class="sx-btn">匯款金額（元）</span>（預設帶入應繳金額）、<span class="sx-btn">匯款日期</span>（預設今天）、<span class="sx-btn">匯款人姓名</span>（選填，提示「用家長或其他人的帳戶匯款時請填，方便籌辦團隊對帳」，會寫進狀態紀錄）。已經回報過的人會看到提醒「你已經回報過匯款了…只有補匯差額或上次填錯時才需要再回報一次」。</li>
+<li><b>交通方式調查</b>：上方是籌辦團隊寫的交通資訊。下面兩題<span class="sx-btn">怎麼來營隊</span>、<span class="sx-btn">營隊結束後怎麼離開</span>，各點一個選項（大顆按鈕，手機好點）；選「其他」要在<span class="sx-btn">請說明交通方式</span>寫清楚。填過的人再打開，會看到「你在某時填過了，下面帶入上次的答案」，改好再送出就會更新。</li>
 <li><b>取消候補</b>：<span class="sx-btn">取消原因</span>（必填）。</li>
 <li><b>取消報名（還沒繳費）</b>：<span class="sx-btn">取消原因</span>（必填）。</li>
 <li><b>取消報名（已繳費）</b>：除了取消原因，會看到黃色提示「你已經繳費。送出後報名不會馬上取消，籌辦團隊核對後會退款到下面的帳戶並寄信通知。」、依退款規定試算的「今天申請可退還 N%，約 X 元（已扣郵匯費 Y 元）。這是試算金額…」（沒設退款規定時不顯示；郵匯費來自專案設定的「退款郵匯費」），以及<b>退款帳戶</b>四欄：銀行、分行、帳號、戶名（都必填，帳號只能是數字，可含 - 或空白）。</li>
@@ -1847,6 +1865,7 @@
 <div class="tbl"><table class="t">
 <tr><th>情況</th><th>狀態變化</th><th>寄給學員</th><th>通知管理員</th></tr>
 <tr><td>匯款回報</td><td>變<span class="sx-pill c-brand">繳款待核覆</span>；後五碼、金額、日期與留言寫進狀態紀錄。已經是待核覆再回報，記一筆「再次回報」。</td><td>不寄信（畫面顯示送出訊息）</td><td>鈴鐺「回報已匯款」</td></tr>
+<tr><td>交通方式調查</td><td>狀態不變；答案記在學員資料的「交通方式」，狀態紀錄寫「交通方式調查：來 高鐵，回 家長接送」。重填時只留最新一次，紀錄寫「更新交通方式」。</td><td>不寄信（畫面顯示送出訊息）</td><td>不通知</td></tr>
 <tr><td>取消候補</td><td>立即變<span class="sx-pill c-mute">報名取消</span></td><td>取消通知</td><td>鈴鐺「取消報名」；勾了「學員取消報名寄信通知我」的人收到信</td></tr>
 <tr><td>取消報名，還沒繳費</td><td>立即變<span class="sx-pill c-mute">報名取消</span>，釋出名額；遞補模式自動時馬上遞補</td><td>取消通知</td><td>同上，信裡處理狀態寫「尚未繳費，已直接取消，名額已釋出」</td></tr>
 <tr><td>取消報名，已繳費（<span class="sx-pill c-ok">程序完成</span>、<span class="sx-pill c-brand">繳款待核覆</span>，或已有已繳金額）</td><td>變<span class="sx-pill c-bad">申請取消</span>，<b>名額先保留</b>；退款帳戶與估算退款記在學員資料，名單上排最上面</td><td>取消報名通知，信裡說明之後會再收到「取消報名退款通知」</td><td>紅色鈴鐺「學員申請取消（已繳費，需處理退款）」；勾了「學員取消報名寄信通知我」的人收到信，寫明要辦理退款</td></tr>
@@ -1867,6 +1886,7 @@
 <tr><td>你已經申請取消報名，籌辦團隊核對後會辦理退款，並寄「取消報名退款通知」給你。</td><td>已經是<span class="sx-pill c-bad">申請取消</span>，不能再填任何表單。</td></tr>
 <tr><td>你已經錄取，不是候補。如果不參加，請改填「取消報名表單」。</td><td>已錄取的人打開取消候補表單。</td></tr>
 <tr><td>你的報名資料還在核對中…／你目前在候補，錄取後才需要匯款。／已確認收到你的匯款，不用再回報。／你的報名還在等籌辦團隊受理…</td><td><span class="sx-pill c-brand">資格審核中</span>、<span class="sx-pill c-warn">候補中</span>、<span class="sx-pill c-ok">程序完成</span>、<span class="sx-pill c-warn">招生期外</span>的人打開匯款回報表單。</td></tr>
+<tr><td>你目前在候補，錄取後再填交通方式即可。／你的報名還在等籌辦團隊受理，受理後再填交通方式即可。</td><td><span class="sx-pill c-warn">候補中</span>、<span class="sx-pill c-warn">招生期外</span>的人打開交通方式調查。</td></tr>
 <tr><td>網址不完整，請從信裡的按鈕重新打開</td><td>網址被截斷。</td></tr>
 </table></div>
 <p>同一個人有多筆報名（例如取消後又重報）時，系統用還有效的那一筆。更多狀況見<a href="#q-student">問題快速排除</a>。</p>
@@ -1967,6 +1987,15 @@
 </ul>
 <div class="why">學員專區刻意設計成每個專案一個網址、每位學員只看得到自己：登入憑證綁定這個專案、這個網址和這位學員，每次讀取都重新核對，看不到別人的資料，也不能碰任何管理功能。</div>
 
+<h3 id="portal-interact">營隊互動系統入口</h3>
+<p>營隊互動系統是另一套給營期中用的系統（小隊任務、闖關、即時互動等）。串接之後，已錄取的學員在學員專區會看到「進入營隊互動」，按了直接登入互動系統，不用再輸入資料。互動系統只拿得到學員代碼、姓名、小隊與隊輔姓名，拿不到電話、身分證、Email，也不能修改報名資料。</p>
+<p>串接有兩種做法：</p>
+<ul>
+<li><b>自動（建議）</b>：總管先在<a href="#admin-interact">系統管理的權限與移交分頁</a>產生「系統連線金鑰」，貼到互動系統。之後在互動系統建立營隊時選「從報名後台的專案建立」，名稱、營期、小隊數與串接設定會自動寫好，這裡的入口也會自動打開，不用兩邊複製貼上。</li>
+<li><b>手動</b>：在學員專區抽屜最下面的「營隊互動系統」，填<span class="sx-btn">互動系統網址</span>、<span class="sx-btn">互動營隊 ID</span>、<span class="sx-btn">串接金鑰</span>（三個都在互動系統的「營隊設定」複製），勾<span class="sx-btn">開啟營隊互動系統入口</span>，按<span class="sx-btn c-primary">儲存</span>。提示「已開啟營隊互動系統入口」。</li>
+</ul>
+<p>串接金鑰存好後不會再顯示，欄位只寫「已設定（要更換才填）」。取消勾選入口就關閉，但互動系統仍會照常同步名單。</p>
+
 <h3 id="portal-view">學員看到什麼</h3>
 <figure class="phone tall"><div class="fig-scroll"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="m-portal" alt="手機上的學員專區" loading="lazy"></div><figcaption>圖：學員登入後的學員專區（程序完成的學員）</figcaption></figure>
 <p>登入後最上面是「姓名 你好」，下面照你排的順序一張張卡片。圖中依序是：營隊倒數、報名進度、我的小隊、報名資訊（收合）、飯店資訊（含地圖）、我的房間（含室友）、行前準備清單（勾選清單）、報到與交通（自訂文字）、退款規定、聯絡人員，最下面是信件署名。</p>
@@ -1974,6 +2003,7 @@
 <figure class="phone"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-img="m-portal-todo" alt="報名進度裡的待辦" loading="lazy"><figcaption>圖：<span class="co">1</span> 報名進度最上面的「待辦」；<span class="co">2</span> 開放傳給家長簽時的「傳給家長」</figcaption></figure>
 <ul>
 <li><span class="co">1</span> 學員還有事要做時，報名進度最上面是藍色的「待辦」框，一件事一列，按鈕就在旁邊。例如「還沒簽同意書」配 <span class="sx-btn c-primary">簽署同意書</span>、「完成匯款並回報（匯款期限 2027/05/21 23:59）」配 <span class="sx-btn c-primary">匯款回報</span>；被請重簽時寫「重新簽署同意書（籌辦團隊請你重簽：原因）」；分開簽到一半時寫「同意書：你已經簽好，等家長簽名」或「同意書：家長已經簽好，請你簽名」。</li>
+<li>交通方式調查打開時，還沒填的人待辦會多一列「填寫交通方式（怎麼來、怎麼離開）」配 <span class="sx-btn">交通方式調查</span>。填過的按鈕變灰，再點會先列出上次的答案，問「交通方式有變動嗎？」，重新填寫以新的為準。見<a href="#forms-transport">交通方式調查</a>。</li>
 <li><span class="co">2</span> 有開放傳給家長簽時，同意書那一列多一顆 <span class="sx-btn">傳給家長</span>，見<a href="#consent-parent">線上同意書</a>。</li>
 <li>上方是目前狀態標籤，下方是進度步驟：完成報名 → （走過資格審核的人多一步「資料核對」）→ 繳費 → （有開放匯款回報表單時多一步「回報匯款」）→ 確認繳款 → 報名完成。完成的步驟打勾。</li>
 <li>下面一段說明，依狀態不同，例如已報名：「已報名成功，請在匯款期限前完成匯款，匯款後用下方「匯款回報」告訴我們。」；程序完成：「已確認收到款項，報名程序全部完成，期待在營隊見到你！」；候補中會寫候補第幾位。</li>
@@ -2031,7 +2061,7 @@
 <tr><td>取消報名通知</td><td>未繳費的學員取消報名時寄；學員自己填表取消也會自動寄</td></tr>
 <tr><td>取消報名退款通知</td><td>已繳費的學員完成取消、算好退款後寄，附退款明細（見<a href="#cancel">第 8 章</a>）</td></tr>
 <tr><td>同意書重簽通知</td><td>同意書審核不通過時寄（見<a href="#consent-review">第 9 章</a>）</td></tr>
-<tr><td>營前通知</td><td>群發通知時使用，內容是你當次輸入的訊息</td></tr>
+<tr><td>營前通知</td><td>群發通知時使用，內容是你當次輸入的訊息；後面已放好 {{交通資訊}} 和 {{交通方式調查按鈕}}（交通方式調查打開時才會出現）</td></tr>
 <tr><td>團報同伴填表提醒</td><td>提醒團報中還沒填表的同伴</td></tr>
 <tr><td>（管理員）<span class="sx-pill c-warn">招生期外</span>報名</td><td>寄給管理員：有人在招生期外報名</td></tr>
 <tr><td>（管理員）團報同伴未填，預留即將到期</td><td>寄給管理員：團報預留名額快到期</td></tr>
@@ -2067,7 +2097,8 @@
 <tr><td>候補與團報</td><td>候補順位、團報名單、未填同伴、預留期限</td></tr>
 <tr><td>住宿</td><td>飯店資訊、飯店名稱、飯店地址、飯店電話、房號</td></tr>
 <tr><td>報名資料</td><td>回覆內容（附上學員填的報名資料表）</td></tr>
-<tr><td>按鈕與連結</td><td>匯款回報按鈕／連結、取消候補按鈕／連結、取消報名按鈕／連結、簽署同意書按鈕／連結、學員專區、學員專區按鈕、學員專區連結</td></tr>
+<tr><td>按鈕與連結</td><td>匯款回報按鈕／連結、取消候補按鈕／連結、取消報名按鈕／連結、簽署同意書按鈕／連結、交通方式調查按鈕／連結、學員專區、學員專區按鈕、學員專區連結</td></tr>
+<tr><td>交通</td><td>交通資訊（在<a href="#forms-transport">交通方式調查</a>的編輯內容寫，裡面也可以用其他變數）</td></tr>
 <tr><td>同意書</td><td>同意書保存期限</td></tr>
 </tbody>
 </table></div>
@@ -2380,7 +2411,7 @@
 
 <h4>選擇欄位</h4>
 <ul>
-<li><strong>系統欄位</strong>：序號、狀態（預設勾選），以及房間、小隊、報名時間、學員編號、應繳金額、價格方案、匯款期限、已繳金額、候補順位、團報成員、結果通知、同意書、最新備註。學員姓名一定會印。</li>
+<li><strong>系統欄位</strong>：序號、狀態（預設勾選），以及房間、小隊、報名時間、學員編號、應繳金額、價格方案、匯款期限、已繳金額、候補順位、團報成員、結果通知、同意書、交通（來）、交通（回）、最新備註。交通兩欄是學員在<a href="#forms-transport">交通方式調查</a>最後一次填的答案，沒填是空白。學員姓名一定會印。</li>
 <li><strong>表單題目</strong>：預設勾選名單上正在顯示的題目。上傳檔案的題目會印成「（已上傳 N 個檔案）」。</li>
 <li><strong>功能欄</strong>：印出來手寫或打勾用的空白欄，標題可以改。
 <ul>
@@ -2702,6 +2733,17 @@
 <li>按<span class="sx-btn c-primary">儲存</span>，提示「已儲存為第 N 版」並重新整理頁面，你自己也會被要求重新同意。</li>
 </ol>
 <p>內容少於 20 字會被擋「同意書內容太短」，超過 8000 字是「同意書內容太長（上限 8000 字）」。人員分頁的狀態欄可以看到誰還沒同意新版本。</p>
+
+<h4 id="admin-interact">營隊互動系統連線</h4>
+<p>這張卡片讓營隊互動系統讀得到報名後台的專案清單。連好之後，互動系統建立營隊時可以直接選這裡的專案，名稱、營期、小隊數與串接設定會自動帶過去。互動系統只拿得到專案的代碼、名稱、營期、小隊數；學員資料一樣只有代碼、姓名、小隊與隊輔姓名。</p>
+<ol class="steps">
+<li>在「營隊互動系統連線」卡片按<span class="sx-btn">產生系統連線金鑰</span>。</li>
+<li>畫面出現「系統連線金鑰（只顯示這一次）」，按<span class="sx-btn">複製</span>。</li>
+<li>到營隊互動系統的「我的營隊」，按<span class="sx-btn">報名後台連線</span>，在<span class="sx-btn">報名系統網址</span>貼上報名後台的 Apps Script 網址（/exec 結尾），<span class="sx-btn">系統連線金鑰</span>貼上這把金鑰，按<span class="sx-btn">儲存並測試</span>。成功會提示「連線成功：報名後台有 N 個專案」。</li>
+<li>之後在互動系統按建立營隊，在<span class="sx-btn">從報名後台的專案建立</span>挑專案，名稱與日期會自動帶入。已經建過營隊的專案會標「已建立：營隊名稱」，不能重複選。建立後兩邊會自動串接，名單馬上同步。</li>
+</ol>
+<p>卡片上方會寫「已產生（時間）」。金鑰內容之後看不到，遺失時按<span class="sx-btn">重新產生</span>，舊金鑰立刻失效，要把新的貼到互動系統；已經串接好的營隊不受影響。按<span class="sx-btn c-danger">刪除金鑰</span>後互動系統就讀不到專案清單，也不能自動串接，同樣不影響已串接的營隊。</p>
+<div class="why">系統連線金鑰只能列專案、替新營隊寫好串接設定，不能讀學員個資。每個營隊的名單同步仍然靠各自的串接金鑰，所以換掉系統連線金鑰不會讓營期中的互動系統斷線。</div>
 
 <h4>協同總管指派與移交</h4>
 <p>最下面的卡片依你的身分顯示三種畫面：</p>
