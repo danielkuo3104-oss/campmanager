@@ -317,6 +317,9 @@
           '<div data-ckqr style="align-self:center;background:#fff;padding:12px;border-radius:12px;line-height:0"></div>');
         h = d.checkin.soon ? ck + h : h + ck;
       }
+      // 營隊互動系統（電子手冊、行程、分數、緊急聯絡）：開放時放最上面
+      if (d.interact) h = card('營隊互動', '<div class="pt-text">營隊電子手冊：現在的活動、行程表、隊伍分數與緊急聯絡。</div><div class="pt-acts">' +
+        (preview ? '<span class="btn primary" data-pv>進入營隊互動</span>' : '<button class="btn primary" type="button" data-interact>進入營隊互動</button>') + '</div><div class="pt-err" data-interact-err></div>') + h;
       // 姓名打錯但身分證字號對得上：一樣讓他看，最上方提示請籌辦團隊修改
       if (d.nameNotice) h = '<div class="pt-msg">' + esc(d.nameNotice) + '</div>' + h;
       blocks.innerHTML = h;
@@ -332,6 +335,15 @@
         if (a && a.warn) b.addEventListener('click', function (e) { if (!confirm(a.warn)) e.preventDefault(); });
       });
       blocks.querySelectorAll('[data-parent]').forEach(function (b) { b.addEventListener('click', function () { parentLink(); }); });
+      blocks.querySelectorAll('[data-interact]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var err = blocks.querySelector('[data-interact-err]');
+          err.textContent = '';
+          btnBusy(b, true, '進入營隊互動', '準備中…');
+          call('interactLink', getTok(), prefix, key).then(function (r) { location.href = r.url; })
+            .catch(function (e) { err.textContent = e.message; btnBusy(b, false, '進入營隊互動'); });
+        });
+      });
       blocks.querySelectorAll('[data-cal]').forEach(function (b) { b.addEventListener('click', function () { addCalendar(b); }); });
       var ef = blocks.querySelector('[data-edit]');
       if (ef && !preview) ef.addEventListener('submit', function (e) {
