@@ -249,10 +249,34 @@ document.addEventListener('keydown', function (e) {
  * 有沒有改過：記下視窗裡所有輸入欄位（含區塊順序）的值，關閉時比對。
  * 格式工具列、搜尋框、加了 data-nodirty 的欄位不算。
  */
-function formSnapshot(root) {
+function formFields_(root) {
   return $$('input, select, textarea, [data-sys]', root).filter(function (i) {
-    return i.type !== 'search' && !i.closest('[data-nodirty]') && !i.closest('.fmt-bar') && !i.closest('.fmt-link');
-  }).map(function (i) {
+    return i.type !== 'search' && !i.readOnly && !i.closest('[data-nodirty]') && !i.closest('.fmt-bar') && !i.closest('.fmt-link');
+  });
+}
+function formVal_(i) { return /^(INPUT|SELECT|TEXTAREA)$/.test(i.tagName) ? String(i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value) : null; }
+/**
+ * 抽屜用的改動追蹤：每個欄位記下「第一次看到時」的值（晚一點才載入的區塊，在使用者點進去之前記下），
+ * 只要有欄位和記下的值不同、或區塊順序變了，才算有改動。存好後 rebase() 重新記。
+ */
+function dirtyWatch_(root) {
+  var seen = new WeakMap(), order = '';
+  var sysOrder = function () { return $$('[data-sys]', root).map(function (x) { return x.getAttribute('data-sys'); }).join('|'); };
+  var see = function (i) { if (!seen.has(i)) seen.set(i, formVal_(i)); };
+  var rebase = function () { seen = new WeakMap(); formFields_(root).forEach(see); order = sysOrder(); };
+  root.addEventListener('focusin', function (e) { if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) see(e.target); }, true);
+  root.addEventListener('pointerdown', function (e) { var t = e.target && e.target.closest && e.target.closest('label'); var i = t && $('input', t); if (i) see(i); }, true);
+  new MutationObserver(function (ms) { ms.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) { if (n.nodeType === 1) { if (/^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName)) see(n); $$('input, select, textarea', n).forEach(see); } }); }); }).observe(root, { childList: true, subtree: true });
+  return {
+    rebase: rebase,
+    dirty: function () {
+      if (sysOrder() !== order) return true;
+      return formFields_(root).some(function (i) { if (!/^(INPUT|SELECT|TEXTAREA)$/.test(i.tagName)) return false; return seen.has(i) && seen.get(i) !== formVal_(i); });
+    }
+  };
+}
+function formSnapshot(root) {
+  return formFields_(root).map(function (i) {
     if (!/^(INPUT|SELECT|TEXTAREA)$/.test(i.tagName)) return 'sys:' + i.getAttribute('data-sys');
     return (i.name || i.getAttribute('data-k') || i.tagName) + '=' + (i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value);
   }).join('\u0001');
@@ -1529,7 +1553,7 @@ function drawer(o) {
   $('h2', d).id = hid; d.setAttribute('aria-labelledby', hid);
   $('h2', d).textContent = o.title || '';
   $('.sub', d).innerHTML = o.sub || '';
-  var body = $('.drawer-body', d), base = null, closed = false, asking = false;
+  var body = $('.drawer-body', d), base = null, closed = false, asking = false, watch = dirtyWatch_(body);
   var layer = openLayer({ el: d, trap: true, onEsc: function () { tryClose(); } });
   function close() {
     if (closed) return;
@@ -1541,7 +1565,7 @@ function drawer(o) {
   function tryClose() {
     if (closed || asking) return;
     // o.dirty()：自己判斷有沒有未儲存的內容（例如詳細資料裡還沒送出的備註）
-    var dirty = o.dirty ? !!o.dirty() : !(o.guard === false || base === null || formSnapshot(body) === base);
+    var dirty = o.dirty ? !!o.dirty() : !(o.guard === false || base === null || !watch.dirty());
     if (!dirty) { close(); return; }
     asking = true;
     askDiscard().then(function (ok) { asking = false; if (ok) close(); });
@@ -1550,10 +1574,10 @@ function drawer(o) {
   $('.drawer-head button', d).addEventListener('click', tryClose);
   document.body.appendChild(ov);
   document.body.appendChild(d);
-  setTimeout(function () { if (!closed) { d.focus({ preventScroll: true }); if (base === null) base = formSnapshot(body); } }, 60);
+  setTimeout(function () { if (!closed) { d.focus({ preventScroll: true }); if (base === null) { base = true; watch.rebase(); } } }, 60);
   return {
     el: d, body: body, close: close, tryClose: tryClose,
-    markClean: function () { base = formSnapshot(body); },
+    markClean: function () { base = true; watch.rebase(); },
     setTitle: function (t, sub) { $('h2', d).textContent = t || ''; $('.sub', d).innerHTML = sub || ''; }
   };
 }
