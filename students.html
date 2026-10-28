@@ -35,6 +35,7 @@
       <button class="btn desk-only" type="button" id="st-tpl">信件範本</button>
       <button class="btn desk-only" type="button" id="st-forms">預製表單</button>
       <button class="btn" type="button" id="st-portal">學員專區</button>
+      <button class="btn" type="button" id="st-interact">營隊互動</button>
       <button class="btn" type="button" id="st-checkin">報到模式</button>
       <button class="btn desk-only" type="button" id="st-squad">分小隊</button>
       <button class="btn desk-only" type="button" id="st-room">分房</button>
@@ -1048,20 +1049,29 @@ App.page('students', function (root, params) {
   }
 
   /**
-   * 營隊互動系統（另一套系統）：學員專區多一個「進入營隊互動」按鈕，互動系統定時來拿名單（學員代碼、姓名、小隊、房間；專輔隨輔與分房）。
+   * 營隊互動系統（另一套系統）：串接（網址、互動營隊 ID、串接金鑰）和「學員專區顯示入口」分開。
+   * 只串接不開入口：名單照常同步、籌辦團隊可以先在互動系統準備，學員專區看不到「進入營隊互動」。
    * 網址、互動營隊 ID、串接金鑰都在互動系統的「營隊設定」複製；金鑰只存在後端，這裡只顯示有沒有設定。
    */
   function interactSection(box, ro, onSaved) {
-    var sec = el('<div class="drawer-section"><h3>營隊互動系統</h3><p class="hint" style="margin-top:0">開啟後，已錄取的學員在學員專區會看到「進入營隊互動」，按了直接登入互動系統（不用再輸入資料）。互動系統只會拿到學員代碼、姓名、小隊、房間，以及專輔隨輔（姓名、職稱、聯絡方式）與分房，拿不到學員的電話、身分證、Email，也不能修改報名資料。</p><div class="small muted">讀取中…</div></div>');
+    var sec = el('<div class="drawer-section"><h3>營隊互動系統</h3><p class="hint" style="margin-top:0">串接後互動系統會定時同步名單（學員代碼、姓名、小隊、房間，以及專輔隨輔與分房），拿不到學員的電話、身分證、Email，也不能修改報名資料。<b>串接不等於開放</b>：沒勾「開放給學員」之前，學員專區看不到「進入營隊互動」，你可以先在互動系統慢慢準備。</p><div class="ix-state"></div><div class="small muted">讀取中…</div></div>');
     box.appendChild(sec);
+    function state(c) {
+      var st = $('.ix-state', sec), linked = !!(c.url && c.camp && c.secretSet);
+      st.innerHTML = '<div class="row wrap" style="gap:8px;align-items:center;margin-bottom:10px">' +
+        (!linked ? '<span class="pill mute">還沒串接</span>' : c.on ? '<span class="pill ok">已串接・學員看得到入口</span>' : '<span class="pill info">已串接・學員看不到入口</span>') +
+        (c.url && c.camp ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(c.url + 'admin.html?c=' + encodeURIComponent(c.camp)) + '">打開互動系統後台</a>' : '') + '</div>';
+    }
     api('getInteract', prefix).then(function (c) {
       var dis = ro ? ' disabled' : '';
       sec.lastChild.remove();
+      state(c);
       sec.appendChild(el('<div style="display:flex;flex-direction:column;gap:10px">' +
-        '<label class="check"><input type="checkbox" name="ixOn"' + (c.on ? ' checked' : '') + dis + '><span><b>開啟營隊互動系統入口</b></span></label>' +
         '<label class="field"><span>互動系統網址</span><input class="input" name="ixUrl" placeholder="https://（互動系統前端網址）/" value="' + esc(c.url) + '"' + dis + '></label>' +
         '<label class="field"><span>互動營隊 ID</span><input class="input" name="ixCamp" placeholder="例如 C2027ABCDE" value="' + esc(c.camp) + '"' + dis + '></label>' +
         '<label class="field"><span>串接金鑰</span><input class="input" name="ixSecret" autocomplete="off" placeholder="' + (c.secretSet ? '已設定（要更換才填）' : '從互動系統的營隊設定複製') + '"' + dis + '></label>' +
+        '<div><label class="check"><input type="checkbox" name="ixOn"' + (c.on ? ' checked' : '') + dis + '><span><b>開放給學員</b></span></label>' +
+        '<p class="hint" style="margin:4px 0 0 26px">勾選後，已錄取的學員在學員專區會看到「進入營隊互動」，也可以在互動系統用姓名＋身分證直接登入。不勾就是只串接：學員專區看不到入口，直接登入也會被擋下。</p></div>' +
         (ro ? '' : '<div><button class="btn primary" type="button" data-ix-save>儲存</button></div>') + '</div>'));
       var btn = $('[data-ix-save]', sec);
       if (btn) btn.addEventListener('click', function () {
@@ -1069,11 +1079,18 @@ App.page('students', function (root, params) {
         withBusy(api('saveInteract', prefix, v)).then(function (r) {
           $('[name=ixSecret]', sec).value = '';
           $('[name=ixSecret]', sec).placeholder = r.secretSet ? '已設定（要更換才填）' : '從互動系統的營隊設定複製';
-          toast(r.on ? '已開啟營隊互動系統入口' : '已儲存（入口目前關閉）');
+          state(r);
+          toast(r.on ? '已儲存，學員看得到營隊互動了' : r.url && r.camp && r.secretSet ? '已串接，學員專區不會顯示入口' : '已儲存');
           if (onSaved) onSaved();
         }).catch(function (e) { toast(e.message, true); });
       });
     }).catch(function (e) { sec.lastChild.textContent = e.message; });
+  }
+
+  /** 營隊互動系統：自己一個抽屜（頂列「營隊互動」） */
+  function openInteract() {
+    var d = drawer({ title: '營隊互動系統', sub: esc(D.project.prefix + '　·　' + D.project.name) });
+    interactSection(d.body, D.readOnly, function () { d.markClean(); });
   }
 
   /** 學員專區：開關、這個專案自己的網址、營隊資訊 */
@@ -1101,7 +1118,6 @@ App.page('students', function (root, params) {
       }).join('') + '</div><span class="hint">勾選的欄位，學員可以在學員專區的「報名資料」自己修改；改了會寫進學員資料、狀態紀錄記下「學員自行修改：欄位 舊→新」，並在右上角鈴鐺通知。姓名、身分證字號、Email、團報等不開放。</span></div>' +
       (ro ? '' : '<div style="margin-top:12px"><button class="btn primary" type="button" id="pt-self">儲存</button></div>') + '</div>';
     var urlBox = $('.pt-url', d.body);
-    interactSection(d.body, ro, function () { d.markClean(); });
     function drawUrl() {
       urlBox.innerHTML = '';
       if (!pt.on) { urlBox.appendChild(el('<div class="small muted">目前沒有開放，學員打開網址會看到「沒有開放」。</div>')); return; }
@@ -2452,6 +2468,7 @@ App.page('students', function (root, params) {
   $('#st-tpl', root).addEventListener('click', function () { if (D) openProjectTemplates(); });
   $('#st-forms', root).addEventListener('click', function () { if (D) openForms(); });
   $('#st-portal', root).addEventListener('click', function () { if (D) openPortal(); });
+  $('#st-interact', root).addEventListener('click', function () { if (D) openInteract(); });
   $('#st-checkin', root).addEventListener('click', function () { go('checkin', { prefix: prefix }); });
   $('#st-squad', root).addEventListener('click', function () { if (D) openSquads(); });
   $('#st-room', root).addEventListener('click', function () { if (D) openRooms(); });
