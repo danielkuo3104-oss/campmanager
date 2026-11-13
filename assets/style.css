@@ -316,8 +316,8 @@
   table.list tbody tr { cursor: pointer; transition: background .12s; }
   table.list tbody tr:hover td { background: #f2f7f6; }
   table.list tr.faded td { opacity: .45; }
-  table.list tr.group-start td { border-top: 2px solid #e6d7c3; border-top-color: color-mix(in srgb, var(--gc, #d9b98f) 45%, transparent); }
-  table.list tr.in-group td:first-child { box-shadow: inset 4px 0 0 var(--gc, #d9b98f); }
+  table.list tr.group-start td { border-top: 2px solid #e6d7c3; border-top-color: color-mix(in srgb, var(--gc, #d9b98f) 70%, transparent); }
+  table.list tr.in-group td:first-child { box-shadow: inset 5px 0 0 var(--gc, #d9b98f); }
   /* 「團報」標籤跟著這一組的色帶顏色（淡底、深一點的字） */
   table.list tr.in-group .tag.group { background: #efe7da; background: color-mix(in srgb, var(--gc, #d9b98f) 30%, #ffffff); color: #5b4a33; color: color-mix(in srgb, var(--gc, #d9b98f) 35%, #2b2b2b); }
   table.list td.cell-clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -712,6 +712,11 @@ table.list tbody tr.picked td { background: color-mix(in srgb, var(--brand-soft)
 .name-btn { display: block; border: 0; background: none; padding: 0; margin: 0; font: inherit; text-align: left; cursor: pointer; color: var(--text); max-width: 140px; }
 .name-btn:hover { text-decoration: underline; }
 .tag.note { background: #ece7f6; color: #4e3a86; }
+.name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.note-stamp { flex: none; display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 5px; border: 1.5px solid #c0392b; border-radius: 5px; color: #c0392b; background: #fff5f3; font-size: 11px; font-weight: 700; line-height: 1; transform: rotate(-6deg); cursor: help; }
+.note-stamp b { font-size: 10px; margin-left: 1px; }
+.grp-stamp { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--gc, #d9b98f); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; cursor: help; }
+.chip.chip-note:not(.on) { color: #b03a2e; border-color: #efcdc7; }
 
 /* 批次操作列 */
 .batch-bar { position: sticky; top: 84px; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 14px; border-radius: 16px; background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent); box-shadow: var(--shadow); }
