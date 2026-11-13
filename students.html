@@ -127,7 +127,7 @@ App.page('students', function (root, params) {
     { key: 'wait', label: '候補中', count: function (s) { return tier(s) === 3; } },
     { key: 'gone', label: '取消／失敗', count: function (s) { return tier(s) >= 4; } }
   ];
-  var FILTER_NAMES = { pay: '待確認繳款', refund: '待退款', consent: '同意書待審', nocheckin: '未報到' };
+  var FILTER_NAMES = { pay: '待確認繳款', refund: '待退款', consent: '同意書待審', nocheckin: '未報到', note: '有備註' };
   /** 狀態類篩選的判斷（勾多個時符合任一個就顯示） */
   var STATUS_TEST = {
     warn: function (s) { return isWarn(s); },
@@ -138,8 +138,10 @@ App.page('students', function (root, params) {
     pay: function (s) { return s.status === '繳款待核覆'; },
     refund: function (s) { return refundReq(s); },
     consent: function (s) { return consentWait(s); },
-    nocheckin: function (s) { return noCheckin(s); }
+    nocheckin: function (s) { return noCheckin(s); },
+    note: function (s) { return hasNote(s); }
   };
+  function hasNote(s) { return !!(s.notes && s.notes.length); }
   function statusLabel(k) {
     var f = FILTERS.filter(function (x) { return x.key === k; })[0];
     return f ? f.label : FILTER_NAMES[k] || k;
@@ -311,13 +313,15 @@ App.page('students', function (root, params) {
     if (nPay || fset.pay) extra.push({ key: 'pay', label: '待確認繳款 ' + nPay });
     if (nRefund || fset.refund) extra.push({ key: 'refund', label: '待退款 ' + nRefund, bad: true });
     if (nConsent || fset.consent) extra.push({ key: 'consent', label: '同意書待審 ' + nConsent });
+    var nNote = D.students.filter(hasNote).length;
+    if (nNote || fset.note) extra.push({ key: 'note', label: '有備註 ' + nNote, note: true });
     var ckOn = checkinPeriod();   // 報到期間（營期前一天起，或已經有人報到）才顯示「未報到」
     if (!ckOn) delete fset.nocheckin;
     if (ckOn) extra.push({ key: 'nocheckin', label: '未報到 ' + D.students.filter(noCheckin).length });
     var noStatus = !keysOf(fset).length;
     FILTERS.concat(extra).forEach(function (f) {
       var on = f.key === 'all' ? noStatus : !!fset[f.key];
-      var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + (on ? ' on' : '') + '" type="button"></button>');
+      var c = el('<button class="chip' + (f.bad ? ' chip-bad' : '') + (f.note ? ' chip-note' : '') + (on ? ' on' : '') + '" type="button"></button>');
       c.textContent = f.label + (f.count ? ' ' + D.students.filter(f.count).length : '');
       c.setAttribute('aria-pressed', on ? 'true' : 'false');
       c.title = f.key === 'all' ? '清除狀態篩選' : '可複選：符合任一個勾選的狀態就顯示';
@@ -564,14 +568,21 @@ App.page('students', function (root, params) {
     var hl = D.project.highlight || {};
     var sq = D.project.squads > 0;
     $('#st-head', root).innerHTML = '<tr><th class="th-check"><input type="checkbox" id="st-all" aria-label="全選目前篩選結果"></th><th>狀態</th>' + cols.map(function (c, i) { return '<th class="' + (i === 0 ? 'th-name' : 'th-clip') + '" title="' + esc(c) + '">' + esc(c) + '</th>' + (i === 0 && sq ? '<th>小隊</th>' : ''); }).join('') + '<th>備註（狀態紀錄）</th><th><span class="sr-only">操作</span></th></tr>';
-    // 團報側邊條：每組固定一種柔和的顏色（依團報代號決定），和上一組同色時換下一個
-    var GROUP_COLORS = ['#a7bfa9', '#a3b6cc', '#bfa9c4', '#d4b994', '#c9a6a0', '#94bcb8', '#bab88f', '#adadcf'];
-    function groupColor(id, avoid) {
-      var h = 0;
-      String(id).split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) % 9973; });
-      var i = h % GROUP_COLORS.length;
-      return i === avoid ? (i + 1) % GROUP_COLORS.length : i;
-    }
+    // 團報側邊條：依名單上出現的順序輪流用 10 種差異明顯的顏色，相鄰兩團一定不同色；
+    // 另外每團有固定的團號（依整團最早報名時間編號，篩選、排序都不變），姓名旁顯示「團N」
+    var GROUP_COLORS = ['#2f9e8f', '#e07a2e', '#5b6fd6', '#c2417a', '#7a9b2b', '#8e5bc9', '#a8811a', '#2c8ac9', '#b8553a', '#4f9e4f'];
+    var groupNo = {}, groupMembers = {};
+    (function () {
+      var first = {};
+      D.students.forEach(function (x) {
+        if (!x.groupId || tier(x) >= 4) return;
+        (groupMembers[x.groupId] = groupMembers[x.groupId] || []).push(x.name);
+        var t = String(x.time || '');
+        if (first[x.groupId] === undefined || t < first[x.groupId]) first[x.groupId] = t;
+      });
+      Object.keys(first).sort(function (a, b) { return first[a] < first[b] ? -1 : first[a] > first[b] ? 1 : a < b ? -1 : 1; })
+        .forEach(function (g, i) { groupNo[g] = i + 1; });
+    })();
     var list = sorted(D.students).filter(matches);
     shownList = list;
     $('#st-count', root).textContent = '顯示 ' + list.length + ' / ' + D.students.length + ' 位';
@@ -590,14 +601,14 @@ App.page('students', function (root, params) {
       body.innerHTML = '<tr><td colspan="' + (cols.length + 4 + (sq ? 1 : 0)) + '"><div class="empty">' + (D.students.length ? '沒有符合條件的學員' : '還沒有報名資料') + '</div></td></tr>';
       return;
     }
-    var prevGroup = null, prevColor = -1;
+    var prevGroup = null, prevColor = -1, groupSeq = 0;
     list.forEach(function (s) {
       var grouped = s.groupId && tier(s) < 4;
       var tr = document.createElement('tr');
       if (tier(s) >= 4) tr.className = 'faded';
       if (grouped) {
         tr.classList.add('in-group');
-        if (prevGroup !== s.groupId) { tr.classList.add('group-start'); prevColor = groupColor(s.groupId, prevColor); }
+        if (prevGroup !== s.groupId) { tr.classList.add('group-start'); prevColor = groupSeq++ % GROUP_COLORS.length; }
         tr.style.setProperty('--gc', GROUP_COLORS[prevColor]);
       }
       prevGroup = grouped ? s.groupId : null;
@@ -622,7 +633,10 @@ App.page('students', function (root, params) {
       if (refundReq(s) && s.status !== '申請取消') tags += '<span class="tag bad" title="學員已繳費並申請取消，點開看退款帳戶">待退款</span>';
       if (consentWait(s)) tags += '<span class="tag warn" title="學員已簽同意書，點開直接看簽名並審核">同意書待審</span>';
       if (s.room && tierOk(s)) tags += '<span class="tag" title="房間">房 ' + esc(s.room) + '</span>';
-      if (s.notes && s.notes.length) { var ln = s.notes[s.notes.length - 1]; tags += '<span class="tag note" title="' + esc('最新備註（' + fmtTime(ln.t) + ' ' + (ln.name || ln.by) + '）：' + ln.text) + '">備註 ' + s.notes.length + '</span>'; }
+      // 備註戳記：放在姓名旁邊（精簡模式也看得到），滑過看最新一則
+      var stamp = '';
+      if (grouped && groupNo[s.groupId]) stamp += '<span class="grp-stamp" title="' + esc('團報第 ' + groupNo[s.groupId] + ' 團：' + groupMembers[s.groupId].join('、')) + '">團' + groupNo[s.groupId] + '</span>';
+      if (hasNote(s)) { var ln = s.notes[s.notes.length - 1]; stamp += '<span class="note-stamp" title="' + esc('備註 ' + s.notes.length + ' 則，最新（' + fmtTime(ln.t) + ' ' + (ln.name || ln.by) + '）：' + (ln.text.length > 200 ? ln.text.slice(0, 200) + '…' : ln.text)) + '" aria-label="有 ' + s.notes.length + ' 則備註">註' + (s.notes.length > 1 ? '<b>' + s.notes.length + '</b>' : '') + '</span>'; }
       var deadlineNote = (tier(s) <= 1 && s.deadline && s.status !== '申請取消') ? '<div class="small muted deadline-note" style="margin-top:4px">期限 ' + esc(fmtTime(s.deadline)) + '</div>' : '';
 
       var html = '<td class="cell-check"><input type="checkbox" aria-label="勾選 ' + esc(s.name) + '"' + (selected[s.id] ? ' checked' : '') + (RO() ? ' disabled' : '') + '></td>' +
@@ -632,7 +646,7 @@ App.page('students', function (root, params) {
         var raw = String(s.data[c] === undefined || s.data[c] === null ? '' : s.data[c]);
         var tip = /^https?:\/\//i.test(raw) ? '' : ' title="' + esc(raw) + '"';
         if (i === 0) {
-          html += '<td class="cell-name"><button type="button" class="name-btn clip-1 name-strong"' + tip + ' aria-label="查看 ' + esc(s.name) + ' 的詳細資料">' + esc(s.data[c] || s.name || '(未填姓名)') + '</button>' + (tags ? '<div class="name-tags">' + tags + '</div>' : '') + '</td>';
+          html += '<td class="cell-name"><div class="name-line"><button type="button" class="name-btn clip-1 name-strong"' + tip + ' aria-label="查看 ' + esc(s.name) + ' 的詳細資料">' + esc(s.data[c] || s.name || '(未填姓名)') + '</button>' + stamp + '</div>' + (tags ? '<div class="name-tags">' + tags + '</div>' : '') + '</td>';
           if (sq) html += '<td class="cell-squad">' + (s.squad === '' ? '<span class="muted">—</span>' : esc(s.squad)) + '</td>';
         }
         else html += '<td class="cell-clip' + (highlightHit(hl[c], raw) ? ' hl' : '') + '"' + tip + '>' + valueHtml(s.data[c]) + '</td>';
