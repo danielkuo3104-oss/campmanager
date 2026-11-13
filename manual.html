@@ -1092,7 +1092,7 @@
 <tr><td><span class="co">6</span></td><td>列表檢視</td><td><span class="sx-btn">預設</span> 或 <span class="sx-btn">窄</span>。「窄」字比較小、列比較矮，姓名下方的標籤收起來，備註欄只留最後一筆內容。選擇記在這台電腦的瀏覽器。</td></tr>
 <tr><td><span class="co">7</span></td><td><span class="sx-btn">顯示欄位</span></td><td>選名單要顯示哪些表單題目、哪些格子要標底色。只有電腦版有，詳見 <a href="#export-cols">名單顯示欄位與強調</a>。</td></tr>
 <tr><td><span class="co">8</span></td><td>勾選框</td><td>每列最左邊可以勾選學員，表頭的勾選框是「全選目前篩選結果」。勾了之後上方出現批次操作列，見<a href="#actions-batch">批次操作</a>。</td></tr>
-<tr><td><span class="co">9</span></td><td><span class="sx-tag c-note">備註 N</span></td><td>這位學員有管理員寫的備註，滑鼠移上去看最新一則，見下方<a href="#students-notes">學員備註</a>。</td></tr>
+<tr><td><span class="co">9</span></td><td><span class="sx-tag c-note">註 N</span></td><td>姓名旁邊的紅色小戳記：這位學員有管理員寫的備註（只有 1 則時只寫「註」），滑鼠移上去看最新一則；篩選列的「有備註」可以只列出這些人，見下方<a href="#students-notes">學員備註</a>。</td></tr>
 <tr><td><span class="co">10</span></td><td><span class="sx-btn">⋯</span></td><td>每列最右邊的操作按鈕，打開這位學員的操作選單（見 <a href="#actions">學員操作</a>）。</td></tr>
 </table></div>
 <p>工具列最右邊還有「顯示 27 / 27 位」，前面是篩選後的人數、後面是全部人數。名單完全沒資料時寫「還沒有報名資料」，篩選後沒人時寫「沒有符合條件的學員」。</p>
@@ -1159,7 +1159,7 @@
 <h4>姓名下方的小標籤</h4>
 <div class="tbl"><table class="t">
 <tr><th>標籤</th><th>意思</th></tr>
-<tr><td>團報／團報未齊</td><td>這位是團報。整團左邊有同一種顏色的細條，每團顏色不同。<span class="sx-tag c-group">團報未齊</span>表示團員還沒全部填表，名額先幫他們預留（滑鼠移上去有說明）。</td></tr>
+<tr><td>團報／團報未齊</td><td>這位是團報。整團左邊有同一種顏色的色條，相鄰兩團一定不同色；姓名旁邊的「團N」是團號（依整團最早報名時間編號，篩選、排序都不會變），滑鼠移上去看這團有哪些人。精簡模式也看得到團號。<span class="sx-tag c-group">團報未齊</span>表示團員還沒全部填表，名額先幫他們預留（滑鼠移上去有說明）。</td></tr>
 <tr><td>早鳥</td><td>價格方案含<span class="sx-tag c-early">早鳥</span>，滑鼠移上去看方案名稱。</td></tr>
 <tr><td>身分證有誤／信箱有誤／電話有誤（紅）</td><td>報名資料檢查沒過。同一種有好幾項時顯示「×2」；滑鼠移上去看是哪一題、填了什麼、錯在哪，並提醒「報名信已提醒更正」。</td></tr>
 <tr><td>可能重複（紅）</td><td>和另一位還有效的報名同 Email、同姓名加電話、或同身分證字號，可能是同一人報名兩次。滑鼠移上去提醒「請點開比對，確認是不是同一人報名兩次」，狀態紀錄會寫出和誰重複。確認是重複就把多的那筆取消（原因可選「重複報名」）。<b>身分證字號完全相同</b>的第二筆仍會直接判為<span class="sx-pill c-mute">報名失敗</span>。</td></tr>
@@ -1169,7 +1169,7 @@
 <tr><td>待退款（紅）</td><td>學員已繳費並申請過取消、有待處理的退款申請（狀態已經是<span class="sx-pill c-bad">申請取消</span>的人不另外標，看紅色狀態就知道）。</td></tr>
 <tr><td>同意書待審（黃）</td><td>已簽同意書、還沒審核。</td></tr>
 <tr><td>房 N</td><td>已分到的房號。</td></tr>
-<tr><td>備註 N（紫）</td><td>管理員寫了 N 則備註，滑鼠移上去看最新一則的時間、作者和內容。</td></tr>
+<tr><td>註 N（紅色戳記，在姓名旁邊）</td><td>管理員寫了 N 則備註，滑鼠移上去看最新一則的時間、作者和內容。精簡模式也看得到；篩選列按「有備註」可只列出有備註的人。</td></tr>
 </table></div>
 <p>選「窄」檢視時這些標籤都會收起來。</p>
 
@@ -1220,7 +1220,7 @@
 <ol class="steps">
 <li>在輸入框 <span class="co">1</span>（提示「例如：家長來電說會晚到。只有管理員看得到，新增後不能修改或刪除」）寫內容，每則最多 2000 字。</li>
 <li>按<span class="sx-btn c-primary">新增備註</span> <span class="co">2</span>，提示「已新增備註」。</li>
-<li>備註依新到舊列在下面 <span class="co">3</span>，每則寫「時間　·　作者」。名單上的姓名下方會出現「備註 N」標籤。</li>
+<li>備註依新到舊列在下面 <span class="co">3</span>，每則寫「時間　·　作者」。名單上的姓名旁邊會出現紅色「註」戳記，篩選列也會多一個「有備註」可以直接找出這些人。</li>
 </ol>
 <ul>
 <li>備註<b>新增後不能修改或刪除</b>，寫錯就再新增一則更正。</li>
