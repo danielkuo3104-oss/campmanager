@@ -2407,20 +2407,20 @@ App.page('students', function (root, params) {
 
   /* ---------- 報名趨勢圖：每天累計的報名人數與確認繳款人數（inline SVG） ---------- */
   function dayKey(t) { var d = new Date(t); return isNaN(d) ? '' : d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-  /** 佔名額的狀態（和後端 ACTIVE_STATUSES 一致）；候補中、招生期外、取消、失敗都不佔名額 */
-  var TR_SEAT = ['已報名', '資格審核中', '繳款待核覆', '匯款逾期', '匯款異常', '程序完成', '申請取消'];
-  var TR_ALL = TR_SEAT.concat(['候補中', '報名取消', '報名失敗', '招生期外']);
+  /** 趨勢圖算進去的狀態：只排除報名取消、報名失敗（候補中、招生期外都算） */
+  var TR_SEAT = ['已報名', '資格審核中', '繳款待核覆', '匯款逾期', '匯款異常', '程序完成', '申請取消', '候補中', '招生期外'];
+  var TR_PAID = ['已報名', '資格審核中', '繳款待核覆', '匯款逾期', '匯款異常', '程序完成', '申請取消'];
+  var TR_ALL = TR_SEAT.concat(['報名取消', '報名失敗']);
   /**
-   * 依狀態紀錄重建每位學員「佔名額」與「確認繳款」的區間：
-   * 報名結果是錄取的從報名那天算；候補遞補、受理招生期外從變成佔名額狀態那天算；
-   * 取消／失敗那天扣掉。確認繳款從第一次變成「程序完成」那天算，之後取消也扣掉。
+   * 依狀態紀錄重建每位學員「算在報名人數」與「確認繳款」的區間：
+   * 從報名那天算（含候補），取消／失敗那天扣掉。確認繳款從第一次變成「程序完成」那天算，之後取消也扣掉。
    * 紀錄對不上目前狀態（舊資料、紀錄被截掉）時，以目前狀態為準、從報名那天算。
    */
   function seatEvents(s) {
     var ev = [], t0 = dayKey(s.time), on = null, paid = false;
     function set(day, next) {
       if (!day) return;
-      var seat = TR_SEAT.indexOf(next) >= 0, pd = seat && (paid || next === '程序完成');
+      var seat = TR_SEAT.indexOf(next) >= 0, pd = TR_PAID.indexOf(next) >= 0 && (paid || next === '程序完成');
       if (on === null) on = false;
       if (seat !== on) ev.push({ day: day, seat: seat ? 1 : -1 });
       if (pd !== paid) ev.push({ day: day, paid: pd ? 1 : -1 });
@@ -2489,13 +2489,13 @@ App.page('students', function (root, params) {
     days.forEach(function (d, i) { if (i % every === 0 || i === n - 1) ticks += '<text class="tr-ax" x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + d.day.slice(5).replace('-', '/') + '</text>'; });
     var cap = D.stats.capacity ? '<line class="tr-cap" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(D.stats.capacity) + '" y2="' + y(D.stats.capacity) + '"/><text class="tr-ax" x="' + (W - R) + '" y="' + (y(D.stats.capacity) - 5) + '" text-anchor="end">名額上限 ' + D.stats.capacity + '</text>' : '';
     var last = days[n - 1];
-    box.innerHTML = '<div class="row wrap tr-head"><b>報名趨勢（佔名額人數）</b><span class="tr-key"><i class="tr-sw reg"></i>佔名額 ' + last.reg + '</span><span class="tr-key"><i class="tr-sw paid"></i>確認繳款 ' + last.paid + '</span><span class="small muted grow" style="text-align:right">取消在取消當天扣掉；候補不算，遞補錄取當天才算（累計報名 ' + last.all + ' 人含候補與取消）</span></div>' +
-      '<div class="tr-wrap"><svg class="tr-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="每天佔名額人數與確認繳款人數，最新：佔名額 ' + last.reg + ' 人、確認繳款 ' + last.paid + ' 人">' +
+    box.innerHTML = '<div class="row wrap tr-head"><b>報名趨勢（累計）</b><span class="tr-key"><i class="tr-sw reg"></i>報名人數 ' + last.reg + '</span><span class="tr-key"><i class="tr-sw paid"></i>確認繳款 ' + last.paid + '</span><span class="small muted grow" style="text-align:right">含候補；取消、失敗在當天扣掉（累計收到 ' + last.all + ' 筆報名）</span></div>' +
+      '<div class="tr-wrap"><svg class="tr-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="每天累計報名人數（扣掉取消、失敗）與確認繳款人數，最新：報名 ' + last.reg + ' 人、確認繳款 ' + last.paid + ' 人">' +
       grid + cap + ticks +
       '<path class="tr-line reg" d="' + path('reg') + '"/><path class="tr-line paid" d="' + path('paid') + '"/>' +
       '<line class="tr-cross hidden" y1="' + T + '" y2="' + (H - B) + '"/><circle class="tr-dot reg hidden" r="4"/><circle class="tr-dot paid hidden" r="4"/>' +
       '<rect class="tr-hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '"/></svg><div class="tr-tip hidden" role="status"></div></div>' +
-      '<details class="tr-table"><summary class="small">以表格查看</summary><div class="table-wrap"><table class="simple"><thead><tr><th>日期</th><th>當天報名</th><th>當天取消</th><th>佔名額</th><th>累計報名</th><th>確認繳款</th></tr></thead><tbody>' +
+      '<details class="tr-table"><summary class="small">以表格查看</summary><div class="table-wrap"><table class="simple"><thead><tr><th>日期</th><th>當天報名</th><th>當天取消／失敗</th><th>報名人數</th><th>累計收到</th><th>確認繳款</th></tr></thead><tbody>' +
       days.filter(function (d) { return d.newReg || d.newSeat || d.newOut || d.newPaid; }).map(function (d) { return '<tr><td>' + d.day.replace(/-/g, '/') + '</td><td>' + d.newReg + '</td><td>' + (d.newOut || '') + '</td><td>' + d.reg + '</td><td>' + d.all + '</td><td>' + d.paid + '</td></tr>'; }).join('') +
       '</tbody></table></div></details>';
     // 滑過：十字線＋當天的數字
@@ -2507,7 +2507,7 @@ App.page('students', function (root, params) {
       [cross, dr, dp, tip].forEach(function (e) { e.classList.remove('hidden'); });
       cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i));
       dr.setAttribute('cx', x(i)); dr.setAttribute('cy', y(d.reg)); dp.setAttribute('cx', x(i)); dp.setAttribute('cy', y(d.paid));
-      tip.textContent = d.day.replace(/-/g, '/') + '　佔名額 ' + d.reg + (d.newSeat || d.newOut ? '（' + (d.newSeat ? '+' + d.newSeat : '') + (d.newOut ? (d.newSeat ? '／' : '') + '−' + d.newOut + ' 取消' : '') + '）' : '') + '　確認繳款 ' + d.paid;
+      tip.textContent = d.day.replace(/-/g, '/') + '　報名 ' + d.reg + (d.newSeat || d.newOut ? '（' + (d.newSeat ? '+' + d.newSeat : '') + (d.newOut ? (d.newSeat ? '／' : '') + '−' + d.newOut + ' 取消／失敗' : '') + '）' : '') + '　確認繳款 ' + d.paid;
       var left = x(i) / W * rc.width;
       tip.style.left = Math.max(0, Math.min(rc.width - tip.offsetWidth, left - tip.offsetWidth / 2)) + 'px';
     }
