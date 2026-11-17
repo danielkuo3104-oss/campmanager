@@ -519,7 +519,7 @@ function openFormEditor(f, desc) {
   }
   if (f.kind === 'transport') {
     fields.push(
-      { name: 'info', label: '交通資訊（我們自己寫的）', type: 'textarea', format: true, value: f.info, hint: '例如哪幾班客運能到、高鐵最晚幾點在哪裡集合、家長接送停車的地方。會顯示在表單上方，信件可放 {{交通資訊}}（營前通知已經放好）；空白就不顯示' },
+      { name: 'info', label: '交通資訊（我們自己寫的）', type: 'textarea', format: true, value: f.info, hint: '例如哪幾班客運能到、高鐵最晚幾點在哪裡集合、家長接送停車的地方。會顯示在表單上方，信件可放 {{交通資訊}}（營前通知已經放好；交通方式調查關閉時也會帶入，只是不附填寫按鈕）；空白就不顯示' },
       { name: 'options', label: '交通方式的選項（一行一個）', type: 'textarea', required: true, value: f.options, hint: '「怎麼來」和「怎麼離開」共用這些選項，最多 10 個；叫「其他」的選項會多一格讓學員說明' }
     );
   }
@@ -557,7 +557,7 @@ function guardDates(form) {
 /* ---------- 信件格式：粗體、顏色、連結、按鈕 ---------- */
 /** 預設顏色：在範本寫 [R]文字[/R]（R 紅 O 橙 Y 黃 G 綠 B 藍 P 紫 K 黑），與後端 MAIL_COLORS 相同 */
 var FORMAT_COLORS = [['R', '#d32f2f', '紅'], ['O', '#ef6c00', '橙'], ['Y', '#d4a106', '黃'], ['G', '#2e7d32', '綠'], ['B', '#1565c0', '藍'], ['P', '#7b1fa2', '紫'], ['K', '#111111', '黑']];
-var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '退款明細', '退款說明', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '簽署同意書按鈕', '簽署同意書連結', '交通資訊', '交通方式調查按鈕', '交通方式調查連結', '同意書保存期限', '學員專區', '學員專區按鈕', '學員專區連結'];
+var MAIL_VARS = ['姓名', '營隊名稱', '營期', '應繳金額', '價格類型', '匯款帳號', '銀行', '分行', '戶名', '帳號', '匯款期限', '已繳金額', '退款金額', '退款明細', '退款說明', '候補順位', '團報名單', '未填同伴', '預留期限', '原因', '原金額', '訊息', '回覆內容', '聯絡人員', '匯款資訊', '退款規定', '飯店資訊', '飯店名稱', '飯店地址', '飯店電話', '房號', '匯款回報按鈕', '匯款回報連結', '取消候補按鈕', '取消候補連結', '取消報名按鈕', '取消報名連結', '簽署同意書按鈕', '簽署同意書連結', '交通資訊', '行李檢查表', '交通方式調查按鈕', '交通方式調查連結', '同意書保存期限', '學員專區', '學員專區按鈕', '學員專區連結'];
 /** 預覽用的代入值：文字用 OOO、數字用 000 */
 var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[nowrap]0000/00/00（O）～00/00（O）[/nowrap]', '應繳金額': '0,000', '價格類型': 'OOO',
   '匯款帳號': 'OOO銀行（000）OOO分行　戶名：OOO　帳號：000-000-000000', '銀行': 'OOO銀行（000）', '分行': 'OOO分行', '戶名': 'OOO', '帳號': '000-000-000000', '未填同伴': 'OOO', '預留期限': '0000/00/00 00:00', '匯款期限': '0000/00/00 00:00', '已繳金額': '0,000', '退款金額': '0,000', '退款明細': '%%REFUNDDETAIL%%', '退款說明': '[card=B]您已繳費，籌辦團隊核對後會依退款規定辦理退款，完成後會再寄「取消報名退款通知」，列出退款明細。[/card]', '候補順位': '0',
@@ -565,6 +565,7 @@ var MAIL_SAMPLE = { '姓名': 'OOO', '營隊名稱': 'OOO 營隊', '營期': '[n
   '匯款回報按鈕': '[center][button=https://example.com/form.html]匯款回報[/button][/center]', '匯款回報連結': 'https://example.com/form.html?f=pay',
   '取消候補按鈕': '[center][button=https://example.com/form.html #6b7280]取消候補[/button][/center]', '取消候補連結': 'https://example.com/form.html?f=unwait',
   '取消報名按鈕': '[center][button=https://example.com/form.html #6b7280]取消報名[/button][/center]', '取消報名連結': 'https://example.com/form.html?f=cancel', '簽署同意書按鈕': '[center][button=https://example.com/consent.html]簽署同意書[/button][/center]', '簽署同意書連結': 'https://example.com/consent.html',
+  '行李檢查表': '[card=G]行李檢查表\n[ ] OOO\n[ ] OOO\n[ ] OOO[/card]',
   '交通資訊': '[card=B]高鐵：0/00（O）00:00 前到 OO站 0 號出口集合\n客運：OOO 客運 0000 路（00:00、00:00 發車），在 OO 站下車[/card]', '交通方式調查按鈕': '[center][button=https://example.com/form.html]交通方式調查[/button][/center]', '交通方式調查連結': 'https://example.com/form.html?f=transport', '同意書保存期限': '營隊結束後 12 個月（0000/00/00）',
   '學員專區': '%%PORTAL%%', '學員專區按鈕': '[center][button=https://example.com/portal.html]學員專區：查詢報名進度[/button][/center]', '學員專區連結': 'https://example.com/portal.html?p=OOOO' };
 
@@ -752,7 +753,8 @@ function formatToolbar(ta, opts) {
     '<button type="button" class="fmt-btn" data-f="hl" title="螢光標記 ==文字==" style="background:#fde68a;color:#111">螢光</button>' +
     '<button type="button" class="fmt-btn" data-f="ul" title="條列：行首「- 」">• 條列</button><button type="button" class="fmt-btn" data-f="sub" title="子項目：行首「  - 」">– 子項</button><button type="button" class="fmt-btn" data-f="cb" title="核取方塊：行首「[ ] 」，信件顯示 ☐，學員專區可以打勾">☐ 核取</button>' +
     '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button>' +
-    '<button type="button" class="fmt-btn fmt-card" data-f="card" title="卡片：[card]文字[/card]，淡色底、粗體色字的提醒方塊；用左邊的色號或顏色代號換顏色">卡片</button>' +
+    '<button type="button" class="fmt-btn fmt-card" data-f="card" title="淺色卡片：[card]文字[/card]，淡色底、粗體色字的提醒方塊；用左邊的色號或顏色代號換顏色">卡片</button>' +
+    '<button type="button" class="fmt-btn fmt-card-d" data-f="cardd" title="深色卡片：[card=深]文字[/card]，實心色底、白字（底色很淺時自動用黑字）；用左邊的色號或顏色代號換顏色">深卡片</button>' +
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
     '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
@@ -842,6 +844,10 @@ function formatToolbar(ta, opts) {
       // 卡片用目前選的色號；預設紅色時直接寫 [card]
       var cc = mainHex(); if (!cc) return;
       wrapSelection(ta, cc === '#c62828' ? '[card]' : '[card=' + cc + ']', '[/card]', '請務必於期限前完成匯款');
+    }
+    if (f === 'cardd') {
+      var cd = mainHex(); if (!cd) return;
+      wrapSelection(ta, cd === '#c62828' ? '[card=深]' : '[card=' + cd + ' 深]', '[/card]', '請務必於期限前完成匯款');
     }
     if (f === 'note') {
       // 沒選取文字時，備註自成一行，比較好認
@@ -1086,6 +1092,8 @@ function textOn(hex) {
 }
 
 var CARD_COLOR = '#b3261e';
+/** 卡片參數：顏色代號或色號，後面可加「 深」或「 淺」；也可以只寫「深」（與後端 CARD_ARG_RE_ 相同） */
+var CARD_ARG_RE = '(?:[ROYGBPK]|' + HEX_RE + ')(?: ?[深淺])?|[深淺]';
 /** 卡片底色：顏色和白色混合 */
 function tint(hex, ratio) {
   hex = normHex(hex) || CARD_COLOR;
@@ -1154,9 +1162,11 @@ function formatMarkup(html) {
     out = out.replace(/\[(特大|大|中|小)\]([\s\S]*?)\[\/\1\]/g, function (_, k, t) { return '<span style="font-size:' + MAIL_SIZES[k] + 'px;line-height:1.5">' + t + '</span>'; });
   }
   out = out.replace(/==([^=\n][\s\S]*?)==/g, '<span style="background:#fde68a;padding:0 2px;border-radius:3px">$1</span>');
-  out = out.replace(new RegExp('(?:<br>)?\\[card(?:=([ROYGBPK]|' + HEX_RE + '))?\\]([\\s\\S]*?)\\[\\/card\\](?:<br>)?', 'g'), function (_, c, t) {
-    var col = c ? (MAIL_COLOR_CODES[c] || normHex(c)) : CARD_COLOR;
-    return '<div style="margin:14px 0;padding:16px 20px;border-radius:12px;background:' + tint(col, 0.1) + ';color:' + col + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
+  // 卡片：[card=B] 淺色（淡色底＋色字）；加「 深」是深色（實心色底＋白字）：[card=深]、[card=B 深]、[card=#2f5d62 深]
+  out = out.replace(new RegExp('(?:<br>)?\\[card(?:=(' + CARD_ARG_RE + '))?\\]([\\s\\S]*?)\\[\\/card\\](?:<br>)?', 'g'), function (_, arg, t) {
+    var m = String(arg || '').match(/^([ROYGBPK]|#[0-9a-fA-F]{3,6})?\s*([深淺])?$/) || [];
+    var col = m[1] ? (MAIL_COLOR_CODES[m[1]] || normHex(m[1])) : CARD_COLOR, dark = m[2] === '深';
+    return '<div style="margin:14px 0;padding:16px 20px;border-radius:12px;background:' + (dark ? col : tint(col, 0.1)) + ';color:' + (dark ? textOn(col) : col) + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
   });
   out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
   out = out.replace(/\[nowrap\]([\s\S]*?)\[\/nowrap\]/g, '<span style="white-space:nowrap">$1</span>');
@@ -1271,10 +1281,16 @@ function openTemplateEditor(t, opts) {
   var sample = {};
   Object.keys(MAIL_SAMPLE).forEach(function (k) { sample[k] = MAIL_SAMPLE[k]; });
   if (opts.campName) sample['營隊名稱'] = opts.campName;
+  // 專案的範本：{{交通資訊}}、{{行李檢查表}} 直接用這個專案自己寫的內容（裡面的變數一樣代入示意值）
+  ['交通資訊', '行李檢查表'].forEach(function (k) {
+    var real = opts.realVars && opts.realVars[k];
+    if (real === undefined || real === null) return;
+    sample[k] = stripNotes(String(real)).trim().replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, n) { return sample[n] !== undefined && n !== k ? sample[n] : ''; });
+  });
   var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
-    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目、<code>[ ] </code> 核取方塊（<code>[x] </code> 已勾）<br>' +
+    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色；<code>[card=B 深]</code>、<code>[card=深]</code> 深底白字）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目、<code>[ ] </code> 核取方塊（<code>[x] </code> 已勾）<br>' +
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
