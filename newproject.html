@@ -115,7 +115,7 @@ App.page('newproject', function (root) {
       var start = kept ? Object.assign({}, kept, { mapping: r.mapping, display: r.display, echo: [], hotel: kept.hotel, refund: kept.refund, bank: kept.bank, contacts: kept.contacts }) : {};
       if (!start.name) start.name = r.title;
       sf = SettingsForm.build($('#np-settings', root), start, {
-        isNew: true, fieldKeys: r.fieldKeys, questions: r.questions, mapping: r.mapping, display: r.display, name: r.title, footerSystem: r.footerSystem || ''
+        isNew: true, fieldKeys: r.fieldKeys, questions: r.questions, mapping: r.mapping, display: r.display, name: r.title, footerSystem: r.footerSystem || '', packListSystem: r.packListSystem || ''
       });
       showStep(3);
       if (!$('#np-admins', root).children.length) addAdmin();
