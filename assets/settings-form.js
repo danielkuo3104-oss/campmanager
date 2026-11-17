@@ -20,6 +20,7 @@ var SettingsForm = (function () {
     { key: 'hotel', title: '飯店資訊', optional: true },
     { key: 'contacts', title: '聯絡人員', optional: true },
     { key: 'footer', title: '信件附註', optional: true },
+    { key: 'packlist', title: '行李檢查表', optional: true },
     { key: 'squads', title: '小隊與資料檢查', optional: true },
     { key: 'mapping', title: '表單欄位對應' },
     { key: 'display', title: '名單顯示欄位' },
@@ -47,6 +48,7 @@ var SettingsForm = (function () {
       capacity: '', holdHours: 72, promoteMode: '手動', waitOrder: '報名時間', price: '', groupPrice: '', earlyPrice: '', earlyGroupPrice: '', earlyDeadline: '', lowIncomePrice: '',
       payDays: 1, remind: { on: false, hours: 24 }, bank: null, account: '', refund: { tiers: [], note: '' }, name: o.name || '', signature: '', regStart: '', regEnd: '', start: '', end: '',
       headerColor: '', hotel: {}, contacts: [], contactsInMail: true, footer: '', footerEffective: o.footerSystem || '', footerSystem: o.footerSystem || '',
+      packList: '', packListEffective: o.packListSystem || '', packListSystem: o.packListSystem || '',
       squads: 0, emailDomains: '', groupMax: 5, replyTo: '', refundFee: 0, mapping: o.mapping || {}, display: o.display || [], echo: [], echoMask: false, questions: o.questions || []
     };
   }
@@ -123,6 +125,9 @@ var SettingsForm = (function () {
       sec('footer', ro ? '' : '<button class="btn sm ghost" type="button" data-a="foot-reset">恢復系統預設</button>',
         '<p class="hint" style="margin-top:0">每封信內容之後、署名之前，以分隔線隔開的灰色小字。<span class="sf-foot-state"></span>清空表示這個專案不加附註。</p>' +
         '<div class="field"><textarea class="input" name="footer" rows="5"' + dis + '></textarea></div>') +
+      sec('packlist', ro ? '' : '<button class="btn sm ghost" type="button" data-a="pack-reset">恢復系統預設</button>',
+        '<p class="hint" style="margin-top:0">信件放 {{行李檢查表}} 就會帶入這裡的內容（營前通知預設已放）。可以用信件格式：卡片、顏色、行首 <code>[ ] </code> 核取方塊等。<span class="sf-pack-state"></span>清空表示這個專案不附。</p>' +
+        '<div class="field"><textarea class="input" name="packList" rows="9"' + dis + '></textarea></div>') +
       sec('squads', '', '<div class="grid-2">' +
         f('squads', '預設小隊數', 'number', p.squads || 0, '0 = 不分隊；設定後可用「分小隊」安排，匯出時可依小隊排序') +
         f('emailDomains', '限定報名信箱網域', 'text', p.emailDomains || '', '例如 gmail.com，多個用逗號分開；留空只檢查格式與常見打錯（gmial.com 等）') +
@@ -220,6 +225,13 @@ var SettingsForm = (function () {
     $('.sf-foot-state', box).textContent = o.isNew ? '預先填好系統預設；' : p.footer === '' ? '目前使用系統預設。' : p.footer === '-' ? '目前這個專案不加附註。' : '目前是這個專案自訂的內容。';
     if (A('foot-reset')) A('foot-reset').addEventListener('click', function () { footEd.value = p.footerSystem || ''; footTa.dispatchEvent(new Event('input', { bubbles: true })); toast(o.isNew ? '已填入系統預設' : '已填入系統預設，按「儲存設定」生效'); });
 
+    var packTa = E('packList');
+    packTa.value = p.packListEffective || '';
+    var packEd = chipEditor(packTa);
+    if (!ro) packTa.parentNode.insertBefore(formatToolbar(packEd, { vars: true }), packTa);
+    $('.sf-pack-state', box).textContent = o.isNew ? '預先填好系統預設；' : !p.packList ? '目前使用系統預設。' : p.packList === '-' ? '目前這個專案不附。' : '目前是這個專案自訂的內容。';
+    if (A('pack-reset')) A('pack-reset').addEventListener('click', function () { packEd.value = p.packListSystem || ''; packTa.dispatchEvent(new Event('input', { bubbles: true })); toast(o.isNew ? '已填入系統預設' : '已填入系統預設，按「儲存設定」後生效'); });
+
     if (A('squad-staff')) A('squad-staff').addEventListener('click', function () {
       var n = Number(E('squads').value) || 0;
       if (n !== (p.squads || 0)) { toast('小隊數改了還沒儲存，請先按「儲存設定」', true); return; }
@@ -267,6 +279,8 @@ var SettingsForm = (function () {
       v.display = $$('input[name=disp]:checked', box).map(function (i) { return i.value; });
       v.echo = $$('input[name=echo]:checked', box).map(function (i) { return i.value; });
       v.footerSystem = p.footerSystem || '';   // 只給狀態標示用
+      v.packList = E('packList').value.replace(/\r\n/g, '\n').trim();
+      v.packListSystem = p.packListSystem || '';
       return v;
     }
 
@@ -334,6 +348,7 @@ var SettingsForm = (function () {
       if (v.contactsInMail !== (p.contactsInMail !== false)) out.contactsInMail = v.contactsInMail;
       if (v.headerColor !== normHex(p.headerColor || '#2f5d62')) out.headerColor = v.headerColor;
       if (v.footer !== String(p.footerEffective || '').trim()) out.footer = v.footer;
+      if (v.packList !== String(p.packListEffective || '').trim()) out.packList = v.packList;
       if (!same(normMap(v.mapping), normMap(p.mapping))) out.mapping = v.mapping;
       if (!sameSet(v.display, (p.display || []).filter(inQ))) out.display = v.display;
       if (!sameSet(v.echo, (p.echo || []).filter(inQ))) out.echo = v.echo;
@@ -396,6 +411,7 @@ var SettingsForm = (function () {
       hotel: v.hotel.name ? [true, '已設定'] : [false, '尚未設定'],
       contacts: v.contacts.length ? [true, v.contacts.length + ' 位'] : [false, '尚未設定'],
       footer: v.footer ? [true, v.footer === String(v.footerSystem || '').trim() ? '系統預設' : '已設定'] : [true, '不加附註'],
+      packlist: v.packList ? [true, v.packList === String(v.packListSystem || '').trim() ? '系統預設' : '已設定'] : [true, '不附'],
       squads: Number(v.squads) > 0 ? [true, '分 ' + Number(v.squads) + ' 隊'] : [false, '尚未設定（不分隊）'],
       mapping: v.mapping.name ? [true, '已設定'] : [false, '尚未指定學員姓名', true],
       display: v.display.length ? [true, v.display.length + ' 個欄位'] : [false, '尚未設定'],
