@@ -597,8 +597,9 @@ function lineLink(v) {
 }
 
 /** {{匯款資訊}} 的預覽（與後端 payInfoHtml_ 相同的卡片列表） */
-function payInfoSampleHtml() {
-  var rows = [['應繳金額', '0,000 元（OOO）', 'amount'], ['匯款期限', '0000/00/00 00:00', 'deadline'], ['銀行', 'OOO銀行（000）'], ['分行', 'OOO分行'], ['戶名', 'OOO'], ['帳號', '000-000-000000', 'no']];
+function payInfoSampleHtml(v) {
+  v = v || {};
+  var rows = [['應繳金額', '0,000 元（OOO）', 'amount'], ['匯款期限', '0000/00/00 00:00', 'deadline'], ['銀行', v['銀行'] || 'OOO銀行（000）'], ['分行', v['分行'] || 'OOO分行'], ['戶名', v['戶名'] || 'OOO'], ['帳號', v['帳號'] || '000-000-000000', 'no']];
   return '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:12px 0;border-collapse:separate;border-spacing:0;background:#f6f8f7;border:1px solid #e3e8e5;border-radius:12px">' +
     rows.map(function (r, i) {
       var style = r[2] === 'amount' ? 'font-size:18px;font-weight:700;color:#1f2937' : r[2] === 'deadline' ? 'font-weight:700;color:#b3261e' : r[2] === 'no' ? 'font-weight:700;color:#1f2937;letter-spacing:.5px' : 'color:#1f2937';
@@ -1292,11 +1293,15 @@ function openTemplateEditor(t, opts) {
   var sample = {};
   Object.keys(MAIL_SAMPLE).forEach(function (k) { sample[k] = MAIL_SAMPLE[k]; });
   if (opts.campName) sample['營隊名稱'] = opts.campName;
-  // 專案的範本：{{交通資訊}}、{{行李檢查表}} 直接用這個專案自己寫的內容（裡面的變數一樣代入示意值）
-  ['交通資訊', '行李檢查表'].forEach(function (k) {
-    var real = opts.realVars && opts.realVars[k];
-    if (real === undefined || real === null) return;
-    sample[k] = stripNotes(String(real)).trim().replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, n) { return sample[n] !== undefined && n !== k ? sample[n] : ''; });
+  // 專案的範本：營期、飯店、匯款、交通資訊、行李檢查表等直接帶入這個專案的真實資料；
+  // 先換掉一般的值，再處理交通資訊、行李檢查表（裡面寫的 {{營期}} 等變數也會用真實資料）
+  var real = opts.realVars || {}, nested = ['交通資訊', '行李檢查表'];
+  Object.keys(real).forEach(function (k) {
+    if (nested.indexOf(k) < 0 && real[k] !== undefined && real[k] !== null) sample[k] = String(real[k]);
+  });
+  nested.forEach(function (k) {
+    if (real[k] === undefined || real[k] === null) return;
+    sample[k] = stripNotes(String(real[k])).trim().replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (m, n) { return sample[n] !== undefined && nested.indexOf(n) < 0 ? sample[n] : ''; });
   });
   var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
@@ -1383,7 +1388,7 @@ function openTemplateEditor(t, opts) {
     var placed = /\{\{\s*聯絡人員\s*\}\}/.test(stripNotes(text) + '\n' + stripNotes(usedFooter()));
     html += mailClosingPreview(usedFooter(), usedSig(), sample, !placed && opts.contactsInMail !== false ? contacts : '') +
       (opts.closingNote ? '<div style="margin-top:6px;text-align:center;font-size:11px;color:#b0b5b2">' + esc(opts.closingNote) + '</div>' : '');
-    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml()).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund)).replace(/(?:<br>)?%%REFUNDDETAIL%%(?:<br>)?/g, refundDetailHtml(opts.refundDetail)).replace(/(?:<br>)?%%HOTEL%%(?:<br>)?/g, hotelSampleHtml(opts.hotel)).replace(/(?:<br>)?%%PORTAL%%(?:<br>)?/g, portalSampleHtml(opts.portalUrl, opts.portalKeyLabel));
+    html = html.replace(/(?:<br>)?%%PAYINFO%%(?:<br>)?/g, payInfoSampleHtml(opts.realVars)).replace(/(?:<br>)?%%REFUND%%(?:<br>)?/g, refundSampleHtml(opts.refund)).replace(/(?:<br>)?%%REFUNDDETAIL%%(?:<br>)?/g, refundDetailHtml(opts.refundDetail)).replace(/(?:<br>)?%%HOTEL%%(?:<br>)?/g, hotelSampleHtml(opts.hotel)).replace(/(?:<br>)?%%PORTAL%%(?:<br>)?/g, portalSampleHtml(opts.portalUrl, opts.portalKeyLabel));
     frame.srcdoc = mailPreviewDoc(sample['營隊名稱'], blockBr(html.split('%%CONTACTS%%').join(contacts)), normHex($('.tpl-headhex .fmt-hexin', body).value) || opts.headerColor);
   }
   body.addEventListener('change', function (e) { if (e.target.closest('.tpl-echo')) preview(); });
