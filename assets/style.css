@@ -518,6 +518,7 @@
 }
 .fmt-btn.fmt-note { background: #fff8c5; color: #7a5b00; border-style: dashed; border-color: #d4a106; }
 .fmt-btn.fmt-card { background: #f8e9e8; color: #b3261e; font-weight: 700; border-color: #ecc7c4; }
+.fmt-btn.fmt-card-d { background: #b3261e; color: #fff; font-weight: 700; border-color: #b3261e; }
 
 /* 範本編輯：報名資料表、這封信的結尾 */
 .tpl-echo, .tpl-closing { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
