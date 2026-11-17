@@ -755,6 +755,7 @@ function formatToolbar(ta, opts) {
     '<button type="button" class="fmt-btn" data-f="center" title="[center]文字[/center]">置中</button>' +
     '<button type="button" class="fmt-btn fmt-card" data-f="card" title="淺色卡片：[card]文字[/card]，淡色底、粗體色字的提醒方塊；用左邊的色號或顏色代號換顏色">卡片</button>' +
     '<button type="button" class="fmt-btn fmt-card-d" data-f="cardd" title="深色卡片：[card=深]文字[/card]，實心色底、白字（底色很淺時自動用黑字）；用左邊的色號或顏色代號換顏色">深卡片</button>' +
+    '<button type="button" class="fmt-btn fmt-box" data-f="box" title="區塊：[box=#e6dfd1]文字[/box]，實心底色、字不加粗的圓角區塊；用左邊的色號當底色">區塊</button>' +
     '<select class="fmt-size" aria-label="字級" title="字級：[大]文字[/大]"><option value="">字級…</option><option>特大</option><option>大</option><option>中</option><option>小</option></select>' +
     '<button type="button" class="fmt-btn" data-f="hr" title="分隔線：一行只有 ---">分隔線</button><span class="fmt-sep"></span>' +
     '<button type="button" class="fmt-btn" data-f="link">連結</button><button type="button" class="fmt-btn" data-f="button">按鈕</button>' +
@@ -844,6 +845,10 @@ function formatToolbar(ta, opts) {
       // 卡片用目前選的色號；預設紅色時直接寫 [card]
       var cc = mainHex(); if (!cc) return;
       wrapSelection(ta, cc === '#c62828' ? '[card]' : '[card=' + cc + ']', '[/card]', '請務必於期限前完成匯款');
+    }
+    if (f === 'box') {
+      var bx = mainHex(); if (!bx) return;
+      wrapSelection(ta, '[box=' + bx + ']\n', '\n[/box]', '區塊內容');
     }
     if (f === 'cardd') {
       var cd = mainHex(); if (!cd) return;
@@ -1168,6 +1173,12 @@ function formatMarkup(html) {
     var col = m[1] ? (MAIL_COLOR_CODES[m[1]] || normHex(m[1])) : CARD_COLOR, dark = m[2] === '深';
     return '<div style="margin:14px 0;padding:16px 20px;border-radius:12px;background:' + (dark ? col : tint(col, 0.1)) + ';color:' + (dark ? textOn(col) : col) + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
   });
+  // 區塊 [box=#e6dfd1]…[/box]、[box=#2e3d2f #fdf6e3]：實心底色的圓角區塊，字不加粗（與後端 boxHtml_ 相同）
+  out = out.replace(new RegExp('(?:<br>)?\\[box(?:=(' + HEX_RE + ')(?: +(' + HEX_RE + '))?)?\\]([\\s\\S]*?)\\[\\/box\\](?:<br>)?', 'g'), function (_, bg, fg, t) {
+    bg = normHex(bg) || '#f5f2ec';
+    fg = normHex(fg) || (textOn(bg) === '#ffffff' ? '#fdf6e3' : '#333333');
+    return '<div style="margin:16px 0;padding:22px 20px;border-radius:16px;background:' + bg + ';color:' + fg + ';line-height:1.75' + (bg === '#ffffff' ? ';border:1px solid #e7e2d8' : '') + '">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
+  });
   out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
   out = out.replace(/\[nowrap\]([\s\S]*?)\[\/nowrap\]/g, '<span style="white-space:nowrap">$1</span>');
   return out.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
@@ -1290,7 +1301,7 @@ function openTemplateEditor(t, opts) {
   var help = '<div class="fmt-help"><b>格式寫法</b>（用上方按鈕插入也可以）<br>' +
     '<code>**粗體**</code>　<code>[R]紅字[/R]</code>　顏色代號：R 紅、O 橙、Y 黃、G 綠、B 藍、P 紫、K 黑<br>' +
     '<code>[#1a73e8]任意色號[/#]</code>　<code>[hl=#bbf7d0]任意底色[/hl]</code>　色號可寫 6 碼或 3 碼（#f00）<br>' +
-    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色；<code>[card=B 深]</code>、<code>[card=深]</code> 深底白字）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目、<code>[ ] </code> 核取方塊（<code>[x] </code> 已勾）<br>' +
+    '<code>==螢光==</code>　<code>[center]置中[/center]</code>　<code>[card]提醒卡片[/card]</code>（<code>[card=B]</code> 換顏色；<code>[card=B 深]</code>、<code>[card=深]</code> 深底白字）　<code>[box=#e6dfd1]區塊[/box]</code> 實心底色、字不加粗（<code>[box=#2e3d2f #fdf6e3]</code> 第二個色號是字色）　行首 <code>- </code> 條列、<code>&nbsp;&nbsp;- </code> 子項目、<code>[ ] </code> 核取方塊（<code>[x] </code> 已勾）<br>' +
     '字級：<code>[特大]…[/特大]</code> <code>[大]…[/大]</code> <code>[中]…[/中]</code> <code>[小]…[/小]</code>　分隔線：一行只寫 <code>---</code><br>' +
     '<code>[備註]說明[/備註]</code> 內部備註：給之後維護的人看，寄出時自動拿掉；預覽上方可切換要不要顯示<br>' +
     '<code>[link=https://網址]顯示文字[/link]</code> 文字連結　<code>[button=https://網址]按鈕文字[/button]</code> 按鈕<br>' +
