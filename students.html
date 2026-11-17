@@ -1728,10 +1728,28 @@ App.page('students', function (root, params) {
 
   /* ---------- 專案設定 ---------- */
   /* ---------- 本專案信件範本 ---------- */
-  /** 範本預覽要用這個專案真正的內容的變數：交通資訊（交通方式調查裡寫的）、行李檢查表（專案設定） */
+  /** 範本預覽直接帶入這個專案的真實資料（營期、匯款、飯店、交通資訊、行李檢查表）；沒填的保留示意值 OOO，提醒還沒設定 */
   function projectMailVars() {
-    var tf = (D.project.forms || []).filter(function (f) { return f.kind === 'transport'; })[0];
-    return { '交通資訊': tf ? String(tf.info || '') : '', '行李檢查表': String(D.project.packListEffective || '') };
+    var p = D.project, tf = (p.forms || []).filter(function (f) { return f.kind === 'transport'; })[0];
+    var v = { '交通資訊': tf ? String(tf.info || '') : '', '行李檢查表': String(p.packListEffective || '') };
+    function day(x) {   // 和後端 campPeriod_ 同格式：2027/01/25（一）
+      var t = fmtDate(x), m = t.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      return m ? { y: m[1], md: m[2] + '/' + m[3], key: m[1] + m[2] + m[3], w: '日一二三四五六'.charAt(new Date(Date.UTC(+m[1], m[2] - 1, +m[3])).getUTCDay()) } : null;
+    }
+    var a = day(p.start), b = day(p.end);
+    if (a) v['營期'] = '[nowrap]' + a.y + '/' + a.md + '（' + a.w + '）' + (b && b.key !== a.key ? '～' + (b.y !== a.y ? b.y + '/' : '') + b.md + '（' + b.w + '）' : '') + '[/nowrap]';
+    if (p.account) v['匯款帳號'] = String(p.account);
+    var bk = p.bank || {};
+    if (bk.bank) v['銀行'] = bk.bank + (bk.code ? '（' + bk.code + '）' : '');
+    if (bk.branch) v['分行'] = bk.branch;
+    if (bk.name) v['戶名'] = bk.name;
+    if (bk.no) v['帳號'] = bk.no;
+    var h = p.hotel || {};
+    if (h.name) v['飯店名稱'] = h.name;
+    if (h.address) v['飯店地址'] = h.address;
+    if (h.phone) v['飯店電話'] = h.phone;
+    if (!(tf && tf.open)) { v['交通方式調查按鈕'] = ''; v['交通方式調查連結'] = ''; }   // 沒開放：實際寄出時按鈕不會出現
+    return v;
   }
   function openProjectTemplates() {
     var ro = RO();
