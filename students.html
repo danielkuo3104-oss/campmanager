@@ -1728,6 +1728,11 @@ App.page('students', function (root, params) {
 
   /* ---------- 專案設定 ---------- */
   /* ---------- 本專案信件範本 ---------- */
+  /** 範本預覽要用這個專案真正的內容的變數：交通資訊（交通方式調查裡寫的）、行李檢查表（專案設定） */
+  function projectMailVars() {
+    var tf = (D.project.forms || []).filter(function (f) { return f.kind === 'transport'; })[0];
+    return { '交通資訊': tf ? String(tf.info || '') : '', '行李檢查表': String(D.project.packListEffective || '') };
+  }
   function openProjectTemplates() {
     var ro = RO();
     withBusy(api('getProjectTemplates', prefix)).then(function (T) {
@@ -1747,6 +1752,7 @@ App.page('students', function (root, params) {
             signature: D.project.signature || '', footer: D.project.footerEffective || '', campName: D.project.name,
             footerWhere: '專案設定 → 信件附註', sigWhere: '專案設定 → 信件署名',
             headerColor: D.project.headerColor,
+            realVars: projectMailVars(),
             contacts: D.project.contacts || [], refund: D.project.refund, hotel: D.project.hotel, portalUrl: (D.project.portal && D.project.portal.url) || '', portalKeyLabel: D.project.portal && D.project.portal.keyLabel, contactsInMail: D.project.contactsInMail, questions: mailQuestions(), echoFields: D.project.echo || [],
             onSaveEcho: ro ? null : function (picked) { return api('updateProjectSettings', prefix, { echo: picked }).then(function () { D.project.echo = picked; }); },
             note: t.custom ? '這個專案已自訂此範本；按「恢復系統預設」會改回系統版本。' : '目前使用系統預設。儲存後只會改這個專案，不影響其他專案。',
