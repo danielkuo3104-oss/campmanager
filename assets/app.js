@@ -1172,13 +1172,13 @@ function formatMarkup(html) {
   out = out.replace(new RegExp('(?:<br>)?\\[card(?:=(' + CARD_ARG_RE + '))?\\]([\\s\\S]*?)\\[\\/card\\](?:<br>)?', 'g'), function (_, arg, t) {
     var m = String(arg || '').match(/^([ROYGBPK]|#[0-9a-fA-F]{3,6})?\s*([深淺])?$/) || [];
     var col = m[1] ? (MAIL_COLOR_CODES[m[1]] || normHex(m[1])) : CARD_COLOR, dark = m[2] === '深';
-    return '<div style="margin:14px 0;padding:16px 20px;border-radius:12px;background:' + (dark ? col : tint(col, 0.1)) + ';color:' + (dark ? textOn(col) : col) + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
+    return '<div style="margin:14px 0;padding:14px 16px;border-radius:12px;background:' + (dark ? col : tint(col, 0.1)) + ';color:' + (dark ? textOn(col) : col) + ';font-weight:700;line-height:1.8">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
   });
   // 區塊 [box=#e6dfd1]…[/box]、[box=#2e3d2f #fdf6e3]：實心底色的圓角區塊，字不加粗（與後端 boxHtml_ 相同）
   out = out.replace(new RegExp('(?:<br>)?\\[box(?:=(' + HEX_RE + ')(?: +(' + HEX_RE + '))?)?\\]([\\s\\S]*?)\\[\\/box\\](?:<br>)?', 'g'), function (_, bg, fg, t) {
     bg = normHex(bg) || '#f5f2ec';
     fg = normHex(fg) || (textOn(bg) === '#ffffff' ? '#fdf6e3' : '#333333');
-    return '<div style="margin:16px 0;padding:22px 20px;border-radius:16px;background:' + bg + ';color:' + fg + ';line-height:1.75' + (bg === '#ffffff' ? ';border:1px solid #e7e2d8' : '') + '">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
+    return '<div style="margin:16px 0;padding:20px 16px;border-radius:16px;background:' + bg + ';color:' + fg + ';line-height:1.75' + (bg === '#ffffff' ? ';border:1px solid #e7e2d8' : '') + '">' + t.replace(/^(<br>)+|(<br>)+$/g, '') + '</div>';
   });
   out = out.replace(/\[center\]([\s\S]*?)\[\/center\]/g, '<div style="text-align:center">$1</div>');
   out = out.replace(/\[nowrap\]([\s\S]*?)\[\/nowrap\]/g, '<span style="white-space:nowrap">$1</span>');
@@ -1277,10 +1277,10 @@ function mailClosingPreview(footer, signature, vars, contactsHtml) {
 
 function mailPreviewDoc(campName, bodyHtml, headerColor) {
   var head = normHex(headerColor) || '#2f5d62';
-  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:24px">' +
-    '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
-    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:16px 24px;font-size:16px;font-weight:700">' + esc(campName) + '</div>' +
-    '<div style="padding:24px;font-size:15px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
+  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:16px 8px">' +
+    '<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
+    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:16px 20px;font-size:16px;font-weight:700">' + esc(campName) + '</div>' +
+    '<div style="padding:20px;font-size:15px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
 }
 
 /**
