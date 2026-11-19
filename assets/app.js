@@ -1277,10 +1277,10 @@ function mailClosingPreview(footer, signature, vars, contactsHtml) {
 
 function mailPreviewDoc(campName, bodyHtml, headerColor) {
   var head = normHex(headerColor) || '#2f5d62';
-  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#f4f5f7;padding:16px 8px">' +
-    '<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">' +
-    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:16px 20px;font-size:16px;font-weight:700">' + esc(campName) + '</div>' +
-    '<div style="padding:20px;font-size:15px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
+  return '<div style="font-family:\'Noto Sans TC\',\'PingFang TC\',sans-serif;background:#ffffff;padding:12px">' +
+    '<div style="max-width:600px;margin:0 auto;background:#fff">' +
+    '<div style="background:' + head + ';color:' + textOn(head) + ';padding:14px 16px;font-size:16px;font-weight:700;border-radius:12px">' + esc(campName) + '</div>' +
+    '<div style="padding:12px 2px;font-size:15px;line-height:1.8;color:#1f2937">' + bodyHtml + '</div></div></div>';
 }
 
 /**
