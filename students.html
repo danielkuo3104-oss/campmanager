@@ -1853,7 +1853,7 @@ App.page('students', function (root, params) {
       '</div><span class="hint">只寄給勾選的狀態；候補中、申請取消、報名取消預設不勾，要寄給他們才勾。</span></div>' +
       (consentOpen() ? '<label class="check"><input type="checkbox" name="unsigned"><span>只寄給還沒簽同意書的人（含被要求重簽的）</span></label>' : '') +
       '<label class="field"><span>通知類型</span><select class="input" name="code"><option value="PRE_CAMP">營前通知（使用範本）</option><option value="CUSTOM">特殊訊息（自訂主旨與內容）</option></select></label>' +
-      '<div class="field" data-for="PRE_CAMP"><span>通知內容</span><textarea class="input" name="message" placeholder="例如：報到時間、地點、攜帶物品…"></textarea></div>' +
+      '<div class="field" data-for="PRE_CAMP"><span>補充訊息（選填）</span><span class="hint" style="margin:0 0 4px">信件內容用「信件範本 → 營前通知」寫好的範本；這裡寫的會插在範本 {{訊息}} 的位置，不需要就留空。</span><textarea class="input" name="message" placeholder="選填，例如：專車時間已確定…"></textarea></div>' +
       '<label class="field hidden" data-for="CUSTOM"><span>主旨</span><input class="input" name="subject"></label>' +
       '<div class="field hidden" data-for="CUSTOM"><span>內容</span><textarea class="input" name="body"></textarea><span class="hint">可用粗體、顏色、連結、按鈕與 {{姓名}} 等變數</span></div>' +
       '</form>');
@@ -1884,11 +1884,10 @@ App.page('students', function (root, params) {
     };
   }
   /** 視窗內檢查：錯誤顯示在欄位旁 */
-  function bulkCheck(body) {
+  function bulkCheck(body, selfTest) {
     clearFieldErrors(body);
     var o = bulkOpts(body);
-    if (!o.statuses.length) { fieldError($('input[name=st]', body), '請至少勾選一種狀態'); return false; }
-    if (o.code === 'PRE_CAMP' && !o.message.trim()) { fieldError(body.elements.message, '請填寫通知內容'); return false; }
+    if (!selfTest && !o.statuses.length) { fieldError($('input[name=st]', body), '請至少勾選一種狀態'); return false; }   // 寄給自己不看狀態
     if (o.code === 'CUSTOM' && !o.subject.trim()) { fieldError(body.elements.subject, '請填寫主旨'); return false; }
     if (o.code === 'CUSTOM' && !o.body.trim()) { fieldError(body.elements.body, '請填寫內容'); return false; }
     return true;
@@ -1921,7 +1920,7 @@ App.page('students', function (root, params) {
       title: '群發通知', desc: '寄出前會再顯示收件人數與信件預覽', body: body, wide: true, base: bulkBase,
       buttons: [{ label: '關閉', value: null }, {
         label: '先寄一封給自己', cls: 'ghost',
-        validate: function () { return bulkCheck(body); },
+        validate: function () { return bulkCheck(body, true); },
         value: function () { return bulkOpts(body); },
         run: function (o) {
           return api('testBulk', prefix, o).then(function (r) { toast('已寄一封測試信到 ' + r.to + '（用「' + r.sample + '」的資料代入）'); return false; });
